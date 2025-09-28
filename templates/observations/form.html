@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-2xl soft-card p-6 mx-auto">
+  <h1 class="text-xl font-semibold mb-4">{{ 'Edit' if obs else 'New' }} Observation</h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <label class="block text-sm mb-1">Cycle</label>
+    <select name="cycle_id" class="soft-input mb-3">
+      {% for c in cycles %}
+      <option value="{{ c.id }}" {% if (obs and obs.cycle_id==c.id) or (request.args.get('cycle_id', type=int)==c.id) %}selected{% endif %}>{{ c.title }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="block text-sm mb-1">Tutor</label>
+    <select name="staff_id" class="soft-input mb-3">
+      {% for s in staff %}
+      <option value="{{ s.id }}" {% if obs and obs.staff_id==s.id %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="block text-sm mb-1">Date</label>
+    <input type="date" name="date" class="soft-input mb-3" value="{{ obs.date if obs else '' }}" required>
+
+    <label class="block text-sm mb-1">Score</label>
+    <input type="number" step="0.1" name="score" class="soft-input mb-4" value="{{ obs.score if obs else '' }}" required>
+
+    <button class="soft-btn soft-btn-primary">Save</button>
+    <a class="soft-btn bg-slate-100" href="{{ url_for('observations_index') }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

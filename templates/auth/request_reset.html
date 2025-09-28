@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-md mx-auto soft-card p-6">
+  <h1 class="text-xl font-semibold mb-4">Reset password</h1>
+  <form method="post">
+    <label class="block text-sm mb-1">Email</label>
+    <input name="email" type="email" class="soft-input mb-3" required>
+    <button class="soft-btn soft-btn-primary w-full">Send reset link</button>
+  </form>
+</div>
+{% endblock %}

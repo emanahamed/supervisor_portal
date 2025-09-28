@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-lg soft-card p-6 mx-auto">
+  <h1 class="text-xl font-semibold mb-4">{{ 'Edit' if cycle else 'New' }} Cycle</h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <label class="block text-sm mb-1">Title</label>
+    {{ form.title(class_='soft-input mb-3') }}
+    <label class="block text-sm mb-1">Start date</label>
+    {{ form.start_date(class_='soft-input mb-3') }}
+    <label class="block text-sm mb-1">End date</label>
+    {{ form.end_date(class_='soft-input mb-4') }}
+    <button class="soft-btn soft-btn-primary">Save</button>
+    <a class="soft-btn bg-slate-100" href="{{ url_for('cycles_index') }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

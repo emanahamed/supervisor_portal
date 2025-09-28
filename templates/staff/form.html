@@ -1,0 +1,130 @@
+{% extends 'base.html' %} {% block content %}
+<div class="max-w-2xl soft-card p-6 mx-auto">
+  <h1 class="text-xl font-semibold mb-4">
+    {{ 'Edit' if staff else 'New' }} Staff
+  </h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm mb-1">Name</label>
+        {{ form.name(class_='soft-input') }}
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Department</label>
+        {{ form.department(class_='soft-input') }}
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Email</label>
+        {{ form.email(class_='soft-input') }}
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Phone</label>
+        {{ form.phone(class_='soft-input') }}
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm mb-1">Branches</label>
+        <div
+          id="branchChooser"
+          class="soft-input relative cursor-pointer flex items-center justify-between"
+          onclick="toggleBranchMenu(event)"
+        >
+          <span
+            id="branchChooserLabel"
+            class="truncate text-left text-sm text-slate-600"
+            >Select branches</span
+          >
+          <svg
+            class="w-4 h-4 text-slate-400"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </div>
+        <div
+          id="branchMenu"
+          class="hidden absolute z-30 mt-1 w-64 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+        >
+          {% for val, label in form.branches.choices %}
+          <label
+            class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+          >
+            <input
+              type="checkbox"
+              value="{{ val }}"
+              class="branchOpt w-4 h-4 text-indigo-600 border-slate-300 rounded"
+              {%
+              if
+              form.branches.data
+              and
+              val
+              in
+              form.branches.data
+              %}checked{%
+              endif
+              %}
+            />
+            <span class="text-sm text-slate-700">{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <!-- Hidden multiselect to submit values -->
+        {{ form.branches(class_='hidden') }}
+        <p class="text-xs text-slate-500 mt-1">
+          Click to open list. Multiple allowed.
+        </p>
+      </div>
+    </div>
+    <div class="mt-4 flex gap-2">
+      <button class="soft-btn soft-btn-primary">Save</button>
+      <a class="soft-btn bg-slate-100" href="{{ url_for('staff_index') }}"
+        >Cancel</a
+      >
+    </div>
+  </form>
+</div>
+<script>
+  (function () {
+    const chooser = document.getElementById("branchChooser");
+    const menu = document.getElementById("branchMenu");
+    const label = document.getElementById("branchChooserLabel");
+    const hiddenSelect = document.querySelector('select[name="branches"]');
+    function syncFromMenu() {
+      const checked = Array.from(
+        menu.querySelectorAll("input.branchOpt:checked")
+      ).map((i) => i.value);
+      // Update hidden select
+      Array.from(hiddenSelect.options).forEach((o) => {
+        o.selected = checked.includes(o.value);
+      });
+      if (!checked.length) {
+        label.textContent = "Select branches";
+        return;
+      }
+      if (checked.length <= 2) {
+        label.textContent = checked.join(", ");
+        return;
+      }
+      label.textContent =
+        checked.slice(0, 2).join(", ") + ` +${checked.length - 2}`;
+    }
+    window.toggleBranchMenu = function (e) {
+      e.stopPropagation();
+      menu.classList.toggle("hidden");
+    };
+    document.addEventListener("click", (e) => {
+      if (!menu.contains(e.target) && !chooser.contains(e.target))
+        menu.classList.add("hidden");
+    });
+    menu.addEventListener("change", syncFromMenu);
+    syncFromMenu();
+  })();
+</script>
+{% endblock %}

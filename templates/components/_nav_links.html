@@ -1,0 +1,52 @@
+{% if current_user.is_authenticated %}
+<a
+  href="{{ url_for('index') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='index' else '' }}"
+  >Dashboard</a
+>
+<a
+  href="{{ url_for('staff_index') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='staff_index' else '' }}"
+  >Staff</a
+>
+<a
+  href="{{ url_for('cycles_index') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='cycles_index' else '' }}"
+  >Cycles</a
+>
+<a
+  href="{{ url_for('observations_index') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='observations_index' else '' }}"
+  >Observations</a
+>
+<a
+  href="{{ url_for('profile') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='profile' else '' }}"
+  >My Profile</a
+>
+{% if current_user.is_authenticated and current_user.is_superadmin %}
+<div class="pt-4 mt-2 border-t border-slate-200">
+  <div
+    class="px-3 mb-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
+  >
+    Admin
+  </div>
+  <a
+    href="{{ url_for('approve_users') }}"
+    data-admin-link="1"
+    class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='approve_users' else '' }}"
+    >Approve Users</a
+  >
+</div>
+{% endif %} {% else %}
+<a
+  href="{{ url_for('login') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700"
+  >Login</a
+>
+<a
+  href="{{ url_for('register') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700"
+  >Register</a
+>
+{% endif %}

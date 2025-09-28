@@ -1,0 +1,623 @@
+{% extends 'base.html' %} {% block page_title %}Dashboard{% endblock %} {% block
+content %}
+<div class="space-y-6">
+  {% if welcome_name %}
+  <div
+    class="soft-card p-4 border-l-4 border-indigo-500 flex items-center gap-3 animate-fade-in"
+  >
+    <div class="text-2xl">👋</div>
+    <div>
+      <div class="text-sm font-semibold text-slate-700">
+        Welcome back, {{ welcome_name.split(' ')[0] }}!
+      </div>
+      <div class="text-xs text-slate-500">
+        Here's your observation dashboard snapshot.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <!-- Cycle Filter -->
+  <form method="get" class="soft-card p-4 flex flex-col gap-3">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h2 class="font-semibold flex items-center gap-2 text-sm text-slate-600">
+        🎯 Filter by Observation Cycle
+      </h2>
+      <div class="flex items-center gap-2 text-xs">
+        {% if selected_cycle_ids %}
+        <a
+          href="{{ url_for('index') }}"
+          class="text-indigo-600 hover:text-indigo-800 font-medium"
+          >Clear filters</a
+        >
+        {% endif %}
+        <button
+          type="submit"
+          class="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+    <div class="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+      {% for c in all_cycles %}
+      <label
+        class="flex items-center gap-2 text-xs bg-slate-50 rounded px-2 py-1 border border-slate-200 cursor-pointer hover:bg-slate-100"
+      >
+        <input
+          type="checkbox"
+          name="cycle"
+          value="{{ c.id }}"
+          class="rounded text-indigo-600 focus:ring-indigo-500"
+          {%
+          if
+          c.id
+          in
+          selected_cycle_ids
+          %}checked{%
+          endif
+          %}
+        />
+        <span class="truncate" title="{{ c.title }}">{{ c.title }}</span>
+      </label>
+      {% else %}
+      <div class="text-xs text-slate-500">No cycles configured yet.</div>
+      {% endfor %}
+    </div>
+    {% if selected_cycle_ids %}
+    <div class="flex flex-wrap gap-2 text-[10px]">
+      {% for cid in selected_cycle_ids %} {% set cyc =
+      (all_cycles|selectattr('id','equalto',cid)|list).0 %} {% if cyc %}
+      <span
+        class="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-medium"
+        >{{ cyc.title }}</span
+      >
+      {% endif %} {% endfor %}
+    </div>
+    <div class="text-[10px] text-slate-400">
+      All below metrics (except branch/department distributions & per-cycle
+      overview) are scoped to selected cycles.
+    </div>
+    {% endif %}
+  </form>
+
+  <!-- SECTION: Key Performance Indicators -->
+  <div
+    class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold"
+  >
+    <span>Key Metrics</span>
+    <div
+      class="h-px flex-1 bg-gradient-to-r from-slate-300 to-transparent"
+    ></div>
+  </div>
+  <!-- KPI Cards -->
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div
+      class="soft-card p-4 relative group"
+      title="Total active tutors in the system"
+    >
+      <div
+        class="text-xs uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-1"
+      >
+        👩‍🏫 Tutors
+      </div>
+      <div class="text-2xl font-semibold text-indigo-600">
+        {{ total_staff }}
+      </div>
+    </div>
+    <div class="soft-card p-4" title="Total observation cycles configured">
+      <div
+        class="text-xs uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-1"
+      >
+        🌀 Cycles
+      </div>
+      <div class="text-2xl font-semibold text-fuchsia-600">
+        {{ total_cycles }}
+      </div>
+    </div>
+    <div class="soft-card p-4" title="All recorded observations to date">
+      <div
+        class="text-xs uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-1"
+      >
+        📝 Observations
+      </div>
+      <div class="text-2xl font-semibold text-emerald-600">
+        {{ total_observations }}
+      </div>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Overall average score across every observation"
+    >
+      <div
+        class="text-xs uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-1"
+      >
+        ⭐ Avg Score
+      </div>
+      <div class="text-2xl font-semibold text-amber-600">
+        {% if score_summary[1] is not none %}{{ '%.2f'|format(score_summary[1])
+        }}{% else %}-{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION: Engagement & Activity -->
+  <div
+    class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold pt-4"
+  >
+    <span>Engagement & Activity</span>
+    <div
+      class="h-px flex-1 bg-gradient-to-r from-slate-300 to-transparent"
+    ></div>
+  </div>
+  <!-- No Observation + Observer Leaderboard + Recent -->
+  <div class="grid gap-6 lg:grid-cols-3">
+    <div
+      class="soft-card p-4 flex flex-col"
+      title="Tutors who have not yet received any observation in the system"
+    >
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="font-semibold flex items-center gap-2">
+          ⏳ Tutors Awaiting Observation
+        </h2>
+        <span class="soft-badge bg-amber-100 text-amber-700"
+          >{{ no_obs_staff|length }}</span
+        >
+      </div>
+      {% set show_limit = 10 %}
+      <ul
+        id="awaitingList"
+        class="text-sm divide-y divide-slate-100 flex-1 overflow-auto"
+      >
+        {% for s in no_obs_staff %}
+        <li
+          class="py-1.5 flex items-center justify-between awaiting-row {% if loop.index > show_limit %}hidden{% endif %}"
+        >
+          <span>{{ s.name }}</span>
+          {% if s.department %}<span class="text-xs text-slate-400"
+            >{{ s.department }}</span
+          >{% endif %}
+        </li>
+        {% else %}
+        <li class="py-2 text-slate-500 text-sm">
+          All tutors have at least one observation 🎉
+        </li>
+        {% endfor %}
+      </ul>
+      {% if no_obs_staff|length > show_limit %}
+      <button
+        id="showAllAwaitingBtn"
+        class="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800 self-start"
+      >
+        Show all ({{ no_obs_staff|length - show_limit }})
+      </button>
+      {% endif %}
+    </div>
+
+    <div
+      class="soft-card p-4 flex flex-col"
+      title="Observers ranked by how many observations they have conducted"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        👀 Observers (Most Observations)
+      </h2>
+      <ol class="text-sm space-y-1">
+        {% for name, cnt in observer_counts %}
+        <li
+          class="flex items-center justify-between bg-slate-50 rounded px-2 py-1"
+        >
+          <span class="truncate">{{ loop.index }}. {{ name }}</span>
+          <span class="text-xs font-semibold">{{ cnt }}</span>
+        </li>
+        {% else %}
+        <li class="text-slate-500 text-sm">No observations yet.</li>
+        {% endfor %}
+      </ol>
+    </div>
+
+    <div
+      class="soft-card p-4 flex flex-col"
+      title="The most recently recorded observations"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        🕑 Recent Observations
+      </h2>
+      <ul class="text-sm divide-y divide-slate-100 flex-1 overflow-auto">
+        {% for o in recent_observations %}
+        <li class="py-1.5 flex items-center justify-between">
+          <span class="truncate">{{ o.staff.name }}</span>
+          <span class="text-xs text-slate-500"
+            >{{ o.date }} • {{ '%.1f'|format(o.score) }}</span
+          >
+        </li>
+        {% else %}
+        <li class="py-2 text-slate-500 text-sm">No observations recorded.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <!-- SECTION: Performance Leaderboards -->
+  <div
+    class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold pt-4"
+  >
+    <span>Performance Leaderboards</span>
+    <div
+      class="h-px flex-1 bg-gradient-to-r from-slate-300 to-transparent"
+    ></div>
+  </div>
+  <!-- Row: Performance Leaderboards -->
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div
+      class="soft-card p-4"
+      title="Tutors with the highest average observation scores (top 10)"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        🏆 Top Performing Tutors (Avg Score)
+      </h2>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-slate-500">
+            <th class="py-1">Tutor</th>
+            <th class="py-1">Avg</th>
+            <th class="py-1">Obs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in top_tutors %}
+          <tr class="border-t">
+            <td class="py-1">{{ r.name }}</td>
+            <td class="py-1 font-medium">{{ '%.2f'|format(r.avg) }}</td>
+            <td class="py-1 text-xs text-slate-500">{{ r.c }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="py-2 text-slate-500">No data.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Tutors with lowest average scores (bottom 10) to monitor for support"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        ⚠️ Tutors of Concern (Low Avg)
+      </h2>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-slate-500">
+            <th class="py-1">Tutor</th>
+            <th class="py-1">Avg</th>
+            <th class="py-1">Obs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in concern_tutors %}
+          <tr class="border-t">
+            <td class="py-1">{{ r.name }}</td>
+            <td class="py-1 font-medium">{{ '%.2f'|format(r.avg) }}</td>
+            <td class="py-1 text-xs text-slate-500">{{ r.c }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="py-2 text-slate-500">No data.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SECTION: Tutor Distributions (Overall) -->
+  <div
+    class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold pt-4"
+  >
+    <span>Overall Distributions</span>
+    <div
+      class="h-px flex-1 bg-gradient-to-r from-slate-300 to-transparent"
+    ></div>
+  </div>
+  <!-- Row: Distributions -->
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div class="soft-card p-4" title="Distribution of tutors across branches">
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        🧭 Tutors per Branch
+      </h2>
+      <ul class="text-sm space-y-1">
+        {% for b, c in branch_counts %}
+        <li class="flex justify-between bg-slate-50 rounded px-2 py-1">
+          <span>{{ b }}</span><span class="text-xs font-semibold">{{ c }}</span>
+        </li>
+        {% else %}
+        <li class="text-slate-500 text-sm">No branches assigned.</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Distribution of tutors across departments/subjects"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        📚 Tutors per Department
+      </h2>
+      <ul class="text-sm space-y-1">
+        {% for dept, c in dept_counts %}
+        <li class="flex justify-between bg-slate-50 rounded px-2 py-1">
+          <span>{{ dept }}</span
+          ><span class="text-xs font-semibold">{{ c }}</span>
+        </li>
+        {% else %}
+        <li class="text-slate-500 text-sm">No departments.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <!-- SECTION: Coverage & Summary -->
+  <div
+    class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold pt-4"
+  >
+    <span>Coverage & Summary</span>
+    <div
+      class="h-px flex-1 bg-gradient-to-r from-slate-300 to-transparent"
+    ></div>
+  </div>
+  <!-- Score Range Summary -->
+  <div class="grid gap-6 lg:grid-cols-3">
+    <div
+      class="soft-card p-4"
+      title="Minimum, average and maximum score across every observation"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        📊 Score Summary
+      </h2>
+      {% if score_summary[0] is not none %}
+      <div class="flex justify-between text-sm">
+        <div>Min</div>
+        <div class="font-medium">{{ '%.2f'|format(score_summary[0]) }}</div>
+      </div>
+      <div class="flex justify-between text-sm">
+        <div>Avg</div>
+        <div class="font-medium">{{ '%.2f'|format(score_summary[1]) }}</div>
+      </div>
+      <div class="flex justify-between text-sm">
+        <div>Max</div>
+        <div class="font-medium">{{ '%.2f'|format(score_summary[2]) }}</div>
+      </div>
+      {% else %}
+      <div class="text-sm text-slate-500">No scores yet.</div>
+      {% endif %}
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Percentage of tutors who have at least one observation"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">🧮 Coverage</h2>
+      <div class="text-sm">
+        {{ total_observations }} observations across {{ total_staff }} tutors.
+      </div>
+      {% if total_staff %}
+      <div class="mt-2 text-xs text-slate-500">
+        Observed coverage: {{ '%.1f'|format( ( (total_staff -
+        no_obs_staff|length) / total_staff) * 100 ) }}%
+      </div>
+      {% endif %}
+    </div>
+    <!-- Removed Notes card as requested -->
+  </div>
+
+  <!-- SECTION: Trends & Cycle Overview -->
+  <div
+    class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold pt-4"
+  >
+    <span>Trends & Cycles</span>
+    <div
+      class="h-px flex-1 bg-gradient-to-r from-slate-300 to-transparent"
+    ></div>
+  </div>
+  <!-- Trends & Analytics -->
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div
+      class="soft-card p-4"
+      title="Weekly observation volume and average score for the past 12 weeks"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        📈 Weekly Trend (Last 12 Weeks)
+      </h2>
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left text-slate-500">
+            <th class="py-1">Week</th>
+            <th class="py-1">Obs</th>
+            <th class="py-1">Avg Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in weekly_trend %}
+          <tr class="border-t">
+            <td class="py-1">{{ row.week }}</td>
+            <td class="py-1">{{ row.count }}</td>
+            <td class="py-1">
+              {% if row.avg is not none %}{{ '%.2f'|format(row.avg) }}{% else
+              %}-{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="py-2 text-slate-500">No data.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Observation count, average score and variance per cycle"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        🧪 Per-Cycle Overview
+      </h2>
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left text-slate-500">
+            <th class="py-1">Cycle</th>
+            <th class="py-1">Obs</th>
+            <th class="py-1">Avg</th>
+            <th class="py-1">Var</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cid, title, cnt, avg in cycle_stats %} {% set cv =
+          (cycle_variances|selectattr('id','equalto',cid)|list).0 %}
+          <tr class="border-t">
+            <td class="py-1">{{ title }}</td>
+            <td class="py-1">{{ cnt }}</td>
+            <td class="py-1">
+              {% if avg is not none %}{{ '%.2f'|format(avg) }}{% else %}-{%
+              endif %}
+            </td>
+            <td class="py-1">
+              {% if cv.variance is not none %}{{ '%.3f'|format(cv.variance) }}{%
+              else %}-{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="py-2 text-slate-500">No cycles.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div
+      class="soft-card p-4"
+      title="How each observer's scoring compares to the overall average, with their variance"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        ⚖️ Observer Calibration
+      </h2>
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left text-slate-500">
+            <th class="py-1">Observer</th>
+            <th class="py-1">Obs</th>
+            <th class="py-1">Avg</th>
+            <th class="py-1">Var</th>
+            <th class="py-1">Δ Global</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in observer_calibration %}
+          <tr class="border-t">
+            <td class="py-1">{{ o.name }}</td>
+            <td class="py-1">{{ o.count }}</td>
+            <td class="py-1">
+              {% if o.avg is not none %}{{ '%.2f'|format(o.avg) }}{% else %}-{%
+              endif %}
+            </td>
+            <td class="py-1">
+              {% if o.variance is not none %}{{ '%.3f'|format(o.variance) }}{%
+              else %}-{% endif %}
+            </td>
+            <td class="py-1">
+              {% if o.deviation is not none %}{{ o.deviation|round(2) }}{% else
+              %}-{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="py-2 text-slate-500">
+              Insufficient observer data.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="mt-2 text-[10px] text-slate-400">
+        Δ Global = difference from overall average.
+      </div>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Variance (spread) of scores overall and per cycle"
+    >
+      <h2 class="font-semibold mb-2 flex items-center gap-2">
+        🌡️ Variance Overview
+      </h2>
+      <div class="text-sm">
+        Overall variance: {% if overall_variance is not none %}{{
+        '%.3f'|format(overall_variance) }}{% else %}-{% endif %}
+      </div>
+      <ul class="mt-2 text-xs space-y-1 max-h-56 overflow-auto">
+        {% for cv in cycle_variances %}
+        <li class="flex justify-between bg-slate-50 rounded px-2 py-1">
+          <span class="truncate">{{ cv.title }}</span>
+          <span
+            >{% if cv.variance is not none %}{{ '%.3f'|format(cv.variance) }}{%
+            else %}-{% endif %}</span
+          >
+        </li>
+        {% else %}
+        <li class="text-slate-500">No cycle variance data.</li>
+        {% endfor %}
+      </ul>
+      <div class="mt-2 text-[10px] text-slate-400">
+        Variance = spread of scores (population formula).
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const btn = document.getElementById("showAllAwaitingBtn");
+      if (btn) {
+        btn.addEventListener("click", () => {
+          document
+            .querySelectorAll(".awaiting-row.hidden")
+            .forEach((li) => li.classList.remove("hidden"));
+          btn.remove();
+        });
+      }
+      // Color code deviation cells (Δ Global)
+      document.querySelectorAll("table td").forEach((td) => {
+        if (
+          td.textContent.trim().match(/^[-+]?\d+(\.\d+)?$/) &&
+          td.previousElementSibling &&
+          td.previousElementSibling.textContent.includes("Var")
+        ) {
+          // skip variance row; only handle next cell after var when header matches Δ Global but simpler approach check header row index
+        }
+      });
+      // More precise: find the calibration table
+      const calibTables = Array.from(document.querySelectorAll("h2")).filter(
+        (h) => h.textContent.includes("Observer Calibration")
+      );
+      if (calibTables.length) {
+        const table = calibTables[0].parentElement.querySelector("table");
+        if (table) {
+          const rows = table.querySelectorAll("tbody tr");
+          rows.forEach((r) => {
+            const cells = r.querySelectorAll("td");
+            if (cells.length === 5) {
+              const devCell = cells[4];
+              const val = parseFloat(devCell.textContent);
+              if (!isNaN(val)) {
+                if (Math.abs(val) < 0.05) {
+                  devCell.classList.add("text-emerald-600", "font-semibold"); // well calibrated
+                } else if (Math.abs(val) < 0.15) {
+                  devCell.classList.add("text-amber-600", "font-semibold");
+                } else {
+                  devCell.classList.add("text-rose-600", "font-semibold");
+                }
+              }
+            }
+          });
+        }
+      }
+    })();
+  </script>
+</div>
+{% endblock %}

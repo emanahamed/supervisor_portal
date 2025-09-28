@@ -1,0 +1,38 @@
+{% extends 'base.html' %} {% block content %}
+<div class="max-w-xl soft-card p-6 mx-auto">
+  <h1 class="text-xl font-semibold mb-4">Import Staff</h1>
+  <form method="post" enctype="multipart/form-data">
+    <input
+      class="soft-input mb-3"
+      type="file"
+      name="file"
+      accept=".xlsx,.xls,.csv"
+      required
+    />
+    <button class="soft-btn soft-btn-primary">Upload & Preview</button>
+  </form>
+  {% if preview %}
+  <div class="mt-6">
+    <h2 class="font-semibold">Preview (first 20 rows)</h2>
+    <p class="text-xs text-slate-500 mb-2">
+      If this looks correct, click Confirm Import to upsert records (existing
+      staff matched by email are updated).
+    </p>
+    <pre class="text-xs bg-slate-50 p-3 rounded-xl overflow-auto">
+{{ preview }}</pre
+    >
+    <form method="post" class="mt-4 flex gap-2 items-center">
+      <input type="hidden" name="confirm" value="1" />
+      {% if token %}<input type="hidden" name="token" value="{{ token }}" />{%
+      endif %}
+      <button class="soft-btn bg-emerald-600 text-white">Confirm Import</button>
+      <a
+        href="{{ url_for('staff_import') }}"
+        class="text-xs text-slate-500 hover:text-slate-700"
+        >Start over</a
+      >
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

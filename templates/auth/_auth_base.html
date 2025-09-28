@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{% block title %}Auth — Excel Tutors{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: { extend: { colors: { indigo: tailwind.colors.indigo } } },
+      };
+    </script>
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+    />
+    <style>
+      .glass {
+        backdrop-filter: blur(14px) saturate(140%);
+        background: rgba(255, 255, 255, 0.65);
+      }
+      .gradient-bg {
+        background: radial-gradient(
+          circle at 20% 20%,
+          #6366f1,
+          #8b5cf6 45%,
+          #4338ca 100%
+        );
+      }
+      .soft-input {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 0.75rem 0.9rem;
+        width: 100%;
+        outline: none;
+        background: rgba(255, 255, 255, 0.85);
+      }
+      .soft-input:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+      }
+      .primary-btn {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: #fff;
+        font-weight: 600;
+        padding: 0.75rem 1rem;
+        border-radius: 0.9rem;
+        width: 100%;
+        box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.5);
+      }
+      .primary-btn:hover {
+        filter: brightness(1.05);
+      }
+      .link {
+        color: #6366f1;
+        font-weight: 500;
+      }
+      .link:hover {
+        text-decoration: underline;
+      }
+      .logo-ring {
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3);
+      }
+    </style>
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body
+    class="h-full gradient-bg text-slate-700 flex items-center justify-center p-6"
+  >
+    <div
+      class="absolute inset-0 overflow-hidden pointer-events-none select-none"
+    >
+      <div
+        class="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-20 blur-3xl bg-fuchsia-400 mix-blend-overlay"
+      ></div>
+      <div
+        class="absolute -bottom-40 -right-40 w-[32rem] h-[32rem] rounded-full opacity-30 blur-3xl bg-indigo-500 mix-blend-multiply"
+      ></div>
+    </div>
+    <div class="relative z-10 w-full max-w-md">
+      <div class="mb-8 text-center flex flex-col items-center gap-4">
+        <a href="{{ url_for('index') }}" class="inline-flex items-center gap-3">
+          <img
+            src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+            class="h-14 w-auto rounded-xl logo-ring"
+          />
+          <span class="text-white font-bold tracking-wide text-lg drop-shadow"
+            >Excel Tutors</span
+          >
+        </a>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}{% if
+      messages %}
+      <div class="space-y-2 mb-5">
+        {% for category, message in messages %}
+        <div
+          class="glass rounded-xl p-3 border border-white/30 text-sm {% if category=='danger' %}bg-rose-100/60 text-rose-700{% elif category=='success' %}bg-emerald-100/60 text-emerald-700{% elif category=='warning' %}bg-amber-100/60 text-amber-700{% else %}bg-indigo-100/60 text-indigo-700{% endif %}"
+        >
+          {{ message|safe }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}{% endwith %}
+      <div
+        class="glass rounded-2xl border border-white/30 shadow-xl p-8 backdrop-blur-xl"
+      >
+        {% block auth_content %}{% endblock %}
+      </div>
+      <div class="mt-8 text-center text-[10px] text-white/70">
+        © 2025 Excel Tutors • v{{ APP_VERSION }}
+      </div>
+    </div>
+  </body>
+</html>

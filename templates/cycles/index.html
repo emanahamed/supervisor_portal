@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Observation Cycles</h1>
+  <a class="soft-btn soft-btn-primary" href="{{ url_for('cycle_new') }}">New Cycle</a>
+</div>
+<div class="grid md:grid-cols-2 gap-4">
+  {% for c in cycles %}
+  <div class="soft-card p-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="font-semibold">{{ c.title }}</h2>
+        <p class="text-sm text-slate-500">{{ c.start_date }} → {{ c.end_date }}</p>
+      </div>
+      <div class="flex gap-2">
+        <a class="soft-btn bg-slate-100" href="{{ url_for('cycle_edit', cid=c.id) }}">Edit</a>
+        <a class="soft-btn bg-rose-100" href="{{ url_for('cycle_delete', cid=c.id) }}" onclick="return confirm('Delete?')">Delete</a>
+      </div>
+    </div>
+    <div class="mt-3 text-sm">
+      <a class="text-indigo-600" href="{{ url_for('observations_index', cycle_id=c.id) }}">View observations</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

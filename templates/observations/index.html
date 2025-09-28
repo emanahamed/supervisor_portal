@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block page_title %}Observations{% endblock %}
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">All Observations</h2>
+    <span class="text-xs text-slate-400">{{ observations|length }} records</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <a class="soft-btn soft-btn-primary" href="{{ url_for('observation_new') }}">New Observation</a>
+  </div>
+</div>
+
+<div class="soft-card p-4 mb-4">
+  <form method="get" class="grid md:grid-cols-6 gap-3">
+    <div class="md:col-span-2">
+      <label class="block text-sm mb-1">Cycle</label>
+      {% set selected_cycle = request.args.get('cycle_id') %}
+      <select name="cycle_id" class="soft-input">
+        <option value="">All</option>
+        {% for c in cycles %}
+          <option value="{{ c.id }}" {% if selected_cycle and selected_cycle|int == c.id %}selected{% endif %}>{{ c.title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm mb-1">Min obs for tutor</label>
+      {% set selected_min = request.args.get('min_obs') %}
+      <select name="min_obs" class="soft-input">
+        <option value="">Any</option>
+        {% for n in [0,1,2,3] %}
+        <option value="{{ n }}" {% if selected_min is not none and selected_min|int == n %}selected{% endif %}>{{ n }}</option>
+        {% endfor %}
+        <option value=">=3" {% if selected_min == '>=3' %}selected{% endif %}>3 or more</option>
+      </select>
+    </div>
+    <div class="md:col-span-2 relative">
+      <label class="block text-sm mb-1">Departments</label>
+      {% set selected_departments = request.args.getlist('department') %}
+      <button type="button" id="obsDeptDropdownBtn" class="soft-input flex items-center justify-between cursor-pointer">
+        <span id="obsDeptDropdownLabel" class="truncate text-left">Select departments</span>
+        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="obsDeptDropdown" class="hidden absolute z-20 top-full mt-1 w-56 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1">
+        {% for d in departments %}
+        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50">
+          <input type="checkbox" value="{{ d }}" class="obsDeptChk w-4 h-4 text-indigo-600 border-slate-300 rounded" {% if d in selected_departments %}checked{% endif %}>
+          <span class="text-sm text-slate-700">{{ d }}</span>
+        </label>
+        {% endfor %}
+        {% if not departments %}<p class="text-xs text-slate-400 px-2 py-1">No departments</p>{% endif %}
+      </div>
+    </div>
+    <div class="md:col-span-1 flex items-end gap-2">
+      <button class="soft-btn bg-slate-100 w-full" id="obsApplyFilters">Filter</button>
+      <button type="button" class="soft-btn bg-slate-100" id="obsClearFilters">Clear</button>
+    </div>
+  </form>
+</div>
+
+<div class="soft-card p-4">
+  <input id="obsFilter" class="soft-input mb-3" placeholder="Search..." oninput="filterTable('obsFilter','obsTable')">
+  <div class="overflow-x-auto">
+  <table class="min-w-full text-sm" id="obsTable" data-sortable data-paginate data-page-size="25">
+      <thead class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase">
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Tutor</th>
+          <th class="py-2 px-3 text-left">Cycle</th>
+          <th class="py-2 px-3 text-left">Observer</th>
+          <th class="py-2 px-3 text-left">Date</th>
+          <th class="py-2 px-3 text-left">Score</th>
+          <th class="py-2 px-3 text-left w-24 no-sort"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for o in observations %}
+        <tr class="hover:bg-slate-50">
+          <td class="py-2 px-3 whitespace-nowrap">{{ o.staff.name }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ o.cycle.title }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ o.observer.name }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ o.date }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ '%.1f'|format(o.score) }}</td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            <a class="text-indigo-600" href="{{ url_for('observation_edit', oid=o.id) }}">Edit</a>
+            <span class="text-slate-400">·</span>
+            <a class="text-rose-600" href="{{ url_for('observation_delete', oid=o.id) }}" onclick="return confirm('Delete?')">Delete</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if grouped %}
+<div class="soft-card p-4 mt-6">
+  <h2 class="font-semibold mb-2">Observation counts per tutor (in selected cycle)</h2>
+  <table class="w-full" data-sortable>
+    <thead><tr class="text-left text-sm text-slate-600"><th class="py-2">Tutor</th><th class="py-2">Count</th></tr></thead>
+    <tbody>
+    {% for row in grouped %}
+      <tr class="border-t"><td class="py-2">{{ row.name }}</td><td>{{ row.count }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+<script>
+  (function(){
+    const btn = document.getElementById('obsDeptDropdownBtn');
+    const menu = document.getElementById('obsDeptDropdown');
+    const label = document.getElementById('obsDeptDropdownLabel');
+    const apply = document.getElementById('obsApplyFilters');
+    const clear = document.getElementById('obsClearFilters');
+    function toggle(){ menu.classList.toggle('hidden'); }
+    function outside(e){ if(!menu.contains(e.target) && !btn.contains(e.target)){ menu.classList.add('hidden'); } }
+    document.addEventListener('click', outside);
+    btn.addEventListener('click', e => { e.stopPropagation(); toggle(); });
+    function summarize(){
+      const vals = Array.from(menu.querySelectorAll('input:checked')).map(i=>i.value);
+      if(!vals.length){ label.textContent = 'Select departments'; return; }
+      if(vals.length <= 2){ label.textContent = vals.join(', '); return; }
+      label.textContent = vals.slice(0,2).join(', ') + ` +${vals.length-2}`;
+    }
+    menu.addEventListener('change', summarize); summarize();
+    apply.addEventListener('click', e => {
+      e.preventDefault();
+      const params = new URLSearchParams();
+      const cycleSel = document.querySelector('select[name=cycle_id]').value;
+      if(cycleSel) params.append('cycle_id', cycleSel);
+      const minObsSel = document.querySelector('select[name=min_obs]').value;
+      if(minObsSel) params.append('min_obs', minObsSel);
+      Array.from(menu.querySelectorAll('input:checked')).forEach(c=>params.append('department', c.value));
+      window.location = '?' + params.toString();
+    });
+    clear.addEventListener('click', () => { window.location = window.location.pathname; });
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends 'base.html' %} {% block page_title %}Access Denied{% endblock %} {%
+block content %}
+<div class="soft-card p-8 max-w-xl mx-auto text-center">
+  <div class="text-5xl mb-4">🚫</div>
+  <h1 class="text-xl font-semibold mb-2">Permission Denied (403)</h1>
+  <p class="text-slate-600 mb-6">
+    You don't have permission to view this resource. If you believe this is an
+    error, contact a superadmin.
+  </p>
+  <a href="{{ url_for('index') }}" class="soft-btn soft-btn-primary"
+    >Back to Dashboard</a
+  >
+</div>
+{% endblock %}

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>
+      {% block title %}Excel Tutors — Observation Tracker{% endblock %}
+    </title>
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            boxShadow: { soft: "0 10px 30px rgba(0,0,0,0.06)" },
+            borderRadius: { xl: "1rem", "2xl": "1.25rem" },
+          },
+        },
+      };
+    </script>
+    <!-- Favicon / Brand Icon -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+    />
+    <script
+      src="{{ url_for('static', filename='js/tables.js') }}"
+      defer
+    ></script>
+    <style>
+      :root {
+        --brand-primary: #6366f1; /* Indigo */
+        --brand-accent: #8b5cf6; /* Purple */
+        --brand-radial: radial-gradient(
+          circle at 30% 30%,
+          #6366f1,
+          #8b5cf6 60%,
+          #4338ca 100%
+        );
+      }
+      /* Soft UI touches */
+      .soft-card {
+        background: white;
+        border-radius: 1.25rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      }
+      .soft-input {
+        border-radius: 1rem;
+        border: 1px solid #e5e7eb;
+        padding: 0.75rem 1rem;
+        outline: none;
+        width: 100%;
+      }
+      .soft-btn {
+        border-radius: 1rem;
+        padding: 0.6rem 1rem;
+        font-weight: 600;
+      }
+      .soft-btn-primary {
+        background: linear-gradient(
+          135deg,
+          var(--brand-primary),
+          var(--brand-accent)
+        );
+        color: white;
+      }
+      .soft-badge {
+        padding: 0.25rem 0.6rem;
+        border-radius: 0.75rem;
+        background: #eef2ff;
+        color: #4338ca;
+        font-size: 0.75rem;
+      }
+      th.sortable-col {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+      }
+      th.sortable-col:hover {
+        background: #f1f5f9;
+      }
+      /* Brand specific */
+      .brand-mark {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 700;
+        font-size: 1rem;
+        background: linear-gradient(
+          90deg,
+          var(--brand-primary),
+          var(--brand-accent)
+        );
+        -webkit-background-clip: text;
+        color: transparent;
+      }
+      .brand-logo-img {
+        height: 34px;
+        width: auto;
+        display: block;
+      }
+      .sidebar-brand-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+      }
+    </style>
+  </head>
+  <body
+    class="h-screen flex overflow-hidden bg-slate-50"
+    x-data="{ sidebarOpen:false }"
+    x-cloak
+  >
+    <!-- Off-canvas for mobile -->
+    <div
+      x-show="sidebarOpen"
+      class="fixed inset-0 flex z-40 md:hidden"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        x-show="sidebarOpen"
+        x-transition.opacity
+        class="fixed inset-0 bg-slate-900/50"
+        @click="sidebarOpen=false"
+      ></div>
+      <div
+        x-show="sidebarOpen"
+        x-transition
+        class="relative flex-1 flex flex-col max-w-xs w-full bg-white border-r shadow-xl"
+      >
+        <div class="flex items-center justify-between px-4 py-4 border-b">
+          <a href="{{ url_for('index') }}" class="sidebar-brand-wrapper">
+            <img
+              src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+              alt="Excel Tutors"
+              class="brand-logo-img"
+            />
+          </a>
+          <button
+            @click="sidebarOpen=false"
+            class="text-slate-500 hover:text-slate-700"
+          >
+            ✕
+          </button>
+        </div>
+        <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1 text-sm">
+          {% include 'components/_nav_links.html' %}
+        </nav>
+        <div class="px-4 py-4 text-[10px] text-slate-400 space-y-1">
+          <div>© {{ 2025 }} Excel Tutors</div>
+          <div>
+            <button
+              type="button"
+              id="versionLinkMobile"
+              class="underline text-indigo-600 hover:text-indigo-800"
+            >
+              v{{ APP_VERSION }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Static sidebar for desktop -->
+    <div class="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0">
+      <div class="flex flex-col flex-grow bg-white border-r">
+        <div class="px-5 py-4 border-b">
+          <a href="{{ url_for('index') }}" class="sidebar-brand-wrapper">
+            <img
+              src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+              alt="Excel Tutors"
+              class="brand-logo-img"
+            />
+          </a>
+        </div>
+        <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1 text-sm">
+          {% include 'components/_nav_links.html' %}
+        </nav>
+        <div class="px-5 py-4 text-[10px] text-slate-400 space-y-1">
+          <div>© {{ 2025 }} Excel Tutors</div>
+          <div>
+            <button
+              type="button"
+              id="versionLink"
+              class="underline text-indigo-600 hover:text-indigo-800"
+            >
+              v{{ APP_VERSION }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main content area -->
+    <div class="flex flex-col flex-1 md:pl-60">
+      <!-- Top bar -->
+      <header class="sticky top-0 z-30 backdrop-blur bg-white/80 border-b">
+        <div class="px-4 h-14 flex items-center gap-4">
+          <div class="flex items-center gap-3">
+            <button
+              class="md:hidden soft-btn bg-slate-100"
+              @click="sidebarOpen=true"
+            >
+              Menu
+            </button>
+            <h1 class="text-base font-semibold text-slate-700">
+              {% block page_title %}{% endblock %}
+            </h1>
+            {% block page_subtitle %}{% endblock %}
+          </div>
+          <div class="flex items-center gap-4 ml-auto">
+            {% block page_actions %}{% endblock %} {% if
+            current_user.is_authenticated %}
+            <div class="flex items-center gap-2">
+              {% if current_user.picture %}
+              <img
+                src="{{ url_for('static', filename='uploads/' ~ current_user.picture) }}"
+                alt="avatar"
+                class="h-8 w-8 rounded-full object-cover border"
+              />
+              {% else %}
+              <div
+                class="h-8 w-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-semibold"
+              >
+                {{ (current_user.name or '?')[:2].upper() }}
+              </div>
+              {% endif %}
+              <span class="soft-badge hidden sm:inline"
+                >{{ current_user.name }}</span
+              >
+            </div>
+            <form action="{{ url_for('logout') }}" method="post" class="inline">
+              <button class="soft-btn bg-slate-100 hover:bg-slate-200 text-xs">
+                Logout
+              </button>
+            </form>
+            {% else %}
+            <a
+              href="{{ url_for('login') }}"
+              class="text-sm text-slate-600 hover:text-slate-900"
+              >Login</a
+            >
+            <a
+              href="{{ url_for('register') }}"
+              class="text-sm text-slate-600 hover:text-slate-900"
+              >Register</a
+            >
+            {% endif %}
+          </div>
+        </div>
+      </header>
+
+      <main class="flex-1 overflow-y-auto px-4 py-6">
+        {% with messages = get_flashed_messages(with_categories=true) %} {% if
+        messages %}
+        <div class="space-y-2 mb-4">
+          {% for category, message in messages %}
+          <div
+            class="soft-card p-3 border-l-4 {% if category=='success' %}border-green-500{% elif category=='warning' %}border-yellow-500{% elif category=='danger' %}border-red-500{% else %}border-indigo-500{% endif %}"
+          >
+            <div class="text-sm">{{ message|safe }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %} {% endwith %} {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <!-- Alpine.js for minimal reactivity (optional, only if not already included) -->
+    <script
+      src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
+      defer
+    ></script>
+  </body>
+  <!-- Version Modal -->
+  <div
+    id="versionModal"
+    class="fixed inset-0 hidden items-center justify-center z-50"
+  >
+    <div class="absolute inset-0 bg-slate-900/60" data-v-close></div>
+    <div
+      class="relative bg-white rounded-xl shadow-xl w-full max-w-2xl mx-auto max-h-[80vh] flex flex-col"
+    >
+      <div class="px-5 py-3 border-b flex items-center justify-between">
+        <h3 class="font-semibold text-sm">Version History</h3>
+        <button class="text-slate-500 hover:text-slate-700" data-v-close>
+          ✕
+        </button>
+      </div>
+      <div class="p-4 overflow-y-auto text-xs leading-relaxed" id="versionBody">
+        Loading...
+      </div>
+      <div class="px-5 py-3 border-t flex justify-end">
+        <button
+          class="px-3 py-1 rounded bg-slate-100 hover:bg-slate-200 text-xs"
+          data-v-close
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function() {
+      function $(sel){ return document.querySelector(sel); }
+      const modal = $('#versionModal');
+      const body = $('#versionBody');
+      function openModal(){
+        if(!modal) return;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        body.textContent = 'Loading...';
+        fetch('{{ url_for('version_history') }}')
+          .then(r=>r.json())
+          .then(data=>{
+            body.innerHTML = renderMarkdown(data.changelog || 'No history');
+          })
+          .catch(e=>{ body.textContent = 'Failed to load version history: '+ e; });
+      }
+      function closeModal(){
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+      document.addEventListener('click', (e)=>{
+        if(e.target.matches('#versionLink') || e.target.matches('#versionLinkMobile')){
+          openModal();
+        }
+        if(e.target.hasAttribute('data-v-close')){
+          closeModal();
+        }
+      });
+      // Ultra-light markdown to HTML (headers + lists only)
+      function renderMarkdown(md){
+        const esc = (s)=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+        const lines = md.split(/\n/);
+        let html='';
+        for(const line of lines){
+          if(/^##\s+/.test(line)){
+            html += '<h4 class="mt-4 font-semibold text-slate-700">'+esc(line.replace(/^##\s+/,'').trim())+'</h4>';
+          } else if(/^#\s+/.test(line)){
+            html += '<h3 class="mt-6 font-bold text-slate-800">'+esc(line.replace(/^#\s+/,'').trim())+'</h3>';
+          } else if(/^-\s+/.test(line)){
+            // accumulate list items
+            if(!html.endsWith('</ul>')) html += '<ul class="list-disc pl-5 mt-1 space-y-1">';
+            html += '<li>'+esc(line.replace(/^-\s+/,'').trim())+'</li>';
+          } else if(line.trim()===''){
+            if(html.endsWith('</li>')) html += '</ul>';
+          } else {
+            if(html.endsWith('</li>')) html += '</ul>';
+            html += '<p class="mt-2">'+esc(line)+'</p>';
+          }
+        }
+        if(html.endsWith('</li>')) html += '</ul>';
+        return html;
+      }
+    })();
+  </script>
+</html>
