@@ -14,7 +14,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import or_, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from email_utils import send_email
+from email_utils import build_task_notification_email, send_email
 from forms import (AvailabilityForm, CycleForm, IssueForm, LoginForm,
                    MeetingForm, ObservationForm, RegisterForm, StaffForm,
                    TodoForm, UserProfileForm)
@@ -1338,6 +1338,16 @@ def todo_new():
         )
         db.session.add(t)
         db.session.commit()
+        # If creator is superadmin, send notification email to assignee (avoid emailing yourself redundantly only if different users)
+        try:
+            if current_user.is_superadmin and t.assigned_to and t.assigned_to.email:
+                html = build_task_notification_email(t, current_user, t.assigned_to)
+                # Subject line emphasises status & due date
+                subj_due = f" (Due {t.due_date.strftime('%Y-%m-%d')})" if t.due_date else ""
+                send_email(t.assigned_to.email, f"New Task Assigned: {t.description[:60]}{subj_due}", html)
+        except Exception as e:
+            # Non-fatal: log to console; production could integrate proper logging
+            print(f"[WARN] Task email failed: {e}")
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({'success': True, 'id': t.id})
         flash('Task created','success')
