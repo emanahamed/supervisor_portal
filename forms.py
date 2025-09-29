@@ -1,7 +1,7 @@
 from flask_wtf import FlaskForm
 from wtforms import (BooleanField, DateField, FloatField, HiddenField,
                      PasswordField, SelectField, SelectMultipleField,
-                     StringField, SubmitField)
+                     StringField, SubmitField, TextAreaField)
 from wtforms.validators import (DataRequired, Email, Length, NumberRange,
                                 Optional)
 from wtforms.widgets import CheckboxInput, ListWidget
@@ -50,3 +50,12 @@ class UserProfileForm(FlaskForm):
     is_superadmin = BooleanField("Superadmin")
     password = PasswordField("New Password", validators=[Optional(), Length(min=6)])
     submit = SubmitField("Update Profile")
+
+class AvailabilityForm(FlaskForm):
+    name = StringField("Name", validators=[DataRequired(), Length(max=200)])
+    department = StringField("Department", validators=[Optional(), Length(max=120)])
+    branches = SelectMultipleField("Branch(es)", choices=BRANCH_CHOICES, validators=[Optional()], default=[])
+    days = TextAreaField("Days / Time Slots", validators=[Optional(), Length(max=1000)])
+    subjects = TextAreaField("Subjects", validators=[Optional(), Length(max=1000)])
+    notes = TextAreaField("Notes", validators=[Optional(), Length(max=2000)])
+    submit = SubmitField("Save")

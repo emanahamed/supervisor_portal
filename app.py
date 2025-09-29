@@ -15,9 +15,9 @@ from sqlalchemy import or_, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from email_utils import send_email
-from forms import (CycleForm, LoginForm, ObservationForm, RegisterForm,
-                   StaffForm, UserProfileForm)
-from models import Observation, ObservationCycle, Staff, User, db
+from forms import (AvailabilityForm, CycleForm, LoginForm, ObservationForm,
+                   RegisterForm, StaffForm, UserProfileForm)
+from models import Availability, Observation, ObservationCycle, Staff, User, db
 from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
 from version_info import VERSION, get_changelog
 
@@ -112,6 +112,12 @@ def create_tables_and_superadmin():
             os.makedirs(upload_dir, exist_ok=True)
         except Exception:
             pass
+    # Ensure availability table exists (lightweight auto-migrate approach)
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("CREATE TABLE IF NOT EXISTS availability (id INTEGER PRIMARY KEY, name VARCHAR(200) NOT NULL, department VARCHAR(120), branches VARCHAR(255), days TEXT, subjects TEXT, notes TEXT, created_at DATETIME, updated_at DATETIME)"))
+    except Exception:
+        pass
 
 @app.route("/")
 def index():
@@ -728,6 +734,245 @@ def cycle_delete(cid):
     db.session.commit()
     flash("Cycle deleted", "success")
     return redirect(url_for('cycles_index'))
+
+# ---------------- Availability CRUD & Import ----------------
+@app.route('/availability')
+@login_required
+def availability_index():
+    # Real-time fetch & upsert from remote source each page load
+    sync_count = 0
+    sync_error = None
+    try:
+        import requests
+        url = 'https://availability.pythonanywhere.com/data'
+        r = requests.get(url, timeout=12)
+        r.raise_for_status()
+        payload = r.json()
+        for row in payload.get('data', []):
+            name = (row.get('Name') or '').strip()
+            if not name:
+                continue
+            dept = (row.get('Department') or '').strip() or None
+            branches_raw = (row.get('Which Branch Take You Take Lesson In?') or '').replace('\n',' ').strip()
+            branches_parts = [p.strip() for p in branches_raw.split(',') if p.strip()]
+            normal_branches = []
+            for bp in branches_parts:
+                for canonical in ['Whitechapel','East Ham','Stratford','Docklands']:
+                    if canonical.lower() in bp.lower() and canonical not in normal_branches:
+                        normal_branches.append(canonical)
+            branches = ",".join(normal_branches) if normal_branches else None
+            days = (row.get('Which Days Are You Available') or '').replace('\n',' ').strip() or None
+            subjects = (row.get('Which Subjects Can You Teach') or '').replace('\n',' ').strip() or None
+            notes = (row.get('NotesMessages?') or '').replace('\n',' ').strip() or None
+            existing = Availability.query.filter_by(name=name, department=dept).first()
+            if existing:
+                updated = False
+                if existing.branches != branches:
+                    existing.branches = branches; updated = True
+                if existing.days != days:
+                    existing.days = days; updated = True
+                if existing.subjects != subjects:
+                    existing.subjects = subjects; updated = True
+                if existing.notes != notes:
+                    existing.notes = notes; updated = True
+                if updated:
+                    sync_count += 1
+            else:
+                a = Availability(name=name, department=dept, branches=branches, days=days, subjects=subjects, notes=notes)
+                db.session.add(a)
+                sync_count += 1
+        db.session.commit()
+    except Exception as e:
+        sync_error = str(e)
+        # Do not abort—show whatever is in DB
+    # Filters: department(s), branch(es), subject(s), day(s), plus free-text search
+    q = Availability.query
+    selected_departments = [d.strip() for d in request.args.getlist('department') if d.strip()]
+    if selected_departments:
+        q = q.filter(Availability.department.in_(selected_departments))
+    selected_branches = [b.strip() for b in request.args.getlist('branch') if b.strip()]
+    if selected_branches:
+        q = q.filter(or_(*[Availability.branches.ilike(f"%{b}%") for b in selected_branches]))
+    selected_subjects = [s.strip() for s in request.args.getlist('subject') if s.strip()]
+    if selected_subjects:
+        q = q.filter(or_(*[Availability.subjects.ilike(f"%{s}%") for s in selected_subjects]))
+    selected_days = [d.strip() for d in request.args.getlist('day') if d.strip()]
+    if selected_days:
+        # Day match: simple contains of weekday token (e.g., 'Monday')
+        q = q.filter(or_(*[Availability.days.ilike(f"%{d}%") for d in selected_days]))
+    search = request.args.get('search','').strip()
+    if search:
+        like = f"%{search}%"
+        q = q.filter(or_(
+            Availability.name.ilike(like),
+            Availability.subjects.ilike(like),
+            Availability.days.ilike(like),
+            Availability.notes.ilike(like)
+        ))
+    sort = request.args.get('sort','name')
+    direction = request.args.get('dir','asc')
+    sortable = {
+        'name': Availability.name,
+        'department': Availability.department,
+        'created_at': Availability.created_at,
+        'updated_at': Availability.updated_at,
+    }
+    col = sortable.get(sort, Availability.name)
+    if direction == 'desc':
+        col = col.desc()
+    records = q.order_by(col).all()
+    # Distinct departments
+    depts = [r[0] for r in db.session.query(Availability.department).distinct().filter(Availability.department.isnot(None)).order_by(Availability.department.asc()).all()]
+    # Distinct branches (ensure canonical list always present, e.g. Stratford)
+    branch_values = []
+    for r in db.session.query(Availability.branches).all():
+        if not r[0]:
+            continue
+        for b in r[0].split(','):
+            b2 = b.strip()
+            if b2 and b2 not in branch_values:
+                branch_values.append(b2)
+    # Append any canonical branches not already in data
+    canonical_branches = ['Whitechapel','East Ham','Stratford','Docklands']
+    for cb in canonical_branches:
+        if cb not in branch_values:
+            branch_values.append(cb)
+    branch_values.sort()
+    # Distinct subjects (split by comma)
+    subject_values = []
+    for r in db.session.query(Availability.subjects).all():
+        if not r[0]:
+            continue
+        for s in r[0].split(','):
+            s2 = s.strip()
+            if s2 and s2 not in subject_values:
+                subject_values.append(s2)
+    subject_values.sort()
+    # Weekday tokens enumeration (derive from data)
+    weekday_tokens = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+    day_values = []
+    for r in db.session.query(Availability.days).all():
+        if not r[0]:
+            continue
+        text_days = r[0]
+        for wd in weekday_tokens:
+            if wd in text_days and wd not in day_values:
+                day_values.append(wd)
+    # Preserve natural week order
+    day_values = [d for d in weekday_tokens if d in day_values]
+    return render_template('availability/index.html',
+                           records=records,
+                           depts=depts,
+                           branches=branch_values,
+                           subjects=subject_values,
+                           days=day_values,
+                           selected_departments=selected_departments,
+                           selected_branches=selected_branches,
+                           selected_subjects=selected_subjects,
+                           selected_days=selected_days,
+                           sync_count=sync_count,
+                           sync_error=sync_error,
+                           synced_at=datetime.utcnow())
+
+@app.route('/availability/new', methods=['GET','POST'])
+@login_required
+def availability_new():
+    form = AvailabilityForm()
+    if form.validate_on_submit():
+        a = Availability(
+            name=form.name.data.strip(),
+            department=form.department.data.strip() or None,
+            branches=",".join(form.branches.data) if form.branches.data else None,
+            days=form.days.data.strip() if form.days.data else None,
+            subjects=form.subjects.data.strip() if form.subjects.data else None,
+            notes=form.notes.data.strip() if form.notes.data else None,
+        )
+        db.session.add(a)
+        db.session.commit()
+        flash('Availability record created','success')
+        return redirect(url_for('availability_index'))
+    return render_template('availability/form.html', form=form, record=None)
+
+@app.route('/availability/<int:aid>/edit', methods=['GET','POST'])
+@login_required
+def availability_edit(aid):
+    a = Availability.query.get_or_404(aid)
+    form = AvailabilityForm()
+    if request.method == 'GET':
+        form.name.data = a.name
+        form.department.data = a.department
+        form.branches.data = [b for b in (a.branches or '').split(',') if b]
+        form.days.data = a.days
+        form.subjects.data = a.subjects
+        form.notes.data = a.notes
+    if form.validate_on_submit():
+        a.name = form.name.data.strip()
+        a.department = form.department.data.strip() or None
+        a.branches = ",".join(form.branches.data) if form.branches.data else None
+        a.days = form.days.data.strip() if form.days.data else None
+        a.subjects = form.subjects.data.strip() if form.subjects.data else None
+        a.notes = form.notes.data.strip() if form.notes.data else None
+        db.session.commit()
+        flash('Availability updated','success')
+        return redirect(url_for('availability_index'))
+    return render_template('availability/form.html', form=form, record=a)
+
+@app.route('/availability/<int:aid>/delete')
+@login_required
+def availability_delete(aid):
+    a = Availability.query.get_or_404(aid)
+    db.session.delete(a)
+    db.session.commit()
+    flash('Availability deleted','success')
+    return redirect(url_for('availability_index'))
+
+@app.route('/availability/import_remote', methods=['POST'])
+@login_required
+def availability_import_remote():
+    import json
+
+    import requests
+    url = 'https://availability.pythonanywhere.com/data'
+    try:
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        payload = r.json()
+    except Exception as e:
+        flash(f'Remote fetch failed: {e}', 'danger')
+        return redirect(url_for('availability_index'))
+    count = 0
+    for row in payload.get('data', []):
+        name = (row.get('Name') or '').strip()
+        if not name:
+            continue
+        dept = (row.get('Department') or '').strip() or None
+        branches_raw = (row.get('Which Branch Take You Take Lesson In?') or '').replace('\n',' ').strip()
+        # Normalise branch names to our BRANCH_CHOICES keys where possible
+        branches_parts = [p.strip() for p in branches_raw.split(',') if p.strip()]
+        normal_branches = []
+        for bp in branches_parts:
+            # Extract canonical branch word (Whitechapel, East Ham, Stratford, Docklands)
+            for canonical in ['Whitechapel','East Ham','Stratford','Docklands']:
+                if canonical.lower() in bp.lower() and canonical not in normal_branches:
+                    normal_branches.append(canonical)
+        branches = ",".join(normal_branches) if normal_branches else None
+        days = (row.get('Which Days Are You Available') or '').replace('\n',' ').strip() or None
+        subjects = (row.get('Which Subjects Can You Teach') or '').replace('\n',' ').strip() or None
+        notes = (row.get('NotesMessages?') or '').replace('\n',' ').strip() or None
+        # Upsert semantics: if identical name+department exists, update; else create
+        existing = Availability.query.filter_by(name=name, department=dept).first()
+        if existing:
+            existing.branches = branches
+            existing.days = days
+            existing.subjects = subjects
+            existing.notes = notes
+        else:
+            a = Availability(name=name, department=dept, branches=branches, days=days, subjects=subjects, notes=notes)
+            db.session.add(a)
+        count += 1
+    db.session.commit()
+    flash(f'Imported/updated {count} availability records from remote source.', 'success')
+    return redirect(url_for('availability_index'))
 
 # ---------------- Observations CRUD + filters ----------------
 @app.route("/observations")

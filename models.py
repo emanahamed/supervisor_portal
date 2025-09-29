@@ -47,3 +47,17 @@ class Observation(db.Model):
 
     staff = db.relationship("Staff", lazy=True)
     observer = db.relationship("User", lazy=True)
+
+class Availability(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False, index=True)
+    department = db.Column(db.String(120), index=True)
+    branches = db.Column(db.String(255), index=True)  # CSV list of branches
+    days = db.Column(db.Text)  # Raw textual representation of availability days/time slots
+    subjects = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def branch_list(self):
+        return [b.strip() for b in (self.branches or '').split(',') if b.strip()]

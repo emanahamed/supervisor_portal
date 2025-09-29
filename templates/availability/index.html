@@ -1,0 +1,450 @@
+{% extends 'base.html' %} {% block title %}Availability{% endblock %} {% block
+page_title %}Availability{% endblock %} {% block content %}
+
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">Tutor Availability</h2>
+    <span class="text-xs text-slate-400">{{ records|length }} total</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <a
+      class="soft-btn soft-btn-primary"
+      href="{{ url_for('availability_new') }}"
+      >New</a
+    >
+  </div>
+</div>
+
+{% if sync_error %}
+<div
+  class="soft-card p-3 mb-4 border-l-4 border-rose-500 bg-rose-50 text-rose-700 text-sm"
+>
+  Remote sync failed: {{ sync_error }} — showing last cached data.
+</div>
+{% else %}
+<div
+  class="soft-card p-3 mb-4 border-l-4 border-emerald-500 bg-emerald-50 text-emerald-700 text-xs flex items-center justify-between"
+>
+  <span
+    >Synced {{ sync_count }} update{{ '' if sync_count==1 else 's' }} just now
+    ({{ synced_at.strftime('%H:%M:%S') }} UTC)</span
+  >
+  <span class="text-slate-400">Refresh to fetch latest.</span>
+</div>
+{% endif %}
+
+<div class="soft-card p-4 mb-6">
+  <form id="availabilityFilters" class="grid gap-4 lg:grid-cols-6">
+    <div class="lg:col-span-2 flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Search</label>
+      <input
+        id="availSearch"
+        value="{{ request.args.get('search','') }}"
+        class="soft-input"
+        placeholder="Search availability..."
+      />
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Departments</label>
+      <button
+        type="button"
+        id="deptBtnA"
+        class="soft-input flex items-center justify-between cursor-pointer"
+      >
+        <span id="deptLabelA" class="truncate text-left"
+          >Select departments</span
+        >
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="deptMenuA"
+        class="hidden absolute z-30 top-full mt-1 w-56 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+      >
+        {% for d in depts %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ d }}"
+            class="deptChkA w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            d
+            in
+            selected_departments
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ d }}</span>
+        </label>
+        {% endfor %} {% if not depts %}
+        <p class="text-xs text-slate-400 px-2 py-1">No departments</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Branches</label>
+      <button
+        type="button"
+        id="branchBtnA"
+        class="soft-input flex items-center justify-between cursor-pointer"
+      >
+        <span id="branchLabelA" class="truncate text-left"
+          >Select branches</span
+        >
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="branchMenuA"
+        class="hidden absolute z-30 top-full mt-1 w-56 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+      >
+        {% for b in branches %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ b }}"
+            class="branchChkA w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            b
+            in
+            selected_branches
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ b }}</span>
+        </label>
+        {% endfor %} {% if not branches %}
+        <p class="text-xs text-slate-400 px-2 py-1">No branches</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Subjects</label>
+      <button
+        type="button"
+        id="subjectBtnA"
+        class="soft-input flex items-center justify-between cursor-pointer"
+      >
+        <span id="subjectLabelA" class="truncate text-left"
+          >Select subjects</span
+        >
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="subjectMenuA"
+        class="hidden absolute z-30 top-full mt-1 w-72 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 grid grid-cols-1 md:grid-cols-2 gap-1"
+      >
+        {% for s in subjects %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ s }}"
+            class="subjectChkA w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            s
+            in
+            selected_subjects
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ s }}</span>
+        </label>
+        {% endfor %} {% if not subjects %}
+        <p class="text-xs text-slate-400 px-2 py-1 col-span-2">No subjects</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Days</label>
+      <button
+        type="button"
+        id="dayBtnA"
+        class="soft-input flex items-center justify-between cursor-pointer"
+      >
+        <span id="dayLabelA" class="truncate text-left">Select days</span>
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="dayMenuA"
+        class="hidden absolute z-30 top-full mt-1 w-48 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+      >
+        {% for d in days %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ d }}"
+            class="dayChkA w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            d
+            in
+            selected_days
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ d }}</span>
+        </label>
+        {% endfor %} {% if not days %}
+        <p class="text-xs text-slate-400 px-2 py-1">No days</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-end">
+      <button
+        id="clearAvail"
+        class="soft-btn bg-slate-100 w-full"
+        type="button"
+      >
+        Clear Filters
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      id="availabilityTable"
+      class="min-w-full text-sm"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Name</th>
+          <th class="py-2 px-3 text-left">Dept</th>
+          <th class="py-2 px-3 text-left">Branches</th>
+          <th class="py-2 px-3 text-left">Days</th>
+          <th class="py-2 px-3 text-left">Subjects</th>
+          <th class="py-2 px-3 text-left">Notes</th>
+          <th class="py-2 px-3 w-24 text-left">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in records %}
+        <tr class="hover:bg-slate-50 align-top">
+          <td class="py-2 px-3 whitespace-nowrap font-medium text-slate-800">
+            {{ r.name }}
+          </td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ r.department or '-' }}</td>
+          <td class="py-2 px-3">
+            {% for b in r.branch_list() %}
+            <span class="soft-badge mb-1 inline-block">{{ b }}</span>
+            {% else %}
+            <span class="text-xs text-slate-400">—</span>
+            {% endfor %}
+          </td>
+          <td class="py-2 px-3 text-xs max-w-xs">{{ r.days or '-' }}</td>
+          <td class="py-2 px-3 text-xs max-w-xs">{{ r.subjects or '-' }}</td>
+          <td class="py-2 px-3 text-xs max-w-xs">{{ r.notes or '-' }}</td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            <a
+              class="text-indigo-600"
+              href="{{ url_for('availability_edit', aid=r.id) }}"
+              >Edit</a
+            >
+            <span class="text-slate-400">·</span>
+            <a
+              class="text-rose-600"
+              href="{{ url_for('availability_delete', aid=r.id) }}"
+              onclick="return confirm('Delete record?')"
+              >Del</a
+            >
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  (function () {
+    // Dropdown + real-time filtering
+    const els = {
+      deptBtn: document.getElementById("deptBtnA"),
+      deptMenu: document.getElementById("deptMenuA"),
+      deptLabel: document.getElementById("deptLabelA"),
+      branchBtn: document.getElementById("branchBtnA"),
+      branchMenu: document.getElementById("branchMenuA"),
+      branchLabel: document.getElementById("branchLabelA"),
+      subjectBtn: document.getElementById("subjectBtnA"),
+      subjectMenu: document.getElementById("subjectMenuA"),
+      subjectLabel: document.getElementById("subjectLabelA"),
+      dayBtn: document.getElementById("dayBtnA"),
+      dayMenu: document.getElementById("dayMenuA"),
+      dayLabel: document.getElementById("dayLabelA"),
+      clearBtn: document.getElementById("clearAvail"),
+      search: document.getElementById("availSearch"),
+    };
+    function toggle(m) {
+      m.classList.toggle("hidden");
+    }
+    document.addEventListener("click", (e) => {
+      [els.deptMenu, els.branchMenu, els.subjectMenu, els.dayMenu].forEach(
+        (m) => {
+          if (
+            m &&
+            !m.contains(e.target) &&
+            !e.target.closest("#" + m.id.replace("Menu", "Btn"))
+          )
+            m.classList.add("hidden");
+        }
+      );
+    });
+    els.deptBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.deptMenu);
+      [els.branchMenu, els.subjectMenu, els.dayMenu].forEach((m) =>
+        m.classList.add("hidden")
+      );
+    });
+    els.branchBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.branchMenu);
+      [els.deptMenu, els.subjectMenu, els.dayMenu].forEach((m) =>
+        m.classList.add("hidden")
+      );
+    });
+    els.subjectBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.subjectMenu);
+      [els.deptMenu, els.branchMenu, els.dayMenu].forEach((m) =>
+        m.classList.add("hidden")
+      );
+    });
+    els.dayBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.dayMenu);
+      [els.deptMenu, els.branchMenu, els.subjectMenu].forEach((m) =>
+        m.classList.add("hidden")
+      );
+    });
+    function summarize(menu, labelEl, placeholder) {
+      const checked = [
+        ...menu.querySelectorAll("input[type=checkbox]:checked"),
+      ].map((i) => i.value);
+      if (!checked.length) {
+        labelEl.textContent = placeholder;
+        return;
+      }
+      labelEl.textContent =
+        checked.length <= 2
+          ? checked.join(", ")
+          : checked.slice(0, 2).join(", ") + " +" + (checked.length - 2);
+    }
+    function updateSummaries() {
+      summarize(els.deptMenu, els.deptLabel, "Select departments");
+      summarize(els.branchMenu, els.branchLabel, "Select branches");
+      summarize(els.subjectMenu, els.subjectLabel, "Select subjects");
+      summarize(els.dayMenu, els.dayLabel, "Select days");
+    }
+    [els.deptMenu, els.branchMenu, els.subjectMenu, els.dayMenu].forEach((m) =>
+      m.addEventListener("change", () => {
+        updateSummaries();
+        scheduleNavigate();
+      })
+    );
+    let navTimer = null;
+    function scheduleNavigate() {
+      if (navTimer) clearTimeout(navTimer);
+      navTimer = setTimeout(applyFilters, 300);
+    }
+    function applyFilters() {
+      const p = new URLSearchParams();
+      const sv = els.search.value.trim();
+      if (sv) p.set("search", sv);
+      [...els.deptMenu.querySelectorAll("input:checked")].forEach((c) =>
+        p.append("department", c.value)
+      );
+      [...els.branchMenu.querySelectorAll("input:checked")].forEach((c) =>
+        p.append("branch", c.value)
+      );
+      [...els.subjectMenu.querySelectorAll("input:checked")].forEach((c) =>
+        p.append("subject", c.value)
+      );
+      [...els.dayMenu.querySelectorAll("input:checked")].forEach((c) =>
+        p.append("day", c.value)
+      );
+      const newUrl = "?" + p.toString();
+      if (window.location.search !== newUrl) window.location = newUrl;
+    }
+    els.clearBtn.addEventListener("click", () => {
+      window.location = window.location.pathname;
+    });
+    els.search.addEventListener("input", () => scheduleNavigate());
+    els.search.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        applyFilters();
+      }
+    });
+    updateSummaries();
+  })();
+</script>
+
+{% endblock %}
