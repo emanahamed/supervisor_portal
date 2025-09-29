@@ -7,6 +7,9 @@ from wtforms.validators import (DataRequired, Email, Length, NumberRange,
 from wtforms.widgets import CheckboxInput, ListWidget
 
 BRANCH_CHOICES = [("Whitechapel","Whitechapel"),("East Ham","East Ham"),("Stratford","Stratford"),("Docklands","Docklands")]
+ISSUE_STATUS_CHOICES = [("Pending","Pending"),("In Progress","In Progress"),("Resolved","Resolved")]
+ISSUE_CRITICALITY_CHOICES = [("Minor","Minor"),("Significant","Significant"),("Medium","Medium"),("Critical","Critical")]
+ISSUE_URGENCY_CHOICES = [("Low","Low"),("Medium","Medium"),("High","High")]
 
 class LoginForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email()])
@@ -58,4 +61,15 @@ class AvailabilityForm(FlaskForm):
     days = TextAreaField("Days / Time Slots", validators=[Optional(), Length(max=1000)])
     subjects = TextAreaField("Subjects", validators=[Optional(), Length(max=1000)])
     notes = TextAreaField("Notes", validators=[Optional(), Length(max=2000)])
+    submit = SubmitField("Save")
+
+
+class IssueForm(FlaskForm):
+    title = StringField("Title", validators=[DataRequired(), Length(max=200)])
+    details = TextAreaField("Details", validators=[Optional(), Length(max=5000)])
+    status = SelectField("Status", choices=ISSUE_STATUS_CHOICES, validators=[DataRequired()])
+    criticality = SelectField("Criticality", choices=ISSUE_CRITICALITY_CHOICES, validators=[DataRequired()])
+    urgency = SelectField("Urgency", choices=ISSUE_URGENCY_CHOICES, validators=[DataRequired()])
+    branch = SelectField("Branch", choices=[(b,b) for b,_ in BRANCH_CHOICES], validators=[Optional()])
+    action_taken = TextAreaField("Action Taken", validators=[Optional(), Length(max=5000)])
     submit = SubmitField("Save")

@@ -1,6 +1,19 @@
 # Version History
 
+## 0.4.0 - 2025-09-29
+
+- Added Issue Tracking module: CRUD, filtering (status, criticality, urgency, branch, text search) and dashboard metrics (total, open, resolved, critical open, high urgency open).
+- Real-time (debounced) auto-apply multi-select filters mirroring Availability UX.
+- Soft UI tables integrated with existing lightweight sorter/paginator.
+- Navigation updated with Issues link; version bumped to 0.4.0.
+
 ## 0.3.0 - 2025-09-29
+
+## 0.4.1 - 2025-09-29
+
+- Added per-issue change log (IssueChange audit trail) recording field-level edits with old/new values and timestamps.
+- Added optional "Action Taken" narrative field to Issues (not required on create).
+- Issue list now surfaces recent (last 5) changes expandable inline for quick context.
 
 - Added Tutor Availability module with real-time remote sync on page load (upsert semantics).
 - Multi-select filtering: Departments, Branches, Subjects, Days + free-text search.

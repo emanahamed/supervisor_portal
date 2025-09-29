@@ -15,9 +15,10 @@ from sqlalchemy import or_, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from email_utils import send_email
-from forms import (AvailabilityForm, CycleForm, LoginForm, ObservationForm,
-                   RegisterForm, StaffForm, UserProfileForm)
-from models import Availability, Observation, ObservationCycle, Staff, User, db
+from forms import (AvailabilityForm, CycleForm, IssueForm, LoginForm,
+                   ObservationForm, RegisterForm, StaffForm, UserProfileForm)
+from models import (Availability, Issue, IssueChange, Observation,
+                    ObservationCycle, Staff, User, db)
 from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
 from version_info import VERSION, get_changelog
 
@@ -116,6 +117,16 @@ def create_tables_and_superadmin():
     try:
         with db.engine.connect() as conn:
             conn.execute(text("CREATE TABLE IF NOT EXISTS availability (id INTEGER PRIMARY KEY, name VARCHAR(200) NOT NULL, department VARCHAR(120), branches VARCHAR(255), days TEXT, subjects TEXT, notes TEXT, created_at DATETIME, updated_at DATETIME)"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS issue (id INTEGER PRIMARY KEY, title VARCHAR(200) NOT NULL, details TEXT, status VARCHAR(50), criticality VARCHAR(50), urgency VARCHAR(50), branch VARCHAR(120), created_by_id INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME, action_taken TEXT)"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS issue_change (id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL, field VARCHAR(120) NOT NULL, old_value TEXT, new_value TEXT, changed_by_id INTEGER NOT NULL, changed_at DATETIME, FOREIGN KEY(issue_id) REFERENCES issue(id), FOREIGN KEY(changed_by_id) REFERENCES user(id))"))
+            # Backfill action_taken column if older issue table missing it
+            try:
+                issue_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(issue)"))}
+                if 'action_taken' not in issue_cols:
+                    conn.execute(text("ALTER TABLE issue ADD COLUMN action_taken TEXT"))
+            except Exception:
+                pass
+            # Ensure indexes for IssueChange performance (SQLite creates automatically for PK, but add composite if needed)
     except Exception:
         pass
 
@@ -973,6 +984,121 @@ def availability_import_remote():
     db.session.commit()
     flash(f'Imported/updated {count} availability records from remote source.', 'success')
     return redirect(url_for('availability_index'))
+
+# ---------------- Issues (tracker) ----------------
+@app.route('/issues')
+@login_required
+def issues_index():
+    # Base query
+    q = Issue.query
+    # Filters
+    status_filters = [v for v in request.args.getlist('status') if v]
+    if status_filters:
+        q = q.filter(Issue.status.in_(status_filters))
+    crit_filters = [v for v in request.args.getlist('criticality') if v]
+    if crit_filters:
+        q = q.filter(Issue.criticality.in_(crit_filters))
+    urg_filters = [v for v in request.args.getlist('urgency') if v]
+    if urg_filters:
+        q = q.filter(Issue.urgency.in_(urg_filters))
+    branch_filters = [v for v in request.args.getlist('branch') if v]
+    if branch_filters:
+        q = q.filter(Issue.branch.in_(branch_filters))
+    search = (request.args.get('search') or '').strip()
+    if search:
+        like = f"%{search.lower()}%"
+        q = q.filter(or_(db.func.lower(Issue.title).like(like), db.func.lower(Issue.details).like(like)))
+
+    issues = q.order_by(Issue.created_at.desc()).all()
+
+    # Analytics / metrics
+    total = len(issues)
+    open_issues = [i for i in issues if (i.status or '').lower() != 'resolved']
+    resolved = total - len(open_issues)
+    critical_open = sum(1 for i in open_issues if (i.criticality or '').lower() == 'critical')
+    high_urg_open = sum(1 for i in open_issues if (i.urgency or '').lower() == 'high')
+
+    # Choice lists (distinct values in DB for dynamic filtering)
+    statuses = [r[0] for r in db.session.query(Issue.status).distinct().filter(Issue.status.isnot(None)).order_by(Issue.status.asc()).all()]
+    criticalities = [r[0] for r in db.session.query(Issue.criticality).distinct().filter(Issue.criticality.isnot(None)).order_by(Issue.criticality.asc()).all()]
+    urgencies = [r[0] for r in db.session.query(Issue.urgency).distinct().filter(Issue.urgency.isnot(None)).order_by(Issue.urgency.asc()).all()]
+    branches = [r[0] for r in db.session.query(Issue.branch).distinct().filter(Issue.branch.isnot(None)).order_by(Issue.branch.asc()).all()]
+
+    # Preload recent changes (last 5) per issue id in one query for efficiency
+    change_rows = db.session.query(IssueChange).filter(IssueChange.issue_id.in_([i.id for i in issues])).order_by(IssueChange.changed_at.desc()).all() if issues else []
+    recent_changes = {}
+    for ch in change_rows:
+        bucket = recent_changes.setdefault(ch.issue_id, [])
+        if len(bucket) < 5:
+            bucket.append(ch)
+    return render_template('issues/index.html', issues=issues, total=total, open_count=len(open_issues), resolved_count=resolved, critical_open=critical_open, high_urg_open=high_urg_open,
+                           statuses=statuses, criticalities=criticalities, urgencies=urgencies, branches=branches,
+                           selected_status=status_filters, selected_criticality=crit_filters, selected_urgency=urg_filters, selected_branches=branch_filters, search=search,
+                           recent_changes=recent_changes)
+
+
+@app.route('/issues/new', methods=['GET','POST'])
+@login_required
+def issue_new():
+    form = IssueForm()
+    if request.method == 'POST' and form.validate_on_submit():
+        issue = Issue(
+            title=form.title.data.strip(),
+            details=form.details.data.strip() if form.details.data else None,
+            status=form.status.data,
+            criticality=form.criticality.data,
+            urgency=form.urgency.data,
+            branch=form.branch.data or None,
+            action_taken=form.action_taken.data.strip() if form.action_taken.data else None,
+            created_by_id=current_user.id,
+        )
+        db.session.add(issue)
+        db.session.commit()
+        flash('Issue created','success')
+        return redirect(url_for('issues_index'))
+    # Preselect defaults
+    if request.method == 'GET':
+        form.status.data = 'Pending'
+        form.criticality.data = 'Minor'
+        form.urgency.data = 'Medium'
+    return render_template('issues/form.html', form=form, issue=None)
+
+
+@app.route('/issues/<int:iid>/edit', methods=['GET','POST'])
+@login_required
+def issue_edit(iid):
+    issue = Issue.query.get_or_404(iid)
+    form = IssueForm(obj=issue)
+    if request.method == 'POST' and form.validate_on_submit():
+        # Track changes field-by-field
+        fields = {
+            'title': (issue.title, form.title.data.strip()),
+            'details': (issue.details, form.details.data.strip() if form.details.data else None),
+            'status': (issue.status, form.status.data),
+            'criticality': (issue.criticality, form.criticality.data),
+            'urgency': (issue.urgency, form.urgency.data),
+            'branch': (issue.branch, form.branch.data or None),
+            'action_taken': (issue.action_taken, form.action_taken.data.strip() if form.action_taken.data else None),
+        }
+        for field, (old, new) in fields.items():
+            if (old or '') != (new or ''):
+                setattr(issue, field, new)
+                ch = IssueChange(issue_id=issue.id, field=field, old_value=old, new_value=new, changed_by_id=current_user.id)
+                db.session.add(ch)
+        db.session.commit()
+        flash('Issue updated','success')
+        return redirect(url_for('issues_index'))
+    return render_template('issues/form.html', form=form, issue=issue)
+
+
+@app.route('/issues/<int:iid>/delete')
+@login_required
+def issue_delete(iid):
+    issue = Issue.query.get_or_404(iid)
+    db.session.delete(issue)
+    db.session.commit()
+    flash('Issue deleted','success')
+    return redirect(url_for('issues_index'))
 
 # ---------------- Observations CRUD + filters ----------------
 @app.route("/observations")

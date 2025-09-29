@@ -26,9 +26,22 @@ Open http://127.0.0.1:5000/
 - Observation cycles and per-cycle observation CRUD
 - Per-tutor observation counts within a cycle to check "0/1/2/3 or more" quickly
 - Tutor Availability module (real-time synced, multi-filter, custom pagination)
+- Issue Tracking module (status, criticality, urgency, branch, metrics dashboard)
 - Tailwind (CDN) + Soft UI styling
 
 ### Tutor Availability Module (since 0.3.0)
+
+### Issue Tracking Module (since 0.4.0)
+
+Route: `/issues`
+
+Key capabilities:
+
+- CRUD for issues with fields: Title, Details, Status (Pending / In Progress / Resolved), Criticality (Minor / Significant / Medium / Critical), Urgency (Low / Medium / High), Branch, Creator metadata.
+- Multi-select real-time filters (status, criticality, urgency, branches) + debounced text search.
+- Metrics cards: Total, Open, Resolved, Critical Open, High Urgency Open.
+- Soft UI + shared table sorter/paginator.
+- Badge colour accents for status (Resolved = green, In Progress = amber).
 
 Route: `/availability`
 

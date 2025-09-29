@@ -25,6 +25,11 @@
   >Availability</a
 >
 <a
+  href="{{ url_for('issues_index') }}"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='issues_index' else '' }}"
+  >Issues</a
+>
+<a
   href="{{ url_for('profile') }}"
   class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='profile' else '' }}"
   >My Profile</a
