@@ -1,0 +1,9 @@
+{# Clean separation: If AJAX, we only output the form markup. If not, we extend
+base layout. #} {% set ajax = request.headers.get('X-Requested-With') ==
+'XMLHttpRequest' %} {% if ajax %} {% include
+'meetings/partials/_form_inner.html' %} {% else %} {% extends 'base.html' %} {%
+block title %}{{ 'Edit Meeting' if meeting else 'New Meeting' }}{% endblock %}
+{% block page_title %}{{ 'Edit Meeting' if meeting else 'New Meeting' }}{%
+endblock %} {% block content %}
+<div class="max-w-xl">{% include 'meetings/partials/_form_inner.html' %}</div>
+{% endblock %} {% endif %}

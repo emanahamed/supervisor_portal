@@ -1,7 +1,7 @@
 from flask_wtf import FlaskForm
 from wtforms import (BooleanField, DateField, FloatField, HiddenField,
                      PasswordField, SelectField, SelectMultipleField,
-                     StringField, SubmitField, TextAreaField)
+                     StringField, SubmitField, TextAreaField, TimeField)
 from wtforms.validators import (DataRequired, Email, Length, NumberRange,
                                 Optional)
 from wtforms.widgets import CheckboxInput, ListWidget
@@ -10,6 +10,7 @@ BRANCH_CHOICES = [("Whitechapel","Whitechapel"),("East Ham","East Ham"),("Stratf
 ISSUE_STATUS_CHOICES = [("Pending","Pending"),("In Progress","In Progress"),("Resolved","Resolved")]
 ISSUE_CRITICALITY_CHOICES = [("Minor","Minor"),("Significant","Significant"),("Medium","Medium"),("Critical","Critical")]
 ISSUE_URGENCY_CHOICES = [("Low","Low"),("Medium","Medium"),("High","High")]
+TODO_STATUS_CHOICES = [("Pending","Pending"),("Done","Done")]
 
 class LoginForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email()])
@@ -30,6 +31,7 @@ class StaffForm(FlaskForm):
     phone = StringField("Phone", validators=[Optional()])
     # Ensure data is always a list (avoids NoneType membership tests in template)
     branches = SelectMultipleField("Branch(es)", choices=BRANCH_CHOICES, validators=[Optional()], default=[])
+    active = BooleanField("Active", default=True)
     submit = SubmitField("Save")
 
 class CycleForm(FlaskForm):
@@ -73,3 +75,26 @@ class IssueForm(FlaskForm):
     branch = SelectField("Branch", choices=[(b,b) for b,_ in BRANCH_CHOICES], validators=[Optional()])
     action_taken = TextAreaField("Action Taken", validators=[Optional(), Length(max=5000)])
     submit = SubmitField("Save")
+
+
+class MeetingForm(FlaskForm):
+    participant_id = SelectField("Meeting With", coerce=int, validators=[DataRequired()])
+    agenda = StringField("Agenda / Reason", validators=[DataRequired(), Length(max=500)])
+    date = DateField("Date", validators=[DataRequired()])
+    time = StringField("Time (HH:MM)", validators=[DataRequired(), Length(min=4, max=5)])
+    student_name = StringField("Student Name", validators=[Optional(), Length(max=200)])
+    parent_name = StringField("Parent Name", validators=[Optional(), Length(max=200)])
+    outcome = TextAreaField("Outcome / Notes", validators=[Optional(), Length(max=5000)])
+    submit = SubmitField("Save")
+
+
+class TodoForm(FlaskForm):
+    description = StringField("Description", validators=[DataRequired(), Length(max=400)])
+    notes = TextAreaField("Notes", validators=[Optional(), Length(max=10000)])
+    actions_taken = TextAreaField("Actions Taken", validators=[Optional(), Length(max=10000)])
+    criticality = SelectField("Criticality", choices=ISSUE_CRITICALITY_CHOICES, validators=[DataRequired()])
+    urgency = SelectField("Urgency", choices=ISSUE_URGENCY_CHOICES, validators=[DataRequired()])
+    status = SelectField("Status", choices=TODO_STATUS_CHOICES, validators=[DataRequired()], default='Pending')
+    due_date = DateField("Due Date", validators=[Optional()])
+    assigned_to_id = SelectField("Assign To", coerce=int, validators=[DataRequired()])
+    submit = SubmitField("Save Task")

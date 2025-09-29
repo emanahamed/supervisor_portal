@@ -24,6 +24,7 @@ class Staff(db.Model):
     email = db.Column(db.String(255))
     phone = db.Column(db.String(50))
     branch = db.Column(db.String(255))  # CSV of branches
+    active = db.Column(db.Boolean, default=True, index=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -99,4 +100,65 @@ class IssueChange(db.Model):
 
     issue = db.relationship('Issue', lazy=True)
     changed_by = db.relationship('User', lazy=True)
+
+
+class Meeting(db.Model):
+    """Scheduled meeting between a user and (optionally) another user/staff (since 0.5.0)."""
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)  # Person the meeting is with
+    booked_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    agenda = db.Column(db.String(500), nullable=False)
+    student_name = db.Column(db.String(200))  # optional free-text
+    parent_name = db.Column(db.String(200))   # optional free-text
+    outcome = db.Column(db.Text)              # optional notes / outcome
+    date = db.Column(db.Date, nullable=False, index=True)
+    time = db.Column(db.String(10), nullable=False, index=True)  # HH:MM 24h simple string
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    participant = db.relationship('User', foreign_keys=[participant_id])
+    booked_by = db.relationship('User', foreign_keys=[booked_by_id])
+
+    def starts_at(self):
+        """Return combined datetime object (naive UTC/local) for sorting if needed."""
+        try:
+            hh, mm = self.time.split(':')
+            return datetime(self.date.year, self.date.month, self.date.day, int(hh), int(mm))
+        except Exception:
+            return datetime(self.date.year, self.date.month, self.date.day)
+
+
+class Todo(db.Model):
+    """Task / To-Do item assigned to a user (since 0.6.0).
+
+    Fields:
+      description (short summary)
+      notes (extended notes)
+      actions_taken (optional narrative of progress)
+      criticality (Minor / Significant / Medium / Critical)
+      urgency (Low / Medium / High)
+      status (Pending / Done)
+      due_date (optional date)
+      created_on (timestamp) auto
+      created_by (FK user.id)
+      assigned_to (FK user.id)
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    description = db.Column(db.String(400), nullable=False, index=True)
+    notes = db.Column(db.Text)
+    actions_taken = db.Column(db.Text)
+    criticality = db.Column(db.String(50), index=True)
+    urgency = db.Column(db.String(50), index=True)
+    status = db.Column(db.String(30), index=True, default='Pending')  # Pending, Done
+    due_date = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+    assigned_to = db.relationship('User', foreign_keys=[assigned_to_id])
+
+    def is_done(self):
+        return (self.status or '').lower() == 'done'
 

@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+{% block title %}Meetings{% endblock %}
+{% block page_title %}Meetings{% endblock %}
+{% block content %}
+<div class="mb-6 flex items-center justify-between flex-wrap gap-4">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">Meetings</h2>
+    <span class="text-xs text-slate-400">{{ total }} total</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <button id="openCreateMeeting" class="soft-btn soft-btn-primary" type="button">New Meeting</button>
+    <a href="{{ url_for('meeting_new') }}" class="text-xs text-slate-400 hover:text-slate-600">Full Page</a>
+  </div>
+</div>
+
+<!-- Modal Container -->
+<div id="meetingModal" class="fixed inset-0 hidden items-center justify-center z-50">
+  <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" data-close-modal></div>
+  <div class="relative bg-white w-full max-w-xl rounded-lg shadow-lg flex flex-col max-h-[92vh]">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+      <h3 id="meetingModalTitle" class="text-sm font-semibold text-slate-700">New Meeting</h3>
+      <button class="text-slate-400 hover:text-slate-600 text-xl leading-none" data-close-modal>&times;</button>
+    </div>
+    <div id="meetingModalBody" class="p-4 overflow-auto"></div>
+  </div>
+</div>
+
+<div class="grid md:grid-cols-5 gap-4 mb-6">
+  <div class="soft-card p-4">
+    <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Today (All)</div>
+    <div class="text-2xl font-semibold text-slate-800">{{ upcoming_today }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Week (All)</div>
+    <div class="text-2xl font-semibold text-indigo-600">{{ upcoming_week }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Today (You)</div>
+    <div class="text-2xl font-semibold text-emerald-600">{{ user_today }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Week (You)</div>
+    <div class="text-2xl font-semibold text-amber-600">{{ user_week }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Total</div>
+    <div class="text-2xl font-semibold text-slate-800">{{ total }}</div>
+  </div>
+</div>
+
+<div class="soft-card p-4 mb-6">
+  <form id="meetingFilters" class="grid gap-4 md:grid-cols-6">
+    <div class="md:col-span-2 flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Search Agenda</label>
+      <input id="meetingSearch" value="{{ search or '' }}" class="soft-input" placeholder="Search meetings..." />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">With</label>
+      <select id="participantSelect" class="soft-input">
+        <option value="">All</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if sel_part==u.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Booked By</label>
+      <select id="bookedSelect" class="soft-input">
+        <option value="">All</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if sel_booked==u.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Start Date</label>
+      <input type="date" id="startDate" value="{{ start_date or '' }}" class="soft-input" />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">End Date</label>
+      <input type="date" id="endDate" value="{{ end_date or '' }}" class="soft-input" />
+    </div>
+    <div class="flex items-end gap-2">
+      <button id="applyMeetingFilters" class="soft-btn bg-slate-100 w-full">Apply</button>
+      <button id="clearMeetingFilters" class="soft-btn bg-slate-100" type="button">Clear</button>
+    </div>
+  </form>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table id="meetingsTable" class="min-w-full text-sm" data-sortable data-paginate data-page-size="25">
+      <thead class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase">
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Date</th>
+          <th class="py-2 px-3 text-left">Time</th>
+          <th class="py-2 px-3 text-left">Meeting With</th>
+          <th class="py-2 px-3 text-left">Agenda</th>
+          <th class="py-2 px-3 text-left">Student</th>
+          <th class="py-2 px-3 text-left">Parent</th>
+          <th class="py-2 px-3 text-left">Outcome</th>
+          <th class="py-2 px-3 text-left">Booked By</th>
+          <th class="py-2 px-3 w-24 text-left">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for m in meetings %}
+        <tr class="hover:bg-slate-50 align-top">
+          <td class="py-2 px-3 whitespace-nowrap">{{ m.date.strftime('%Y-%m-%d') }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ m.time }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ m.participant.name if m.participant else '-' }}</td>
+          <td class="py-2 px-3 max-w-xs"><div class="text-slate-800 font-medium truncate" title="{{ m.agenda }}">{{ m.agenda }}</div></td>
+          <td class="py-2 px-3 whitespace-nowrap text-xs">{{ m.student_name or '-' }}</td>
+          <td class="py-2 px-3 whitespace-nowrap text-xs">{{ m.parent_name or '-' }}</td>
+          <td class="py-2 px-3 max-w-xs text-xs"><div class="truncate" title="{{ m.outcome }}">{{ m.outcome or '-' }}</div></td>
+          <td class="py-2 px-3 whitespace-nowrap text-xs">{{ m.booked_by.name if m.booked_by else '-' }}</td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            <a class="text-indigo-600" data-meeting-edit href="{{ url_for('meeting_edit', mid=m.id) }}">Edit</a>
+            <span class="text-slate-400">·</span>
+            <a class="text-rose-600" href="{{ url_for('meeting_delete', mid=m.id) }}" onclick="return confirm('Delete meeting?')">Del</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  (function(){
+    const applyBtn = document.getElementById('applyMeetingFilters');
+    const clearBtn = document.getElementById('clearMeetingFilters');
+    const searchEl = document.getElementById('meetingSearch');
+    const partSel = document.getElementById('participantSelect');
+    const bookedSel = document.getElementById('bookedSelect');
+    const startEl = document.getElementById('startDate');
+    const endEl = document.getElementById('endDate');
+
+    function apply(){
+      const p = new URLSearchParams();
+      const sv = searchEl.value.trim(); if (sv) p.set('search', sv);
+      if (partSel.value) p.set('participant', partSel.value);
+      if (bookedSel.value) p.set('booked_by', bookedSel.value);
+      if (startEl.value) p.set('start', startEl.value);
+      if (endEl.value) p.set('end', endEl.value);
+      window.location = '?' + p.toString();
+    }
+    applyBtn.addEventListener('click', function(e){ e.preventDefault(); apply(); });
+    clearBtn.addEventListener('click', function(){ window.location = window.location.pathname; });
+    searchEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); apply(); }});
+
+    // Modal logic for create/edit
+    const modal = document.getElementById('meetingModal');
+    const modalBody = document.getElementById('meetingModalBody');
+    const modalTitle = document.getElementById('meetingModalTitle');
+    const openBtn = document.getElementById('openCreateMeeting');
+    function openModal(){ modal.classList.remove('hidden'); modal.classList.add('flex'); }
+    function closeModal(){ modal.classList.add('hidden'); modal.classList.remove('flex'); modalBody.innerHTML=''; }
+    document.querySelectorAll('[data-close-modal]').forEach(el=> el.addEventListener('click', closeModal));
+    openBtn.addEventListener('click', ()=>{ fetchMeetingForm('{{ url_for('meeting_new') }}'); });
+
+    function fetchMeetingForm(url){
+      fetch(url, {headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(r=>r.text())
+        .then(html=>{
+          modalBody.innerHTML = html;
+          const form = modalBody.querySelector('form[data-form-mode]');
+          if(form){
+            modalTitle.textContent = form.getAttribute('data-form-mode') === 'edit' ? 'Edit Meeting' : 'New Meeting';
+            enhanceMeetingForm(form);
+          }
+          openModal();
+        });
+    }
+
+    function enhanceMeetingForm(form){
+      form.addEventListener('submit', function(e){
+        e.preventDefault();
+        const submitBtn = form.querySelector('button[type=submit]');
+        if(submitBtn){ submitBtn.disabled = true; submitBtn.dataset.originalText = submitBtn.textContent; submitBtn.textContent = 'Saving...'; }
+        const fd = new FormData(form);
+        fetch(form.action, {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
+          .then(r=>{
+            const ct = r.headers.get('Content-Type') || '';
+            if(ct.includes('application/json')) return r.json();
+            return r.text();
+          })
+          .then(data=>{
+            if(data && data.success){
+              window.location.reload();
+              return;
+            }
+            if(typeof data === 'string'){
+              modalBody.innerHTML = data;
+              const newForm = modalBody.querySelector('form[data-form-mode]');
+              if(newForm) enhanceMeetingForm(newForm);
+            }
+          })
+          .catch(()=>{})
+          .finally(()=>{ if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = submitBtn.dataset.originalText || 'Save'; }});
+      });
+    }
+
+    document.addEventListener('click', function(e){
+      const editLink = e.target.closest('a[data-meeting-edit]');
+      if(editLink){
+        e.preventDefault();
+        fetchMeetingForm(editLink.href);
+      }
+    });
+  })();
+</script>
+{% endblock %}

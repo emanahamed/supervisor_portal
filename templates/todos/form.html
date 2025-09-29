@@ -1,0 +1,5 @@
+{% extends 'base.html' %} {% block title %}{{ 'Edit Task' if todo else 'New
+Task' }}{% endblock %} {% block page_title %}{{ 'Edit Task' if todo else 'New
+Task' }}{% endblock %} {% block content %}
+<div class="max-w-xl">{% include 'todos/partials/_form_inner.html' %}</div>
+{% endblock %}

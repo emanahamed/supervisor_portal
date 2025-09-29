@@ -1,5 +1,27 @@
 # Version History
 
+## 0.6.0 - 2025-09-29
+
+- Added Tasks (To-Do) module with model fields: Description, Notes, Actions Taken, Criticality, Urgency, Status (Pending/Done), Due Date, Created By, Assigned To, timestamps.
+- Dashboard metrics: Open, Done, Overdue, Due in 3 Days, Total (scoped to selected assignee / current user by default).
+- Filtering: Assigned To (superadmin only can change), single-select dropdowns for Status, Criticality, Urgency + free-text search.
+- Ordering logic prioritises Pending, higher criticality & urgency, earlier due date, newest created.
+- Modal-based create & edit with AJAX form submission (JSON success or HTML error re-render), plus full-page fallback.
+- Inline status change via select (AJAX) and separate toggle endpoint.
+- Access control: Non-superadmin users can only view tasks assigned to them; edit/delete restricted to creator, assignee, or superadmin.
+- Visual overdue highlighting for tasks past due date (row tint) and due-soon metric (<=3 days remaining).
+- Internal refactor: extracted reusable form partial `todos/partials/_form_inner.html` mirroring meetings pattern.
+
+## 0.5.0 - 2025-09-29
+
+- Added Meetings module: scheduling between users with fields (Participant, Agenda, Date, Time, optional Student, Parent, Outcome, Booked By metadata).
+- Meetings analytics: counts for Today (all/you) and Week (all/you) plus total meetings summary.
+- Filter bar: participant, booked_by, date range, text search (agenda substring).
+- Integrated with shared table sorter/paginator UI.
+- Added modal-based create & edit (AJAX) with graceful fallback full-page form.
+- Automatic lightweight schema backfill (adds new meeting columns if missing) without Alembic.
+- Extended global user loader to use SQLAlchemy 2.x `Session.get` pattern (removed legacy warning).
+
 ## 0.4.0 - 2025-09-29
 
 - Added Issue Tracking module: CRUD, filtering (status, criticality, urgency, branch, text search) and dashboard metrics (total, open, resolved, critical open, high urgency open).

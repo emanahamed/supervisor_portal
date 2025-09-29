@@ -1,0 +1,67 @@
+<form
+  method="POST"
+  action="{{ url_for('todo_new') if not todo else url_for('todo_edit', tid=todo.id) }}"
+  class="soft-card p-6 space-y-6"
+  data-form-mode="{{ 'edit' if todo else 'create' }}"
+>
+  {{ form.hidden_tag() }}
+  <div>
+    <label class="soft-label">Description</label>
+    {{ form.description(class='soft-input') }} {% for e in
+    form.description.errors %}
+    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+    {% endfor %}
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="soft-label">Criticality</label>
+      {{ form.criticality(class='soft-input') }}
+    </div>
+    <div>
+      <label class="soft-label">Urgency</label>
+      {{ form.urgency(class='soft-input') }}
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="soft-label">Status</label>
+      {{ form.status(class='soft-input') }}
+    </div>
+    <div>
+      <label class="soft-label">Due Date</label>
+      {{ form.due_date(class='soft-input') }}
+    </div>
+  </div>
+  <div>
+    <label class="soft-label">Assign To</label>
+    {{ form.assigned_to_id(class='soft-input') }}
+  </div>
+  <div>
+    <label class="soft-label">Notes</label>
+    {{ form.notes(class='soft-input') }}
+  </div>
+  <div>
+    <label class="soft-label">Actions Taken</label>
+    {{ form.actions_taken(class='soft-input') }}
+  </div>
+  <div class="flex items-center gap-3 pt-2">
+    <button class="soft-btn soft-btn-primary" type="submit">Save</button>
+    {% if todo %}
+    <a
+      href="{{ url_for('todo_delete', tid=todo.id) }}"
+      class="soft-btn bg-rose-100 text-rose-700"
+      onclick="return confirm('Delete task?')"
+      >Delete</a
+    >
+    {% endif %} {% if request.headers.get('X-Requested-With') ==
+    'XMLHttpRequest' %}
+    <button type="button" class="soft-btn bg-slate-100" data-close-modal>
+      Close
+    </button>
+    {% else %}
+    <a href="{{ url_for('todos_index') }}" class="soft-btn bg-slate-100"
+      >Cancel</a
+    >
+    {% endif %}
+  </div>
+</form>

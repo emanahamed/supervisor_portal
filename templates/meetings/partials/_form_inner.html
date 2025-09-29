@@ -1,0 +1,77 @@
+<form
+  method="POST"
+  action=""
+  class="soft-card p-6 space-y-6"
+  data-form-mode="{{ 'edit' if meeting else 'create' }}"
+>
+  {{ form.hidden_tag() }}
+  <div>
+    <label class="soft-label">Meeting With</label>
+    {{ form.participant_id(class='soft-input') }} {% for e in
+    form.participant_id.errors %}
+    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+    {% endfor %}
+  </div>
+  <div>
+    <label class="soft-label">Agenda / Reason</label>
+    {{ form.agenda(class='soft-input') }} {% for e in form.agenda.errors %}
+    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+    {% endfor %}
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="soft-label">Date</label>
+      {{ form.date(class='soft-input') }} {% for e in form.date.errors %}
+      <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+      {% endfor %}
+    </div>
+    <div>
+      <label class="soft-label">Time (HH:MM)</label>
+      {{ form.time(class='soft-input') }} {% for e in form.time.errors %}
+      <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="soft-label">Student (optional)</label>
+      {{ form.student_name(class='soft-input') }} {% for e in
+      form.student_name.errors %}
+      <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+      {% endfor %}
+    </div>
+    <div>
+      <label class="soft-label">Parent (optional)</label>
+      {{ form.parent_name(class='soft-input') }} {% for e in
+      form.parent_name.errors %}
+      <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  <div>
+    <label class="soft-label">Outcome (optional)</label>
+    {{ form.outcome(class='soft-input') }} {% for e in form.outcome.errors %}
+    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+    {% endfor %}
+  </div>
+  <div class="flex items-center gap-3 pt-2">
+    <button class="soft-btn soft-btn-primary" type="submit">Save</button>
+    {% if meeting %}
+    <a
+      href="{{ url_for('meeting_delete', mid=meeting.id) }}"
+      class="soft-btn bg-rose-100 text-rose-700"
+      onclick="return confirm('Delete meeting?')"
+      >Delete</a
+    >
+    {% endif %} {% if request.headers.get('X-Requested-With') ==
+    'XMLHttpRequest' %}
+    <button type="button" class="soft-btn bg-slate-100" data-close-modal>
+      Close
+    </button>
+    {% else %}
+    <a href="{{ url_for('meetings_index') }}" class="soft-btn bg-slate-100"
+      >Cancel</a
+    >
+    {% endif %}
+  </div>
+</form>

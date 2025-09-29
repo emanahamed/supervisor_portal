@@ -16,9 +16,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from email_utils import send_email
 from forms import (AvailabilityForm, CycleForm, IssueForm, LoginForm,
-                   ObservationForm, RegisterForm, StaffForm, UserProfileForm)
-from models import (Availability, Issue, IssueChange, Observation,
-                    ObservationCycle, Staff, User, db)
+                   MeetingForm, ObservationForm, RegisterForm, StaffForm,
+                   TodoForm, UserProfileForm)
+from models import (Availability, Issue, IssueChange, Meeting, Observation,
+                    ObservationCycle, Staff, Todo, User, db)
 from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
 from version_info import VERSION, get_changelog
 
@@ -52,7 +53,10 @@ def version_history():
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        return db.session.get(User, int(user_id))
+    except Exception:
+        return None
 
 @app.before_request
 def create_tables_and_superadmin():
@@ -126,7 +130,38 @@ def create_tables_and_superadmin():
                     conn.execute(text("ALTER TABLE issue ADD COLUMN action_taken TEXT"))
             except Exception:
                 pass
+            # Backfill active column on staff if missing
+            try:
+                staff_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff)"))}
+                if 'active' not in staff_cols:
+                    conn.execute(text("ALTER TABLE staff ADD COLUMN active BOOLEAN DEFAULT 1"))
+            except Exception:
+                pass
+            # Meetings table
+            conn.execute(text("CREATE TABLE IF NOT EXISTS meeting (id INTEGER PRIMARY KEY, participant_id INTEGER NOT NULL, booked_by_id INTEGER NOT NULL, agenda VARCHAR(500) NOT NULL, student_name VARCHAR(200), parent_name VARCHAR(200), outcome TEXT, date DATE NOT NULL, time VARCHAR(10) NOT NULL, created_at DATETIME, updated_at DATETIME)"))
+            # Backfill added columns if table existed without them
+            try:
+                meeting_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(meeting)"))}
+                if 'student_name' not in meeting_cols:
+                    conn.execute(text("ALTER TABLE meeting ADD COLUMN student_name VARCHAR(200)"))
+                if 'parent_name' not in meeting_cols:
+                    conn.execute(text("ALTER TABLE meeting ADD COLUMN parent_name VARCHAR(200)"))
+                if 'outcome' not in meeting_cols:
+                    conn.execute(text("ALTER TABLE meeting ADD COLUMN outcome TEXT"))
+            except Exception:
+                pass
             # Ensure indexes for IssueChange performance (SQLite creates automatically for PK, but add composite if needed)
+            # Todo table (tasks)
+            conn.execute(text("CREATE TABLE IF NOT EXISTS todo (id INTEGER PRIMARY KEY, description VARCHAR(400) NOT NULL, notes TEXT, actions_taken TEXT, criticality VARCHAR(50), urgency VARCHAR(50), status VARCHAR(30) DEFAULT 'Pending', due_date DATE, created_at DATETIME, updated_at DATETIME, created_by_id INTEGER NOT NULL, assigned_to_id INTEGER NOT NULL)"))
+            # Backfill status column if earlier draft existed
+            try:
+                todo_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(todo)"))}
+                if 'status' not in todo_cols:
+                    conn.execute(text("ALTER TABLE todo ADD COLUMN status VARCHAR(30) DEFAULT 'Pending'"))
+                if 'actions_taken' not in todo_cols:
+                    conn.execute(text("ALTER TABLE todo ADD COLUMN actions_taken TEXT"))
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -534,6 +569,14 @@ def staff_index():
     if departments_selected:
         q = q.filter(Staff.department.in_(departments_selected))
 
+    # Active status filter (?active=1 or ?active=0, allow multi but treat latest or first)
+    active_filters = [v for v in request.args.getlist('active') if v in ('0','1')]
+    if active_filters:
+        # If both provided, do nothing (shows all); else filter
+        uniq = set(active_filters)
+        if len(uniq) == 1:
+            want_active = list(uniq)[0] == '1'
+            q = q.filter(Staff.active == want_active)
     staff = q.order_by(Staff.name.asc()).all()
     # Distinct department list for filter
     dept_choices = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).order_by(Staff.department.asc()).all()]
@@ -544,6 +587,7 @@ def staff_index():
         selected_branches=branches_selected,
         departments=dept_choices,
         selected_departments=departments_selected,
+        selected_active=list(dict.fromkeys(active_filters)),
     )
 
 @app.route("/staff/new", methods=["GET","POST"])
@@ -556,7 +600,7 @@ def staff_new():
     if form.validate_on_submit():
         branches = ",".join(form.branches.data) if form.branches.data else ""
         s = Staff(name=form.name.data, department=form.department.data,
-                  email=form.email.data, phone=form.phone.data, branch=branches)
+                  email=form.email.data, phone=form.phone.data, branch=branches, active=form.active.data)
         db.session.add(s)
         db.session.commit()
         flash("Staff saved", "success")
@@ -577,12 +621,14 @@ def staff_edit(sid):
         form.email.data = s.email
         form.phone.data = s.phone
         form.branches.data = [b for b in (s.branch or '').split(',') if b]
+        form.active.data = s.active
     if form.validate_on_submit():
         s.name = form.name.data
         s.department = form.department.data
         s.email = form.email.data
         s.phone = form.phone.data
         s.branch = ",".join(form.branches.data) if form.branches.data else ""
+        s.active = form.active.data
         db.session.commit()
         flash("Staff updated", "success")
         return redirect(url_for('staff_index'))
@@ -596,6 +642,16 @@ def staff_delete(sid):
     db.session.commit()
     flash("Staff deleted", "success")
     return redirect(url_for('staff_index'))
+
+@app.route('/staff/<int:sid>/toggle')
+@login_required
+def staff_toggle_active(sid):
+    s = Staff.query.get_or_404(sid)
+    s.active = not bool(s.active)
+    db.session.commit()
+    flash(f"{'Activated' if s.active else 'Deactivated'} {s.name}", 'success')
+    # Preserve filters (except pagination) by redirecting back
+    return redirect(request.referrer or url_for('staff_index'))
 
 @app.route("/staff/import", methods=["GET","POST"])
 @login_required
@@ -1099,6 +1155,268 @@ def issue_delete(iid):
     db.session.commit()
     flash('Issue deleted','success')
     return redirect(url_for('issues_index'))
+
+# ---------------- Meetings ----------------
+@app.route('/meetings')
+@login_required
+def meetings_index():
+    from datetime import date as _date
+    from datetime import timedelta
+    today = _date.today()
+    week_ahead = today + timedelta(days=7)
+    q = Meeting.query
+    # Filters (participant, booked_by, date range, search in agenda)
+    part = request.args.get('participant', type=int)
+    if part:
+        q = q.filter(Meeting.participant_id==part)
+    booked = request.args.get('booked_by', type=int)
+    if booked:
+        q = q.filter(Meeting.booked_by_id==booked)
+    start_date = request.args.get('start')
+    end_date = request.args.get('end')
+    if start_date:
+        try:
+            sd = datetime.strptime(start_date, '%Y-%m-%d').date()
+            q = q.filter(Meeting.date >= sd)
+        except Exception:
+            pass
+    if end_date:
+        try:
+            ed = datetime.strptime(end_date, '%Y-%m-%d').date()
+            q = q.filter(Meeting.date <= ed)
+        except Exception:
+            pass
+    search = (request.args.get('search') or '').strip().lower()
+    if search:
+        q = q.filter(db.func.lower(Meeting.agenda).like(f"%{search}%"))
+    meetings = q.order_by(Meeting.date.asc(), Meeting.time.asc()).all()
+
+    # Analytics / summaries
+    upcoming_today = [m for m in meetings if m.date == today]
+    upcoming_week = [m for m in meetings if today <= m.date <= week_ahead]
+    total = len(meetings)
+    user_today = [m for m in upcoming_today if m.participant_id == current_user.id or m.booked_by_id == current_user.id]
+    user_week = [m for m in upcoming_week if m.participant_id == current_user.id or m.booked_by_id == current_user.id]
+
+    users = User.query.order_by(User.name.asc()).all()
+    return render_template('meetings/index.html', meetings=meetings, users=users,
+                           total=total, upcoming_today=len(upcoming_today), upcoming_week=len(upcoming_week),
+                           user_today=len(user_today), user_week=len(user_week), search=search,
+                           sel_part=part, sel_booked=booked, start_date=start_date, end_date=end_date)
+
+@app.route('/meetings/new', methods=['GET','POST'])
+@login_required
+def meeting_new():
+    form = MeetingForm()
+    users = User.query.order_by(User.name.asc()).all()
+    form.participant_id.choices = [(u.id, u.name) for u in users]
+    if request.method == 'POST' and form.validate_on_submit():
+        m = Meeting(participant_id=form.participant_id.data, booked_by_id=current_user.id,
+                    agenda=form.agenda.data.strip(), date=form.date.data, time=form.time.data.strip(),
+                    student_name=form.student_name.data.strip() if form.student_name.data else None,
+                    parent_name=form.parent_name.data.strip() if form.parent_name.data else None,
+                    outcome=form.outcome.data.strip() if form.outcome.data else None)
+        db.session.add(m)
+        db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'id': m.id})
+        flash('Meeting created','success')
+        return redirect(url_for('meetings_index'))
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        # Return form HTML again for validation errors
+        return render_template('meetings/form.html', form=form, meeting=None)
+    return render_template('meetings/form.html', form=form, meeting=None)
+
+@app.route('/meetings/<int:mid>/edit', methods=['GET','POST'])
+@login_required
+def meeting_edit(mid):
+    m = Meeting.query.get_or_404(mid)
+    form = MeetingForm(obj=m)
+    users = User.query.order_by(User.name.asc()).all()
+    form.participant_id.choices = [(u.id, u.name) for u in users]
+    if request.method == 'POST' and form.validate_on_submit():
+        m.participant_id = form.participant_id.data
+        m.agenda = form.agenda.data.strip()
+        m.date = form.date.data
+        m.time = form.time.data.strip()
+        m.student_name = form.student_name.data.strip() if form.student_name.data else None
+        m.parent_name = form.parent_name.data.strip() if form.parent_name.data else None
+        m.outcome = form.outcome.data.strip() if form.outcome.data else None
+        db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'id': m.id})
+        flash('Meeting updated','success')
+        return redirect(url_for('meetings_index'))
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render_template('meetings/form.html', form=form, meeting=m)
+    return render_template('meetings/form.html', form=form, meeting=m)
+
+@app.route('/meetings/<int:mid>/delete')
+@login_required
+def meeting_delete(mid):
+    m = Meeting.query.get_or_404(mid)
+    db.session.delete(m)
+    db.session.commit()
+    flash('Meeting deleted','success')
+    return redirect(url_for('meetings_index'))
+
+# ---------------- To-Do Module ----------------
+@app.route('/todos')
+@login_required
+def todos_index():
+    # Filters: assigned_to (default: current user), status multi, criticality multi, urgency multi, search
+    q = Todo.query
+    # Enforce visibility: non-superadmin can only see tasks assigned to them
+    if current_user.is_superadmin:
+        assigned = request.args.get('assigned', type=int) or current_user.id
+    else:
+        assigned = current_user.id
+    q = q.filter(Todo.assigned_to_id == assigned)
+    status_filters = [s for s in request.args.getlist('status') if s]
+    if status_filters:
+        q = q.filter(Todo.status.in_(status_filters))
+    crit_filters = [c for c in request.args.getlist('criticality') if c]
+    if crit_filters:
+        q = q.filter(Todo.criticality.in_(crit_filters))
+    urg_filters = [u for u in request.args.getlist('urgency') if u]
+    if urg_filters:
+        q = q.filter(Todo.urgency.in_(urg_filters))
+    search = (request.args.get('search') or '').strip().lower()
+    if search:
+        like = f"%{search}%"
+        q = q.filter(db.func.lower(Todo.description).like(like))
+    # Sorting (most urgent/critical first then due_date then created_at)
+    todos = q.order_by(
+        db.case((Todo.status=='Pending', 0), else_=1),  # pending first
+        db.case((Todo.criticality=='Critical',0),(Todo.criticality=='Medium',1),(Todo.criticality=='Significant',2),(Todo.criticality=='Minor',3), else_=4),
+        db.case((Todo.urgency=='High',0),(Todo.urgency=='Medium',1),(Todo.urgency=='Low',2), else_=3),
+        Todo.due_date.is_(None),
+        Todo.due_date.asc().nullslast(),
+        Todo.created_at.desc()
+    ).all()
+
+    # Metrics for dashboard cards (scoped to assigned filter)
+    total = len(todos)
+    open_items = [t for t in todos if not t.is_done()]
+    done_items = total - len(open_items)
+    overdue = [t for t in open_items if t.due_date and t.due_date < date.today()]
+    due_soon = [t for t in open_items if t.due_date and (t.due_date - date.today()).days <= 3 and (t.due_date - date.today()).days >= 0]
+
+    # Distinct values (overall for choices – not just this user) for filters
+    statuses = [r[0] for r in db.session.query(Todo.status).distinct().filter(Todo.status.isnot(None)).order_by(Todo.status.asc()).all()]
+    criticalities = [r[0] for r in db.session.query(Todo.criticality).distinct().filter(Todo.criticality.isnot(None)).order_by(Todo.criticality.asc()).all()]
+    urgencies = [r[0] for r in db.session.query(Todo.urgency).distinct().filter(Todo.urgency.isnot(None)).order_by(Todo.urgency.asc()).all()]
+    if current_user.is_superadmin:
+        users = User.query.order_by(User.name.asc()).all()
+    else:
+        users = [current_user]
+
+    return render_template('todos/index.html', todos=todos, users=users,
+                           total=total, open_count=len(open_items), done_count=done_items,
+                           overdue_count=len(overdue), due_soon_count=len(due_soon),
+                           selected_assigned=assigned, statuses=statuses, criticalities=criticalities, urgencies=urgencies,
+                           selected_status=status_filters, selected_criticality=crit_filters, selected_urgency=urg_filters, search=search,
+                           today=date.today())
+
+@app.route('/todos/new', methods=['GET','POST'])
+@login_required
+def todo_new():
+    form = TodoForm()
+    users = User.query.order_by(User.name.asc()).all()
+    form.assigned_to_id.choices = [(u.id, u.name) for u in users]
+    if request.method == 'POST' and form.validate_on_submit():
+        t = Todo(
+            description=form.description.data.strip(),
+            notes=form.notes.data.strip() if form.notes.data else None,
+            actions_taken=form.actions_taken.data.strip() if form.actions_taken.data else None,
+            criticality=form.criticality.data,
+            urgency=form.urgency.data,
+            status=form.status.data,
+            due_date=form.due_date.data,
+            created_by_id=current_user.id,
+            assigned_to_id=form.assigned_to_id.data,
+        )
+        db.session.add(t)
+        db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'id': t.id})
+        flash('Task created','success')
+        return redirect(url_for('todos_index', assigned=t.assigned_to_id))
+    # sensible defaults
+    if request.method == 'GET':
+        form.criticality.data = 'Minor'
+        form.urgency.data = 'Medium'
+        form.status.data = 'Pending'
+        form.assigned_to_id.data = current_user.id
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render_template('todos/partials/_form_inner.html', form=form, todo=None)
+    return render_template('todos/form.html', form=form, todo=None)
+
+@app.route('/todos/<int:tid>/edit', methods=['GET','POST'])
+@login_required
+def todo_edit(tid):
+    t = Todo.query.get_or_404(tid)
+    # Access: superadmin or creator or assigned user
+    if not (current_user.is_superadmin or current_user.id in (t.created_by_id, t.assigned_to_id)):
+        abort(403)
+    form = TodoForm(obj=t)
+    users = User.query.order_by(User.name.asc()).all()
+    form.assigned_to_id.choices = [(u.id, u.name) for u in users]
+    if request.method == 'POST' and form.validate_on_submit():
+        t.description = form.description.data.strip()
+        t.notes = form.notes.data.strip() if form.notes.data else None
+        t.actions_taken = form.actions_taken.data.strip() if form.actions_taken.data else None
+        t.criticality = form.criticality.data
+        t.urgency = form.urgency.data
+        t.status = form.status.data
+        t.due_date = form.due_date.data
+        t.assigned_to_id = form.assigned_to_id.data
+        db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'id': t.id})
+        flash('Task updated','success')
+        return redirect(url_for('todos_index', assigned=t.assigned_to_id))
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render_template('todos/partials/_form_inner.html', form=form, todo=t)
+    return render_template('todos/form.html', form=form, todo=t)
+
+@app.route('/todos/<int:tid>/delete')
+@login_required
+def todo_delete(tid):
+    t = Todo.query.get_or_404(tid)
+    assigned = t.assigned_to_id
+    db.session.delete(t)
+    db.session.commit()
+    flash('Task deleted','success')
+    return redirect(url_for('todos_index', assigned=assigned))
+
+@app.route('/todos/<int:tid>/toggle', methods=['POST'])
+@login_required
+def todo_toggle_status(tid):
+    t = Todo.query.get_or_404(tid)
+    # Only assigned user or creator can toggle; superadmin override
+    if current_user.id not in (t.assigned_to_id, t.created_by_id) and not current_user.is_superadmin:
+        abort(403)
+    t.status = 'Done' if not t.is_done() else 'Pending'
+    db.session.commit()
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True, 'status': t.status})
+    flash('Status updated','success')
+    return redirect(request.referrer or url_for('todos_index', assigned=t.assigned_to_id))
+
+@app.route('/todos/<int:tid>/status', methods=['POST'])
+@login_required
+def todo_update_status(tid):
+    """Direct status update via inline select (AJAX)."""
+    t = Todo.query.get_or_404(tid)
+    if current_user.id not in (t.assigned_to_id, t.created_by_id) and not current_user.is_superadmin:
+        abort(403)
+    new_status = request.form.get('status')
+    if new_status not in ['Pending','Done']:
+        return jsonify({'success': False, 'error': 'Invalid status'}), 400
+    t.status = new_status
+    db.session.commit()
+    return jsonify({'success': True, 'status': t.status})
 
 # ---------------- Observations CRUD + filters ----------------
 @app.route("/observations")

@@ -27,11 +27,26 @@ Open http://127.0.0.1:5000/
 - Per-tutor observation counts within a cycle to check "0/1/2/3 or more" quickly
 - Tutor Availability module (real-time synced, multi-filter, custom pagination)
 - Issue Tracking module (status, criticality, urgency, branch, metrics dashboard)
+- Meetings module (agenda scheduling + analytics, modal create/edit)
 - Tailwind (CDN) + Soft UI styling
 
 ### Tutor Availability Module (since 0.3.0)
 
 ### Issue Tracking Module (since 0.4.0)
+
+### Meetings Module (since 0.5.0)
+
+Route: `/meetings`
+
+Key capabilities:
+
+- CRUD for meetings with fields: Participant (another user), Agenda/Reason, Date, Time, optional Student Name, Parent Name, Outcome, and implicit Booked By (current user).
+- Analytics cards summarising: Today (All), Week (All), Today (You), Week (You), Total.
+- Filters: Participant, Booked By, Date Range (start/end), text search (agenda substring).
+- Modal-based create/edit (AJAX). Full-page fallback retained for accessibility or direct navigation.
+- Backfill-safe SQLite schema tweaks for newly added columns (student_name, parent_name, outcome) without external migrations.
+- Shared lightweight table sorter & pagination (page-size + sorting) via `static/js/tables.js`.
+- Clean separation of form partial (`meetings/partials/_form_inner.html`) enabling reuse in modal and full page.
 
 Route: `/issues`
 
@@ -56,7 +71,21 @@ Key capabilities:
 
 ### Versioning
 
-Current version lives in `version_info.py` (`VERSION` constant) and changelog entries in `VERSION.md` are displayed in-app via the version modal.
+### Tasks Module (since 0.6.0)
+
+Route: `/todos`
+
+Key capabilities:
+
+- CRUD for tasks with fields: Description, Notes, Actions Taken, Criticality (Minor / Significant / Medium / Critical), Urgency (Low / Medium / High), Status (Pending / Done), Due Date, Created By, Assigned To.
+- Metrics cards (scoped to current/selected assignee): Open, Done, Overdue, Due in 3 Days, Total.
+- Filtering: Assigned To (superadmin can change; others locked to self), single dropdowns for Status, Criticality, Urgency, plus text search.
+- Sorting prioritises: Pending first, then higher criticality & urgency, then earliest due date, then newest created.
+- Inline AJAX status update (select) + full modal create/edit (AJAX) with graceful full-page fallback.
+- Overdue highlighting (row tint) and due soon calculation (<=3 days left).
+- Access control: Only creator, assignee, or superadmin can edit/delete; visibility limited for non-superadmin users to their own assignments.
+
+Current version (0.6.0) lives in `version_info.py` (`VERSION` constant) and changelog entries in `VERSION.md` are displayed in-app via the version modal.
 
 To bump version:
 
