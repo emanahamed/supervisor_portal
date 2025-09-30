@@ -38,7 +38,7 @@ block content %}
         </form>
       </div>
     </div>
-    <div class="md:col-span-2 soft-card p-6">
+    <div class="md:col-span-2 soft-card p-6 space-y-8">
       <form method="post" class="space-y-4">
         {{ form.hidden_tag() }}
         <div>
@@ -97,6 +97,125 @@ block content %}
           </button>
         </div>
       </form>
+
+      <div class="pt-4 border-t border-slate-200">
+        <h2
+          class="text-sm font-semibold text-slate-700 flex items-center gap-2"
+        >
+          Effective Permissions
+          <span class="text-[10px] font-normal text-slate-400"
+            >(role + overrides{% if current_user.is_superadmin %} + superadmin{%
+            endif %})</span
+          >
+        </h2>
+        <div
+          class="mt-3 overflow-hidden rounded border border-slate-200 bg-white"
+        >
+          <table class="min-w-full text-xs">
+            <thead class="bg-slate-50 text-slate-500">
+              <tr>
+                <th class="px-2 py-1 text-left font-semibold">Key</th>
+                <th class="px-2 py-1 text-left font-semibold">Description</th>
+                <th class="px-2 py-1 text-left font-semibold">Allowed</th>
+                <th class="px-2 py-1 text-left font-semibold">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for ep in effective_permissions %}
+              <tr
+                class="border-t border-slate-100 {% if not ep.allowed %}opacity-60{% endif %}"
+              >
+                <td class="px-2 py-1 font-mono">{{ ep.key }}</td>
+                <td class="px-2 py-1">{{ ep.description }}</td>
+                <td class="px-2 py-1">
+                  {% if ep.allowed %}
+                  <span class="inline-flex items-center gap-1 text-green-600"
+                    >✔</span
+                  >
+                  {% else %}
+                  <span class="inline-flex items-center gap-1 text-red-500"
+                    >✖</span
+                  >
+                  {% endif %}
+                </td>
+                <td class="px-2 py-1">
+                  {% if ep.source == 'superadmin' %}<span
+                    class="text-indigo-600"
+                    >superadmin</span
+                  >{% endif %} {% if ep.source == 'role' %}<span
+                    class="text-slate-600"
+                    >role</span
+                  >{% endif %} {% if ep.source == 'override-allow' %}<span
+                    class="text-green-600"
+                    >override allow</span
+                  >{% endif %} {% if ep.source == 'override-deny' %}<span
+                    class="text-red-600"
+                    >override deny</span
+                  >{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="pt-4 border-t border-slate-200">
+        <h2
+          class="text-sm font-semibold text-slate-700 flex items-center gap-2"
+        >
+          Recent Permission Changes
+        </h2>
+        {% if permission_audits %}
+        <ul class="mt-2 space-y-1 max-h-60 overflow-auto pr-2 text-xs">
+          {% for a in permission_audits %}
+          <li class="flex justify-between gap-3 border-b border-slate-100 pb-1">
+            <div>
+              <span class="font-mono text-slate-500"
+                >{{ a.permission_key }}</span
+              >
+              <span class="ml-1">→</span>
+              <span
+                class="font-semibold {% if a.action in ['added','allow'] %}text-green-600{% elif a.action in ['removed','deny'] %}text-red-600{% else %}text-slate-600{% endif %}"
+                >{{ a.action }}</span
+              >
+              {% if a.role %}<span class="ml-1 text-slate-500"
+                >(role: {{ a.role }})</span
+              >{% endif %} {% if a.target_user %}<span
+                class="ml-1 text-slate-500"
+                >(user: {{ a.target_user.name }})</span
+              >{% endif %}
+            </div>
+            <div class="text-[10px] text-slate-400 whitespace-nowrap">
+              {{ a.changed_at.strftime('%Y-%m-%d %H:%M') }}
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-xs text-slate-500 mt-2">No recorded changes.</div>
+        {% endif %}
+      </div>
+
+      <div class="pt-4 border-t border-slate-200">
+        <h2 class="text-sm font-semibold text-slate-700">
+          Current Version Notes
+        </h2>
+        {% if changelog_block %}
+        <pre
+          class="mt-2 bg-slate-50 p-3 rounded text-[11px] leading-snug whitespace-pre-wrap"
+        >
+{{ changelog_block }}</pre
+        >
+        <a
+          href="{{ url_for('version_history') }}"
+          class="text-indigo-600 text-xs hover:underline"
+          >Full changelog API →</a
+        >
+        {% else %}
+        <div class="text-xs text-slate-500 mt-2">Changelog unavailable.</div>
+        {% endif %}
+      </div>
     </div>
   </div>
 </div>

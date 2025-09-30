@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}User Permission Overrides · {{ super() }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-xl font-semibold mb-4">User Permission Overrides</h1>
+  <p class="text-sm text-slate-600 mb-4">Overrides replace the default role-based decision for the selected user. "Allow" grants even if the role does not; "Deny" blocks even if the role grants; "Inherit" removes any override and falls back to the role.</p>
+  <form method="get" class="mb-6 flex gap-2 items-end">
+    <div>
+      <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Select User</label>
+      <select name="user_id" class="soft-input !w-72">
+        <option value="">-- Choose user --</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if selected_user and selected_user.id==u.id %}selected{% endif %}>{{ u.name }} ({{ u.email }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="primary-btn w-auto px-6">Load</button>
+  </form>
+  {% if selected_user %}
+  <form method="post">
+    <input type="hidden" name="user_id" value="{{ selected_user.id }}" />
+    <table class="min-w-full border border-slate-200 bg-white rounded-lg">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Permission</th>
+          <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
+          <th class="px-3 py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in perms %}
+        {% set ov = overrides.get(p.key) %}
+        <tr class="border-t border-slate-200 hover:bg-slate-50/50">
+          <td class="px-3 py-2 font-mono text-xs">{{ p.key }}</td>
+          <td class="px-3 py-2 text-sm">{{ p.description }}</td>
+          <td class="px-3 py-2 text-xs">
+            <div class="flex items-center justify-center gap-4">
+              <label class="inline-flex items-center gap-1"><input type="radio" name="perm_{{ p.key }}" value="inherit" {% if ov is none %}checked{% endif %} class="accent-indigo-600"/> <span>Inherit</span></label>
+              <label class="inline-flex items-center gap-1"><input type="radio" name="perm_{{ p.key }}" value="allow" {% if ov is not none and ov %}checked{% endif %} class="accent-indigo-600"/> <span class="text-emerald-600">Allow</span></label>
+              <label class="inline-flex items-center gap-1"><input type="radio" name="perm_{{ p.key }}" value="deny" {% if ov is not none and not ov %}checked{% endif %} class="accent-rose-600"/> <span class="text-rose-600">Deny</span></label>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="mt-6 flex items-center gap-3">
+      <button class="primary-btn w-auto px-6">Save Overrides</button>
+      <a href="{{ url_for('user_permissions') }}" class="text-sm text-indigo-600 hover:underline">Clear</a>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

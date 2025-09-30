@@ -1,11 +1,30 @@
 {% extends 'base.html' %} {% block content %}
 <div class="mb-6 flex items-center justify-between flex-wrap gap-4">
-  <h1 class="text-lg font-semibold text-slate-700">Approve Users</h1>
-  <p class="text-xs text-slate-400">{{ users|length }} pending/total listed</p>
+  <div class="flex items-center gap-4 flex-wrap">
+    <h1 class="text-lg font-semibold text-slate-700">Approve Users</h1>
+    <form method="get" class="flex items-center gap-2 text-xs">
+      <label class="text-slate-500">Filter Role:</label>
+      <select name="role" class="soft-input py-1 text-xs w-40" onchange="this.form.submit()">
+        <option value="all" {% if role_filter=='all' %}selected{% endif %}>All</option>
+        <option value="staff" {% if role_filter=='staff' %}selected{% endif %}>Staff</option>
+        <option value="supervisor" {% if role_filter=='supervisor' %}selected{% endif %}>Supervisor</option>
+        <option value="centre_manager" {% if role_filter=='centre_manager' %}selected{% endif %}>Centre Manager</option>
+        <option value="admin" {% if role_filter=='admin' %}selected{% endif %}>Admin</option>
+        <option value="superadmin" {% if role_filter=='superadmin' %}selected{% endif %}>Super Admin</option>
+      </select>
+    </form>
+  </div>
+  <p class="text-xs text-slate-400">{{ users|length }} user(s) listed</p>
 </div>
+
+<!-- Full-width table section (no side scroll panel) -->
+<div class="mb-10">
+  <!-- Users Table -->
 <div class="soft-card p-0">
   <div class="overflow-x-auto">
-    <table
+    <form id="bulkForm" method="post" action="{{ url_for('bulk_role_assign') }}">
+      <input type="hidden" name="user_ids" id="bulk_user_ids" />
+      <table
       class="min-w-full text-sm"
       id="userTable"
       data-sortable
@@ -16,6 +35,7 @@
         class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
       >
         <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left"><input type="checkbox" onclick="toggleAll(this)" class="rounded" /></th>
           <th class="py-2 px-3 text-left">Name</th>
           <th class="py-2 px-3 text-left">Email</th>
           <th class="py-2 px-3 text-left">Approved</th>
@@ -28,15 +48,24 @@
       <tbody>
         {% for u in users %}
         <tr class="hover:bg-slate-50 border-b last:border-b-0">
+          <td class="py-2 px-3"><input type="checkbox" value="{{ u.id }}" class="row-check rounded" /></td>
           <td class="py-2 px-3 whitespace-nowrap">{{ u.name }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ u.email }}</td>
           <td class="py-2 px-3">{{ 'Yes' if u.is_approved else 'No' }}</td>
           <td class="py-2 px-3">{{ 'Yes' if u.is_superadmin else 'No' }}</td>
           <td class="py-2 px-3 text-xs">
             <form method="post" action="{{ url_for('set_user_role', uid=u.id) }}" class="flex items-center gap-1">
+              {# Updated taxonomy. Accept legacy value if still on user, but show new labels. #}
               <select name="role" class="border rounded px-1 py-0.5 text-xs">
-                {% for r in ['staff','observer','lead','superadmin'] %}
-                <option value="{{ r }}" {% if u.role==r %}selected{% endif %}>{{ r }}</option>
+                {% set role_choices = [
+                  ('staff','Staff'),
+                  ('supervisor','Supervisor'),
+                  ('centre_manager','Centre Manager'),
+                  ('admin','Admin'),
+                  ('superadmin','Super Admin')
+                ] %}
+                {% for key,label in role_choices %}
+                <option value="{{ key }}" {% if u.role==key %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
               <button class="soft-btn bg-slate-100 text-[10px]">Save</button>
@@ -77,6 +106,62 @@
         {% endfor %}
       </tbody>
     </table>
+    <div class="flex items-center gap-2 mt-3">
+      <select name="target_role" class="soft-input text-xs w-52">
+        <option value="">Bulk assign role...</option>
+        <option value="staff">Staff</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="centre_manager">Centre Manager</option>
+        <option value="admin">Admin</option>
+        <option value="superadmin">Super Admin</option>
+      </select>
+      <button type="submit" class="soft-btn soft-btn-primary text-xs" onclick="prepareBulk()">Apply to Selected</button>
+      <span class="text-[10px] text-slate-400" id="bulkCount"></span>
+    </div>
+    </form>
+</div>
+
+<!-- Legend moved beneath table for full-width table layout -->
+<div class="soft-card p-4 space-y-4 mb-8">
+  <div class="flex items-center justify-between flex-wrap gap-4">
+    <h2 class="text-xs font-semibold tracking-wide text-slate-600 uppercase">Role Legend</h2>
+    <div class="text-[10px] text-slate-400">Super Admin has implicit access to all permissions.</div>
+  </div>
+  <div class="grid md:grid-cols-4 gap-6">
+    {% for rc in role_caps %}
+    <div class="space-y-1">
+      <div class="text-[11px] font-semibold text-indigo-600">{{ rc.label }}</div>
+      <ul class="mt-1 space-y-0.5 text-[10px] text-slate-600 list-disc list-inside">
+        {% for perm in rc.permissions %}
+        <li>{{ perm }}</li>
+        {% endfor %}
+        {% if not rc.permissions %}
+        <li class="italic text-slate-400">No explicit permissions</li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endfor %}
   </div>
 </div>
+
+<script>
+function toggleAll(master){
+  document.querySelectorAll('#userTable .row-check').forEach(cb=>{cb.checked=master.checked});
+  updateBulkCount();
+}
+function collectSelected(){
+  return Array.from(document.querySelectorAll('#userTable .row-check:checked')).map(cb=>cb.value);
+}
+function updateBulkCount(){
+  const c = collectSelected().length;
+  document.getElementById('bulkCount').textContent = c ? c + ' selected' : '';
+}
+function prepareBulk(){
+  const ids = collectSelected();
+  document.getElementById('bulk_user_ids').value = ids.join(',');
+}
+document.addEventListener('change', function(e){
+  if(e.target.classList.contains('row-check')) updateBulkCount();
+});
+</script>
 {% endblock %}

@@ -1,5 +1,47 @@
 # Version History
 
+## 0.9.2 - 2025-09-30
+
+Permission Visibility & Audit:
+
+- Dynamic navigation pruning: all primary module links now gated with `can()` helper (only show links user can actually access).
+- Admin section shows for superadmin or users with `manage_users`; role/user permission editors remain superadmin-only.
+- Added effective permission panel on Profile page showing each permission key, description, allowed flag, and source (role / override allow / override deny / superadmin).
+- Added recent permission changes list (latest 50) involving you (as actor or target) for transparency.
+- Added current version changelog excerpt to Profile page for quick release awareness.
+- Introduced `PermissionAudit` table and automatic logging for role permission additions/removals and user override changes (allow/deny/inherit transitions).
+
+Internal:
+
+- Lightweight auto-migration creates `permission_audit` table if missing.
+- Seed logic untouched (still idempotent); audit intentionally ignores initial seed operations.
+- Version bumped to 0.9.2.
+
+Next (Not in 0.9.2): route-level enforcement decorator (server-side guard), export/import of permission configuration, grouping permissions by domain in UI, pagination/search for large audit history, diff view for role matrices.
+
+## 0.9.3 - 2025-09-30
+
+Role Taxonomy Alignment & Navigation Consistency:
+
+- Replaced legacy roles (observer → supervisor, lead → centre_manager) with new organizational titles: Supervisor, Centre Manager, Admin, Super Admin.
+- Added migration logic that transparently upgrades any existing users with legacy roles to new role keys on request handling.
+- Updated default seeded permissions per new role set (Supervisor gains observation + meetings; Centre Manager broad operational set; Admin adds user & attendance management).
+- Updated profile role select choices with user-friendly labels.
+- Updated Role Permissions matrix to surface new roles; legacy roles no longer shown unless still present in DB pre-migration.
+- Accepts legacy role names in role change POST for backwards compatibility (auto-maps to new names).
+- Version bumped to 0.9.3.
+
+Follow-ups (Not in 0.9.3): remove residual legacy references in data exports, add route decorators tying each endpoint to permission keys, UI help tooltip clarifying each role's scope.
+
+## 0.9.1 - 2025-09-30
+
+Role Taxonomy Expansion:
+
+- Added new roles (centre_manager, supervisor, admin) with default permission seeds.
+- Updated Role Permissions matrix to display human-readable role labels.
+- Extended profile role choices and seeding logic for newly introduced roles.
+- Version bumped to 0.9.1.
+
 ## 0.8.0 - 2025-09-30
 
 Auth & UX Enhancements:
@@ -17,6 +59,28 @@ Internal:
 - Version bumped to 0.8.0.
 
 Future (Not in 0.8.0): password strength meter, security rate-limit UI feedback, keyboard-focus outline refinement, progressive enhancement for no-JS environments.
+
+## 0.9.0 - 2025-09-30
+
+Fine-Grained Permission System:
+
+- Added database-backed permission system with three new tables: `permission`, `role_permission`, `user_permission` (per-user overrides).
+- Implemented hierarchical evaluation: superadmin > user override (allow/deny) > role-based grant.
+- Seeded core permission set (dashboard, staff, cycles, observations, availability, issues, meetings, tasks, attendance fix, users, reports) with sensible defaults for roles staff / observer / lead.
+- Added context helper `can(perm_key)` available in templates for conditional UI rendering.
+- Introduced superadmin-only management pages:
+  - Role Permissions (`/admin/role-permissions`): matrix editor of roles vs permissions.
+  - User Permission Overrides (`/admin/user-permissions`): per-user inherit/allow/deny controls.
+- Navigation updated with new Admin entries: Role Permissions & User Overrides.
+- Idempotent seeding logic in startup ensures missing permissions / mappings are created without duplicating existing customizations.
+
+Notes:
+
+- Superadmin bypass remains unconditional (implicit all permissions).
+- Removing a role permission immediately affects all users of that role unless an explicit user override exists.
+- Deny override takes precedence over role grants; removing an override returns to role inheritance.
+
+Potential Follow-ups (not in 0.9.0): integrate permission checks for each route decorator, UI hiding of unauthorized nav links using `can()`, audit logging of permission changes, export/import of permission configuration, grouping permissions by domain.
 
 ## 0.7.0 - 2025-09-30
 

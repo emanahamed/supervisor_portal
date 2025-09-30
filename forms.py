@@ -51,7 +51,17 @@ class ObservationForm(FlaskForm):
 class UserProfileForm(FlaskForm):
     name = StringField("Name", validators=[DataRequired(), Length(max=120)])
     email = StringField("Email", validators=[DataRequired(), Email()])
-    role = SelectField("Role", choices=[('staff','staff'),('observer','observer'),('lead','lead'),('superadmin','superadmin')])
+    # Updated taxonomy: staff, supervisor, centre_manager, admin, superadmin
+    role = SelectField(
+        "Role",
+        choices=[
+            ('staff','Staff'),
+            ('supervisor','Supervisor'),
+            ('centre_manager','Centre Manager'),
+            ('admin','Admin'),
+            ('superadmin','Super Admin'),
+        ]
+    )
     is_approved = BooleanField("Approved")
     is_superadmin = BooleanField("Superadmin")
     password = PasswordField("New Password", validators=[Optional(), Length(min=6)])

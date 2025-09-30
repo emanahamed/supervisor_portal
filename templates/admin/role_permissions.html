@@ -1,0 +1,69 @@
+{% extends 'base.html' %} {% block title %}Role Permissions · {{ super() }}{%
+endblock %} {% block content %}
+<div class="max-w-5xl mx-auto">
+  <h1 class="text-xl font-semibold mb-4">Role Permissions</h1>
+  <p class="text-sm text-slate-600 mb-6">
+    Configure which permissions are granted to each role. Superadmin implicitly
+    has all permissions. Removing a permission here will affect all users of
+    that role unless a user-level override grants it.
+  </p>
+  <form method="post" class="overflow-x-auto">
+    <table class="min-w-full border border-slate-200 bg-white rounded-lg">
+      <thead class="bg-slate-50">
+        <tr>
+          <th
+            class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide"
+          >
+            Permission
+          </th>
+          <th
+            class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide"
+          >
+            Description
+          </th>
+          {% for role in roles %}
+          <th
+            class="px-3 py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide"
+          >
+            {{ role }}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in perms %}
+        <tr class="border-t border-slate-200 hover:bg-slate-50/50">
+          <td class="px-3 py-2 font-mono text-xs">{{ p.key }}</td>
+          <td class="px-3 py-2 text-sm">{{ p.description }}</td>
+          {% for role in roles %} {% set granted = role_map.get(role, []) %}
+          <td class="px-3 py-2 text-center">
+            <input
+              type="checkbox"
+              name="rp_{{ role }}__{{ p.key }}"
+              {%
+              if
+              p.key
+              in
+              granted
+              %}checked{%
+              endif
+              %}
+              class="accent-indigo-600 rounded"
+            />
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="mt-6 flex items-center gap-3">
+      <button class="primary-btn w-auto px-6">Save Changes</button>
+      <a
+        href="{{ url_for('index') }}"
+        class="text-sm text-indigo-600 hover:underline"
+        >Cancel</a
+      >
+    </div>
+  </form>
+</div>
+{% endblock %}

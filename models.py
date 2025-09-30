@@ -17,6 +17,48 @@ class User(db.Model, UserMixin):
     picture = db.Column(db.String(255))  # path to profile picture relative to /static/uploads or external URL
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
+class Permission(db.Model):
+    """Discrete capability that can be granted to a role or user override (since 0.9.0)."""
+    key = db.Column(db.String(120), primary_key=True)
+    description = db.Column(db.String(255))
+
+
+class RolePermission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    role = db.Column(db.String(80), index=True, nullable=False)
+    permission_key = db.Column(db.String(120), db.ForeignKey('permission.key', ondelete='CASCADE'), index=True, nullable=False)
+    __table_args__ = (db.UniqueConstraint('role', 'permission_key', name='uq_role_perm'), )
+
+
+class UserPermission(db.Model):
+    """Per-user override; allow=True grants, allow=False denies (overrides role)."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), index=True, nullable=False)
+    permission_key = db.Column(db.String(120), db.ForeignKey('permission.key', ondelete='CASCADE'), index=True, nullable=False)
+    allow = db.Column(db.Boolean, default=True, nullable=False)
+    __table_args__ = (db.UniqueConstraint('user_id', 'permission_key', name='uq_user_perm'), )
+
+
+class PermissionAudit(db.Model):
+    """Audit trail for permission mutations (since 0.9.2).
+
+    Records who changed what (actor), the target (user or role), the permission key
+    and the action semantic (added, removed, allow, deny, inherit). Either role or
+    target_user_id will be populated (never both None). Superadmin implicit grants
+    are not logged here – only explicit configuration changes.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)  # nullable for role-level changes
+    role = db.Column(db.String(80), index=True)
+    permission_key = db.Column(db.String(120), db.ForeignKey('permission.key', ondelete='CASCADE'), nullable=False, index=True)
+    action = db.Column(db.String(40), nullable=False)  # added|removed|allow|deny|inherit
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    actor = db.relationship('User', foreign_keys=[actor_user_id])
+    target_user = db.relationship('User', foreign_keys=[target_user_id])
+
 class Staff(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)

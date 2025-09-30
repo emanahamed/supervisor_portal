@@ -1,5 +1,5 @@
-{% if current_user.is_authenticated %} {# Alphabetically sorted items with new
-labels + icons #}
+{% set endpoint = request.endpoint or '' %} {% if current_user.is_authenticated
+%} {# Alphabetically sorted items with new labels + icons #}
 <a
   href="{{ url_for('index') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='index' else '' }}"
@@ -19,6 +19,7 @@ labels + icons #}
   </svg>
   Dashboard
 </a>
+{% if can('manage_attendance_fix') %}
 <a
   href="{{ url_for('attendance_fix') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='attendance_fix' else '' }}"
@@ -38,6 +39,7 @@ labels + icons #}
   </svg>
   Fix Attendance Data
 </a>
+{% endif %} {% if can('manage_issues') %}
 <a
   href="{{ url_for('issues_index') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='issues_index' else '' }}"
@@ -57,6 +59,7 @@ labels + icons #}
   </svg>
   Issues
 </a>
+{% endif %} {% if can('manage_meetings') %}
 <a
   href="{{ url_for('meetings_index') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='meetings_index' else '' }}"
@@ -76,6 +79,7 @@ labels + icons #}
   </svg>
   Meetings
 </a>
+{% endif %} {% if can('manage_cycles') %}
 <a
   href="{{ url_for('cycles_index') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='cycles_index' else '' }}"
@@ -95,6 +99,7 @@ labels + icons #}
   </svg>
   Observation Cycles
 </a>
+{% endif %} {% if can('manage_observations') %}
 <a
   href="{{ url_for('observations_index') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='observations_index' else '' }}"
@@ -114,6 +119,7 @@ labels + icons #}
   </svg>
   Observation List
 </a>
+{% endif %} {% if can('manage_staff') %}
 <a
   href="{{ url_for('staff_index') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='staff_index' else '' }}"
@@ -133,9 +139,10 @@ labels + icons #}
   </svg>
   Staff List
 </a>
+{% endif %} {% if can('manage_tasks') %}
 <a
   href="{{ url_for('todos_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint.startswith('todos_') or request.endpoint.startswith('todo_') else '' }}"
+  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if (endpoint.startswith('todos_') or endpoint.startswith('todo_')) else '' }}"
 >
   <svg
     class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
@@ -152,6 +159,7 @@ labels + icons #}
   </svg>
   Tasks
 </a>
+{% endif %} {% if can('manage_availability') %}
 <a
   href="{{ url_for('availability_index') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='availability_index' else '' }}"
@@ -171,6 +179,7 @@ labels + icons #}
   </svg>
   Tutors Availability
 </a>
+{% endif %}
 <a
   href="{{ url_for('profile') }}"
   class="group flex items-center gap-2 px-3 py-2 mt-1 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='profile' else '' }}"
@@ -190,13 +199,15 @@ labels + icons #}
   </svg>
   My Profile
 </a>
-{% if current_user.is_authenticated and current_user.is_superadmin %}
+{% if current_user.is_authenticated and (current_user.is_superadmin or
+can('manage_users')) %}
 <div class="pt-4 mt-2 border-t border-slate-200">
   <div
     class="px-3 mb-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
   >
     Admin
   </div>
+  {% if current_user.is_superadmin or can('manage_users') %}
   <a
     href="{{ url_for('approve_users') }}"
     data-admin-link="1"
@@ -217,6 +228,48 @@ labels + icons #}
     </svg>
     Approve Users
   </a>
+  {% endif %} {% if current_user.is_superadmin %}
+  <a
+    href="{{ url_for('role_permissions') }}"
+    class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='role_permissions' else '' }}"
+  >
+    <svg
+      class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+    >
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M12 6l7 4v4l-7 4-7-4v-4l7-4z"
+      />
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v8" />
+    </svg>
+    Role Permissions
+  </a>
+  {% endif %} {% if current_user.is_superadmin %}
+  <a
+    href="{{ url_for('user_permissions') }}"
+    class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='user_permissions' else '' }}"
+  >
+    <svg
+      class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+    >
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M5 12h14M5 6h14M5 18h14"
+      />
+    </svg>
+    User Overrides
+  </a>
+  {% endif %}
 </div>
 {% endif %} {% else %}
 <a

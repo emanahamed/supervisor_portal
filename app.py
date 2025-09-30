@@ -23,7 +23,8 @@ from forms import (AvailabilityForm, CycleForm, IssueForm, LoginForm,
                    MeetingForm, ObservationForm, RegisterForm, StaffForm,
                    TodoForm, UserProfileForm)
 from models import (Availability, Issue, IssueChange, Meeting, Observation,
-                    ObservationCycle, Staff, Todo, User, db)
+                    ObservationCycle, Permission, PermissionAudit,
+                    RolePermission, Staff, Todo, User, UserPermission, db)
 from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
 from version_info import VERSION, get_changelog
 
@@ -46,9 +47,55 @@ login_manager.login_view = "login"
 
 ts = URLSafeTimedSerializer(SECRET_KEY)
 
+# --------------- Permission Helpers (server-side) --------------- #
+from functools import wraps
+
+
+def user_can(perm_key: str) -> bool:
+    """Server-side permission check aligned with template helper.
+
+    Order: superadmin bypass > explicit user override > role permission.
+    Fail-safe: return False on unexpected error.
+    """
+    try:
+        if current_user.is_authenticated and getattr(current_user, 'is_superadmin', False):
+            return True
+        if not current_user.is_authenticated:
+            return False
+        up = UserPermission.query.filter_by(user_id=current_user.id, permission_key=perm_key).first()
+        if up:
+            return bool(up.allow)
+        role = (current_user.role or 'staff')
+        return bool(RolePermission.query.filter_by(role=role, permission_key=perm_key).first())
+    except Exception:
+        return False
+
+def permission_required(*perm_keys: str, any: bool = False):
+    """Route decorator enforcing permissions.
+
+    @permission_required('perm_a')  # need perm_a
+    @permission_required('perm_a','perm_b')  # need both
+    @permission_required('perm_a','perm_b', any=True)  # need at least one
+    """
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return login_manager.unauthorized()
+            if getattr(current_user, 'is_superadmin', False):
+                return fn(*args, **kwargs)
+            checks = [user_can(p) for p in perm_keys]
+            allowed = any(checks) if any else all(checks)
+            if not allowed:
+                needed = ' or '.join(perm_keys) if any else ', '.join(perm_keys)
+                abort(403, description=f"Requires permission: {needed}")
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
 @app.context_processor
 def inject_version():
-    return {"APP_VERSION": VERSION}
+    return {"APP_VERSION": VERSION, 'can': user_can}
 
 @app.route('/version-history')
 def version_history():
@@ -79,6 +126,7 @@ def api_version():
 # ---------------- Attendance Fix Page ---------------- #
 @app.route('/attendance/fix')
 @login_required
+@permission_required('manage_attendance_fix')
 def attendance_fix():
     return render_template('attendance/fix.html')
 
@@ -160,6 +208,14 @@ def create_tables_and_superadmin():
         for u in users_no_role:
             u.role = 'staff'
             altered = True
+        # Legacy role migration
+        legacy_map = {'observer':'supervisor','lead':'centre_manager'}
+        legacy_users = User.query.filter(User.role.in_(legacy_map.keys())).all()
+        for lu in legacy_users:
+            new_role = legacy_map.get(lu.role)
+            if new_role and lu.role != new_role:
+                lu.role = new_role
+                altered = True
         if altered:
             db.session.commit()
     except Exception:
@@ -218,8 +274,68 @@ def create_tables_and_superadmin():
                 pass
             # Observation detail extended table
             conn.execute(text("CREATE TABLE IF NOT EXISTS observation_detail (id INTEGER PRIMARY KEY, observation_id INTEGER NOT NULL UNIQUE, timeslot VARCHAR(20), weekly_test TEXT, weekly_test_comment TEXT, homework TEXT, homework_comment TEXT, classwork TEXT, classwork_comment TEXT, org_mgmt TEXT, org_mgmt_comment TEXT, positives TEXT, improvements TEXT, target_set TEXT, actions_taken TEXT, notes TEXT, next_review_date DATE, FOREIGN KEY(observation_id) REFERENCES observation(id))"))
+            # Permissions tables (0.9.0) if not present
+            conn.execute(text("CREATE TABLE IF NOT EXISTS permission (key VARCHAR(120) PRIMARY KEY, description VARCHAR(255))"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS role_permission (id INTEGER PRIMARY KEY, role VARCHAR(80) NOT NULL, permission_key VARCHAR(120) NOT NULL, UNIQUE(role, permission_key))"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS user_permission (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, permission_key VARCHAR(120) NOT NULL, allow BOOLEAN NOT NULL DEFAULT 1, UNIQUE(user_id, permission_key))"))
+            # Permission audit (since 0.9.2)
+            conn.execute(text("CREATE TABLE IF NOT EXISTS permission_audit (id INTEGER PRIMARY KEY, actor_user_id INTEGER NOT NULL, target_user_id INTEGER, role VARCHAR(80), permission_key VARCHAR(120) NOT NULL, action VARCHAR(40) NOT NULL, changed_at DATETIME, FOREIGN KEY(actor_user_id) REFERENCES user(id), FOREIGN KEY(target_user_id) REFERENCES user(id))"))
     except Exception:
         pass
+    # Seed permissions & default role mappings if empty (idempotent)
+    try:
+        base_permissions = [
+            ('view_dashboard','Access dashboard'),
+            ('manage_staff','Create/Edit staff records'),
+            ('manage_cycles','Manage observation cycles'),
+            ('manage_observations','Create/Edit observations'),
+            ('manage_availability','View & manage tutor availability'),
+            ('manage_issues','Issue tracker management'),
+            ('manage_meetings','Create/Edit meetings'),
+            ('manage_tasks','Create/Edit tasks'),
+            ('manage_attendance_fix','Use attendance fix tool'),
+            ('manage_users','Approve & manage users'),
+            ('view_reports','View / generate reports'),
+        ]
+        existing_keys = {p.key for p in Permission.query.all()}
+        for k, desc in base_permissions:
+            if k not in existing_keys:
+                db.session.add(Permission(key=k, description=desc))
+        db.session.commit()
+
+        # Refresh permission list after potential inserts
+        all_perm_keys = [p.key for p in Permission.query.all()]
+
+        # Default role permission seeds (updated taxonomy 0.9.3)
+        role_defaults = {
+            'staff': {'view_dashboard','manage_tasks','view_reports'},
+            'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports'},
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports'},
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports'},
+        }
+        for role, perms in role_defaults.items():
+            has_any = RolePermission.query.filter_by(role=role).first()
+            if not has_any:
+                for pk in perms:
+                    if Permission.query.get(pk):
+                        db.session.add(RolePermission(role=role, permission_key=pk))
+        # Ensure superadmin explicit role rows contain ALL permissions (even though bypass exists)
+        for pk in all_perm_keys:
+            if not RolePermission.query.filter_by(role='superadmin', permission_key=pk).first():
+                db.session.add(RolePermission(role='superadmin', permission_key=pk))
+
+        # Normalize any superadmin users missing the 'superadmin' role value
+        superadmins = User.query.filter_by(is_superadmin=True).all()
+        changed = False
+        for sa in superadmins:
+            if sa.role != 'superadmin':
+                sa.role = 'superadmin'
+                changed = True
+        if changed:
+            print('[INFO] Normalized superadmin user role values to "superadmin"')
+        db.session.commit()
+    except Exception as e:
+        print(f"[WARN] Permission seed failed: {e}")
 
 @app.route("/")
 def index():
@@ -251,9 +367,10 @@ def index():
 
     # Tutors with no observations within the selected cycles (or overall if none selected)
     if selected_cycle_ids:
-        subq = db.session.query(Observation.staff_id).filter(Observation.cycle_id.in_(selected_cycle_ids)).distinct().subquery()
+        subq = db.select(Observation.staff_id).filter(Observation.cycle_id.in_(selected_cycle_ids)).distinct()
     else:
-        subq = db.session.query(Observation.staff_id).distinct().subquery()
+        subq = db.select(Observation.staff_id).distinct()
+    # Use selectable directly to avoid SAWarning about coercing Subquery in IN()
     no_obs_staff = Staff.query.filter(~Staff.id.in_(subq)).order_by(Staff.name.asc()).all()
 
     # ---------------- Observer Leaderboard ----------------
@@ -453,8 +570,75 @@ def approve_users():
     if not current_user.is_superadmin:
         flash("Only superadmin can approve users", "warning")
         return redirect(url_for('index'))
-    users = User.query.order_by(User.created_at.desc()).all()
-    return render_template("auth/approve.html", users=users)
+    role_filter = request.args.get('role')
+    q = User.query
+    if role_filter and role_filter not in ('all',''):
+        q = q.filter(User.role == role_filter)
+    users = q.order_by(User.created_at.desc()).all()
+    # Build role capability legend from current RolePermission table + descriptions
+    known_roles = ['staff','supervisor','centre_manager','admin','superadmin']
+    role_caps = []
+    # Cache permission descriptions
+    perm_desc = {p.key: p.description for p in Permission.query.all()}
+    for r in known_roles:
+        if r == 'superadmin':
+            # Superadmin implicit all permissions
+            role_caps.append({
+                'key': r,
+                'label': 'Super Admin',
+                'permissions': sorted([p.description or p.key for p in Permission.query.all()])
+            })
+            continue
+        assigned = [rp.permission_key for rp in RolePermission.query.filter_by(role=r).all()]
+        role_caps.append({
+            'key': r,
+            'label': {
+                'staff':'Staff',
+                'supervisor':'Supervisor',
+                'centre_manager':'Centre Manager',
+                'admin':'Admin',
+                'superadmin':'Super Admin'
+            }.get(r, r.title()),
+            'permissions': sorted([perm_desc.get(k, k) for k in assigned])
+        })
+    return render_template("auth/approve.html", users=users, role_caps=role_caps, role_filter=role_filter or 'all')
+
+@app.route('/approve/bulk-role', methods=['POST'])
+@login_required
+def bulk_role_assign():
+    if not current_user.is_superadmin:
+        abort(403)
+    ids_raw = request.form.get('user_ids','')
+    target_role = (request.form.get('target_role') or '').strip().lower()
+    legacy_alias = {'observer':'supervisor','lead':'centre_manager'}
+    if target_role in legacy_alias:
+        target_role = legacy_alias[target_role]
+    if target_role not in ['staff','supervisor','centre_manager','admin','superadmin']:
+        flash('Invalid target role for bulk assignment','danger')
+        return redirect(url_for('approve_users'))
+    try:
+        ids = [int(x) for x in ids_raw.split(',') if x.strip().isdigit()]
+    except Exception:
+        ids = []
+    if not ids:
+        flash('No users selected for bulk assignment','warning')
+        return redirect(url_for('approve_users'))
+    updated = 0
+    for uid in ids:
+        u = User.query.get(uid)
+        if not u:
+            continue
+        # Cannot demote another superadmin to non-superadmin unless we keep at least one superadmin (light check)
+        if u.is_superadmin and target_role != 'superadmin':
+            # Skip demotion of superadmin via bulk to avoid accidental lockout
+            continue
+        u.role = target_role
+        if target_role == 'superadmin':
+            u.is_superadmin = True
+        updated += 1
+    db.session.commit()
+    flash(f'Bulk role assignment complete: {updated} user(s) set to {target_role}.','success')
+    return redirect(url_for('approve_users', role=target_role))
 
 @app.route("/approve/<int:uid>", methods=["POST"])
 @login_required
@@ -487,7 +671,10 @@ def set_user_role(uid):
         abort(403)
     u = User.query.get_or_404(uid)
     role = request.form.get('role','').strip().lower()
-    if role not in ['staff','observer','lead','superadmin']:
+    legacy_alias = {'observer': 'supervisor', 'lead': 'centre_manager'}
+    if role in legacy_alias:
+        role = legacy_alias[role]
+    if role not in ['staff','supervisor','centre_manager','admin','superadmin']:
         flash('Invalid role', 'warning')
         return redirect(url_for('approve_users'))
     # Prevent locking yourself out accidentally if demoting last superadmin
@@ -535,6 +722,95 @@ def upload_user_picture(uid):
         flash(f'Upload failed: {e}', 'danger')
     return redirect(url_for('approve_users'))
 
+# ---------------- Permission Management (0.9.0) ----------------
+@app.route('/admin/role-permissions', methods=['GET','POST'])
+@login_required
+def role_permissions():
+    if not current_user.is_superadmin:
+        abort(403)
+    # Dynamic roles (exclude superadmin which is implicit all-access)
+    roles = sorted({r[0] for r in db.session.query(User.role).distinct() if r[0] and r[0] != 'superadmin'} | {'staff','supervisor','centre_manager','admin'})
+    perms = Permission.query.order_by(Permission.key.asc()).all()
+    if request.method == 'POST':
+        # For each role/perm pair, expect checkbox name rp_<role>__<perm>
+        existing = {(rp.role, rp.permission_key): rp for rp in RolePermission.query.all()}
+        seen_keys = set()
+        for role in roles:
+            for p in perms:
+                field = f"rp_{role}__{p.key}"
+                want = field in request.form
+                key = (role, p.key)
+                if want and key not in existing:
+                    db.session.add(RolePermission(role=role, permission_key=p.key))
+                    try:
+                        db.session.flush()
+                        db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='added'))
+                    except Exception:
+                        pass
+                if not want and key in existing:
+                    db.session.delete(existing[key])
+                    try:
+                        db.session.flush()
+                        db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='removed'))
+                    except Exception:
+                        pass
+                seen_keys.add(key)
+        db.session.commit()
+        flash('Role permissions updated','success')
+        return redirect(url_for('role_permissions'))
+    role_map = {r.role: set() for r in RolePermission.query.with_entities(RolePermission.role).distinct()}
+    for rp in RolePermission.query.all():
+        role_map.setdefault(rp.role, set()).add(rp.permission_key)
+    return render_template('admin/role_permissions.html', roles=roles, perms=perms, role_map=role_map)
+
+@app.route('/admin/user-permissions', methods=['GET','POST'])
+@login_required
+def user_permissions():
+    if not current_user.is_superadmin:
+        abort(403)
+    user_id = request.args.get('user_id', type=int) or request.form.get('user_id', type=int)
+    users = User.query.order_by(User.name.asc()).all()
+    perms = Permission.query.order_by(Permission.key.asc()).all()
+    selected_user = User.query.get(user_id) if user_id else None
+    if request.method == 'POST' and selected_user:
+        # For each permission, radio: inherit / allow / deny -> name=perm_<key> value=inherit|allow|deny
+        existing = {up.permission_key: up for up in UserPermission.query.filter_by(user_id=selected_user.id).all()}
+        for p in perms:
+            val = request.form.get(f'perm_{p.key}')
+            if val == 'inherit':
+                if p.key in existing:
+                    db.session.delete(existing[p.key])
+                    try:
+                        db.session.flush()
+                        db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='inherit'))
+                    except Exception:
+                        pass
+            elif val in ('allow','deny'):
+                allow_flag = (val == 'allow')
+                if p.key in existing:
+                    old_allow = existing[p.key].allow
+                    existing[p.key].allow = allow_flag
+                    if old_allow != allow_flag:
+                        try:
+                            db.session.flush()
+                            db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
+                        except Exception:
+                            pass
+                else:
+                    db.session.add(UserPermission(user_id=selected_user.id, permission_key=p.key, allow=allow_flag))
+                    try:
+                        db.session.flush()
+                        db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
+                    except Exception:
+                        pass
+        db.session.commit()
+        flash('User permission overrides saved','success')
+        return redirect(url_for('user_permissions', user_id=selected_user.id))
+    overrides = {}
+    if selected_user:
+        overrides = {up.permission_key: up.allow for up in UserPermission.query.filter_by(user_id=selected_user.id).all()}
+    return render_template('admin/user_permissions.html', users=users, selected_user=selected_user, perms=perms, overrides=overrides)
+
 @app.route('/profile', methods=['GET','POST'])
 @login_required
 def profile():
@@ -566,7 +842,48 @@ def profile():
         db.session.commit()
         flash('Profile updated', 'success')
         return redirect(url_for('profile'))
-    return render_template('auth/profile.html', form=form, user=user)
+    # Build effective permission breakdown
+    all_perms = Permission.query.order_by(Permission.key.asc()).all()
+    effective = []
+    for p in all_perms:
+        source = 'role'
+        allowed = False
+        if current_user.is_superadmin:
+            allowed = True; source = 'superadmin'
+        else:
+            up = UserPermission.query.filter_by(user_id=user.id, permission_key=p.key).first()
+            if up:
+                allowed = bool(up.allow)
+                source = 'override-allow' if up.allow else 'override-deny'
+            else:
+                role_key = user.role or 'staff'
+                rp = RolePermission.query.filter_by(role=role_key, permission_key=p.key).first()
+                if rp:
+                    allowed = True
+                    source = 'role'
+        effective.append({'key': p.key, 'description': p.description, 'allowed': allowed, 'source': source})
+    # Load recent permission audit involving this user (as actor or target)
+    audits = PermissionAudit.query.filter((PermissionAudit.target_user_id==user.id) | (PermissionAudit.actor_user_id==user.id)).order_by(PermissionAudit.changed_at.desc()).limit(50).all()
+    # Short changelog (current version block)
+    changelog_block = ''
+    try:
+        from version_info import VERSION, get_changelog
+        full = get_changelog()
+        if full:
+            lines = full.splitlines()
+            capture=False
+            for line in lines:
+                if line.startswith(f'## {VERSION} '):
+                    capture=True
+                    changelog_block += line + '\n'
+                    continue
+                if capture and line.startswith('## '):
+                    break
+                if capture:
+                    changelog_block += line + '\n'
+    except Exception:
+        pass
+    return render_template('auth/profile.html', form=form, user=user, effective_permissions=effective, permission_audits=audits, changelog_block=changelog_block.strip())
 
 # Password reset
 @app.route("/reset", methods=["GET","POST"])
@@ -1876,7 +2193,7 @@ def observation_email(oid):
 # ---------------- Error Handlers ----------------
 @app.errorhandler(403)
 def forbidden(e):  # noqa: D401
-    return render_template("errors/403.html"), 403
+    return render_template("errors/403.html", description=getattr(e, 'description', None)), 403
 
 @app.errorhandler(404)
 def not_found(e):  # noqa: D401
@@ -1898,4 +2215,32 @@ if __name__ == "__main__":
     except Exception:
         # Fallbacks if config.py missing or incomplete
         RUN_HOST, RUN_PORT, RUN_DEBUG = "127.0.0.1", 5000, False
+    import os
+    import socket
+
+    # Allow environment override
+    env_port = os.getenv('PORT') or os.getenv('APP_PORT')
+    if env_port and env_port.isdigit():
+        RUN_PORT = int(env_port)
+    # If port in use, try next 10 ports automatically to ease dev collisions
+    base_port = RUN_PORT
+    for i in range(0, 10):
+        test_port = base_port + i
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.25)
+            if s.connect_ex((RUN_HOST, test_port)) != 0:  # free
+                RUN_PORT = test_port
+                break
+    if RUN_PORT != base_port:
+        print(f"[INFO] Selected available port {RUN_PORT} (requested {base_port} was busy)")
+    # Lightweight favicon route to suppress error spam if not served
+    @app.route('/favicon.ico')
+    def _favicon():
+        from flask import abort, send_from_directory
+        try:
+            return send_from_directory(os.path.join(app.root_path, 'static', 'img'), 'excel tutors logo 2023.png')
+        except Exception:
+            # Return 204 No Content to silence browsers
+            from flask import Response
+            return Response(status=204)
     app.run(host=RUN_HOST, port=RUN_PORT, debug=RUN_DEBUG)
