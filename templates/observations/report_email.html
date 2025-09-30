@@ -3,10 +3,10 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Observation Email Summary</title>
+    <title>Tutor Observation Report Email</title>
     <style>
       body {
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: "TW Cen MT", Arial, Helvetica, sans-serif;
         font-size: 14px;
         color: #1a1f29;
         margin: 0;
@@ -21,26 +21,58 @@
       .card {
         background: #ffffff;
         border-radius: 14px;
-        border: 1px solid #e2e8f0;
-        padding: 26px 34px 40px;
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05);
-      }
-      .brand-head {
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        border-bottom: 4px solid #363f99;
-        padding-bottom: 14px;
-        margin-bottom: 26px;
-      }
-      .brand-head img {
+        .checks-wrap {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px 10px;
+          padding: 14px 18px 4px;
+        }
+        .chk {
+          display: flex;
+          align-items: center;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 6px 10px 6px 6px;
+          font-size: 12px;
+        }
+        .chk.good {
+        }
+        .chk.bad {
+          background: #fff5ef;
+        }
+        .chk .box {
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-right: 6px;
+          font-weight: 700;
+          border: 2px solid #2e9b47;
+          border-radius: 4px;
+          font-size: 12px;
+        }
+        .chk.bad .box {
+          border-color: #f47421;
+          color: #f47421;
+        }
+        .chk.good .box {
+          color: #2e9b47;
+        }
         height: 70px;
       }
       h1 {
-        font-size: 26px;
+        font-size: 28px;
         margin: 0;
         letter-spacing: 0.5px;
         color: #363f99;
+      }
+      .brand-head img {
+        height: 60px;
+        width: auto !important;
+        max-width: 220px;
+        display: block;
       }
       .muted {
         color: #6b7280;
@@ -59,14 +91,14 @@
       }
       table.meta th {
         text-align: left;
-        font-size: 11px;
+        font-size: 12px;
         background: #507cb9;
         color: #fff;
         padding: 6px 8px;
         letter-spacing: 0.5px;
       }
       table.meta td {
-        font-size: 13px;
+        font-size: 14px;
         padding: 8px 10px;
         border: 1px solid #e2e8f0;
       }
@@ -74,7 +106,7 @@
         margin: 34px 0 0;
       }
       .section h2 {
-        font-size: 18px;
+        font-size: 20px;
         margin: 0 0 14px;
         color: #363f99;
         letter-spacing: 0.4px;
@@ -96,24 +128,23 @@
       }
       .grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 10px 12px;
-        padding: 14px 18px 4px;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px 14px;
+        padding: 14px 18px 10px;
       }
       .crit {
         position: relative;
         background: #f8fafc;
         border: 1px solid #e2e8f0;
-        border-left: 6px solid transparent;
-        padding: 10px 12px 10px 42px;
-        font-size: 12.5px;
         border-radius: 10px;
+        padding: 10px 12px 10px 44px;
+        font-size: 12.5px;
       }
       .crit.good {
-        border-left-color: #2e9b47;
+        border-left: 6px solid #2e9b47;
       }
       .crit.bad {
-        border-left-color: #f47421;
+        border-left: 6px solid #f47421;
         background: #fff5ef;
       }
       .crit .icon {
@@ -129,14 +160,17 @@
         display: flex;
         align-items: center;
         justify-content: center;
-      }
-      .crit.good .icon {
-        background: #2e9b47;
-        color: #fff;
+        background: #fff;
+        border: 2px solid #2e9b47;
       }
       .crit.bad .icon {
-        background: #f47421;
-        color: #fff;
+        border-color: #f47421;
+      }
+      .crit.good .icon span {
+        color: #2e9b47;
+      }
+      .crit.bad .icon span {
+        color: #f47421;
       }
       .comment-box {
         margin: 0 18px 18px;
@@ -222,7 +256,7 @@
           {% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Logo" />{%
           endif %}
           <div>
-            <h1>Observation Report</h1>
+            <h1>Tutor Observation Report</h1>
             <div class="sub">EXCEL TUTORS QUALITY & DEVELOPMENT</div>
           </div>
         </div>
@@ -246,6 +280,15 @@
             <th>Score</th>
             <td>{{ '%.1f'|format(obs.score) }}</td>
           </tr>
+          <tr>
+            <th>Cycle</th>
+            <td>{{ obs.cycle.title if obs.cycle else '—' }}</td>
+            <th>Generated</th>
+            <td>
+              {{ generated_at.strftime('%Y-%m-%d %H:%M UTC') if generated_at
+              else '' }}
+            </td>
+          </tr>
           {% if detail.next_review_date %}
           <tr>
             <th>Next Review</th>
@@ -254,89 +297,113 @@
           {% endif %}
         </table>
 
-        {% set checklist_groups = [ ('Weekly Test', data.weekly_test,
-        detail.weekly_test_comment), ('Homework', data.homework,
-        detail.homework_comment), ('Classwork', data.classwork,
-        detail.classwork_comment), ('Organisation & Class Management',
-        data.org_mgmt, detail.org_mgmt_comment) ] %} {% set unmet_all = [] %} {%
-        for title, mapping, comment in checklist_groups %}
+        {# Define full item lists so we always render both met and unmet
+        criteria #} {% set weekly_items = ['Weekly Test Was of Appropriate
+        Format','Suitable Difficulty Level','Labelled Correctly','Marked on
+        Time'] %} {% set hw_items = ['Enough Homework Set','Revision Task
+        Set','Marked the Homework','Appropriate Feedback Given'] %} {% set
+        cw_items = ['Enough Classwork Done','On Track with Classwork
+        Marking','Appropriate Feedback Given'] %} {% set org_items = ['Class was
+        Distraction Free','No Off-Topic Conversation','Students were Engaged
+        with Work','Tutor Planner Up to Date','Tutor Paper Register Up to
+        Date','Tutor Planner is Filled in with Enough Details','Good Time
+        Management','Good Use of Online System','Student Planner is Filled in
+        with Enough Details'] %} {% set checklist_groups = [ ('Weekly Test',
+        data.weekly_test, detail.weekly_test_comment, weekly_items),
+        ('Homework', data.homework, detail.homework_comment, hw_items),
+        ('Classwork', data.classwork, detail.classwork_comment, cw_items),
+        ('Organisation & Class Management', data.org_mgmt,
+        detail.org_mgmt_comment, org_items) ] %} {% set unmet_all = [] %} {% for
+        title, mapping, comment, items in checklist_groups %}
         <div class="group">
           <div class="group-head">{{ title }}</div>
           <div class="grid">
-            {% for k,v in mapping.items() %}
-            <div class="crit {{ 'good' if v else 'bad' }}">
-              <div class="icon">{{ '✓' if v else '✗' }}</div>
-              <strong>{{ k.replace('_',' ')|title }}</strong><br />
+            {% for label in items %} {% set key = label.replace(' ','_')|lower()
+            %} {% set val = mapping.get(key) if mapping else False %}
+            <div class="crit {{ 'good' if val else 'bad' }}">
+              <div class="icon"><span>{{ '✓' if val else '✗' }}</span></div>
+              <strong>{{ label }}</strong><br />
               <span
-                style="font-size:11px; letter-spacing:.4px; font-weight:600; color: {{ '#2e9b47' if v else '#f47421' }};"
-                >{{ 'Met' if v else 'Not Met' }}</span
+                style="font-size:11px; letter-spacing:.4px; font-weight:600; color: {{ '#2e9b47' if val else '#f47421' }};"
+                >{{ 'Met' if val else 'Not Met' }}</span
               >
-              {% if not v %}{% set _ = unmet_all.append(k.replace('_','
-              ')|title) %}{% endif %}
+              {% if not val %}{% set _ = unmet_all.append(label) %}{% endif %}
             </div>
-            {% endfor %} {% if not mapping %}
-            <div class="crit bad">
-              <div class="icon">–</div>
-              <em>No criteria recorded</em>
-            </div>
-            {% endif %}
+            {% endfor %}
           </div>
           <div class="comment-box {{ '' if comment else 'empty' }}">
+            <strong style="display: block; margin-bottom: 4px"
+              >Comment Regarding {{ title }}</strong
+            >
             {{ comment or 'No additional comment.' }}
           </div>
         </div>
         {% endfor %}
 
         <div class="section">
-          <h2>Unmet Criteria Summary</h2>
-          {% if unmet_all %}
-          <div class="summary-box">
-            {% for item in unmet_all %}• {{ item }}{% if not loop.last %}<br />{%
-            endif %}{% endfor %}
-          </div>
-          {% else %}
-          <div class="summary-box ok">All checklist criteria were met.</div>
-          {% endif %}
-        </div>
-
-        <div class="section">
           <h2>Positive Aspects</h2>
-          <div class="chips">
-            {% if data.positives %} {% for p in data.positives %}<span
-              class="chip"
-              >{{ p }}</span
-            >{% endfor %} {% else %}<span class="muted">None listed</span>{%
-            endif %}
+          <div>
+            {% if data.positives %}
+            <ol style="margin: 4px 0 0 20px; padding: 0">
+              {% for p in data.positives %}
+              <li style="margin: 4px 0">{{ p }}</li>
+              {% endfor %}
+            </ol>
+            {% else %}<span class="muted">None listed</span>{% endif %}
           </div>
         </div>
 
         <div class="section">
           <h2>Areas For Improvement</h2>
-          <div class="chips">
-            {% if data.improvements %} {% for p in data.improvements %}<span
-              class="chip imp"
-              >{{ p }}</span
-            >{% endfor %} {% else %}<span class="muted">None listed</span>{%
-            endif %}
+          <div>
+            {% if data.improvements %}
+            <ol style="margin: 4px 0 0 20px; padding: 0">
+              {% for p in data.improvements %}
+              <li style="margin: 4px 0">{{ p }}</li>
+              {% endfor %}
+            </ol>
+            {% else %}<span class="muted">None listed</span>{% endif %}
           </div>
         </div>
 
         <div class="section">
-          <h2>Targets / Actions / Notes</h2>
+          <h2>8-11. Targets & Notes</h2>
           <div class="narr">
+            {% set ns = namespace(targets=[], actions=[]) %} {% for line in
+            (detail.target_set or '').split('\n') %}{% set l=line.strip() %}{%
+            if l %}{% set _ = ns.targets.append(l) %}{% endif %}{% endfor %} {%
+            for line in (detail.actions_taken or '').split('\n') %}{% set
+            l=line.strip() %}{% if l %}{% set _ = ns.actions.append(l) %}{%
+            endif %}{% endfor %}
             <h3>Target Set</h3>
-            <p>
-              {{ detail.target_set or '<span class="muted">None</span>'|safe }}
-            </p>
+            <div>
+              {% if ns.targets %}
+              <ol style="margin: 4px 0 0 20px; padding: 0">
+                {% for t in ns.targets %}
+                <li style="margin: 4px 0">{{ t }}</li>
+                {% endfor %}
+              </ol>
+              {% else %}<span class="muted">None</span>{% endif %}
+            </div>
             <h3>Actions Taken</h3>
-            <p>
-              {{ detail.actions_taken or '<span class="muted">None</span>'|safe
-              }}
-            </p>
+            <div>
+              {% if ns.actions %}
+              <ul style="margin: 4px 0 0 20px; padding: 0">
+                {% for a in ns.actions %}
+                <li style="margin: 4px 0">{{ a }}</li>
+                {% endfor %}
+              </ul>
+              {% else %}<span class="muted">None</span>{% endif %}
+            </div>
             <h3>Notes</h3>
             <p>
               {{ detail.notes or '<span class="muted">No additional notes</span
               >'|safe }}
+            </p>
+            <h3>Next Review Date</h3>
+            <p>
+              {{ detail.next_review_date or '<span class="muted">—</span>'|safe
+              }}
             </p>
           </div>
         </div>

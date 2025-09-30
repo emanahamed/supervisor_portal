@@ -82,13 +82,19 @@
     <div class="soft-card p-6 space-y-4">
       <h2 class="text-lg font-semibold text-slate-700">8-11. Targets & Notes</h2>
       <div class="grid md:grid-cols-2 gap-4">
-        <div>
-          <label class="soft-label">Target Set</label>
-          <textarea name="target_set" class="soft-input" rows="2">{{ detail.target_set if detail else '' }}</textarea>
+        <div class="space-y-2 md:col-span-1">
+          <label class="soft-label flex items-center justify-between">Target Set
+            <button type="button" id="addTargetBtn" class="soft-btn bg-slate-100 text-xs">Add</button>
+          </label>
+          <div id="targetsList" class="space-y-2"></div>
+          <input type="hidden" name="targets_json" id="targetsJson" value='{{ (detail.target_set.split("\n") if detail and detail.target_set else [])|tojson|safe }}'>
         </div>
-        <div>
-          <label class="soft-label">Actions Taken</label>
-          <textarea name="actions_taken" class="soft-input" rows="2">{{ detail.actions_taken if detail else '' }}</textarea>
+        <div class="space-y-2 md:col-span-1">
+          <label class="soft-label flex items-center justify-between">Actions Taken
+            <button type="button" id="addActionBtn" class="soft-btn bg-slate-100 text-xs">Add</button>
+          </label>
+          <div id="actionsList" class="space-y-2"></div>
+          <input type="hidden" name="actions_json" id="actionsJson" value='{{ (detail.actions_taken.split("\n") if detail and detail.actions_taken else [])|tojson|safe }}'>
         </div>
         <div>
           <label class="soft-label">Notes</label>
@@ -149,6 +155,39 @@
   positives.render(); improvements.render();
   document.getElementById('addPositiveBtn').addEventListener('click', ()=> positives.add());
   document.getElementById('addImprovementBtn').addEventListener('click', ()=> improvements.add());
+
+  // Dynamic Targets & Actions (list style similar to positives/improvements)
+  function initSimpleList(containerId, hiddenId){
+    const container = document.getElementById(containerId);
+    const hidden = document.getElementById(hiddenId);
+    let items = [];
+    try { items = JSON.parse(hidden.value || '[]'); } catch(e){ items = []; }
+    function render(){
+      container.innerHTML='';
+      items.forEach((text, idx)=>{
+        const row = document.createElement('div');
+        row.className='flex gap-2';
+        row.innerHTML = `<input type="text" class="soft-input flex-1" value="${(text||'').replace(/"/g,'&quot;')}" data-idx="${idx}">`+
+                        `<button type="button" class="soft-btn bg-rose-100 text-rose-700" data-rm="${idx}">−</button>`;
+        container.appendChild(row);
+      });
+      hidden.value = JSON.stringify(items);
+    }
+    container.addEventListener('input', e=>{
+      const inp = e.target.closest('input[data-idx]');
+      if(!inp) return; items[parseInt(inp.dataset.idx,10)] = inp.value; hidden.value = JSON.stringify(items);
+    });
+    container.addEventListener('click', e=>{
+      const btn = e.target.closest('button[data-rm]');
+      if(!btn) return; const i = parseInt(btn.dataset.rm,10); items.splice(i,1); render();
+    });
+    return { add: ()=>{ items.push(''); render(); }, render };
+  }
+  const targets = initSimpleList('targetsList','targetsJson');
+  const actions = initSimpleList('actionsList','actionsJson');
+  targets.render(); actions.render();
+  document.getElementById('addTargetBtn').addEventListener('click', ()=> targets.add());
+  document.getElementById('addActionBtn').addEventListener('click', ()=> actions.add());
 })();
 </script>
 {% endblock %}

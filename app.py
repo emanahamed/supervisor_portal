@@ -3,7 +3,7 @@ import csv
 import io
 import json
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pandas as pd
@@ -48,10 +48,31 @@ ts = URLSafeTimedSerializer(SECRET_KEY)
 def inject_version():
     return {"APP_VERSION": VERSION}
 
-@app.route('/version')
+@app.route('/version-history')
 def version_history():
-    # Return raw markdown (basic) – could be rendered nicer or converted to HTML client-side
     return jsonify({"version": VERSION, "changelog": get_changelog()})
+
+@app.route('/api/version')
+def api_version():
+    full = get_changelog()
+    current_block = ''
+    if full:
+        lines = full.splitlines()
+        capture = False
+        for line in lines:
+            if line.startswith(f'## {VERSION} '):
+                capture = True
+                current_block += line + '\n'
+                continue
+            if capture and line.startswith('## '):
+                break
+            if capture:
+                current_block += line + '\n'
+    return jsonify({
+        'version': VERSION,
+        'changelog_current': current_block.strip(),
+        'changelog_full': full
+    })
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -943,7 +964,7 @@ def availability_index():
                            selected_days=selected_days,
                            sync_count=sync_count,
                            sync_error=sync_error,
-                           synced_at=datetime.utcnow())
+                           synced_at=datetime.now(timezone.utc))
 
 @app.route('/availability/new', methods=['GET','POST'])
 @login_required
@@ -1523,45 +1544,106 @@ def observation_extended_new():
     if request.method == 'POST':
         errors = []
         staff_raw = request.form.get('staff_id')
-        if not staff_raw:
-            errors.append('Tutor is required.')
         cycle_raw = request.form.get('cycle_id')
         date_raw = request.form.get('date')
         score_raw = request.form.get('score')
         timeslot = request.form.get('timeslot')
-        if timeslot not in ['9-11','11-1','2-4','4-6','5-7']:
-            errors.append('Invalid timeslot.')
+        # Validate staff
         try:
             staff_id = int(staff_raw) if staff_raw else None
         except Exception:
-            errors.append('Invalid tutor selection.')
             staff_id = None
+        if not staff_id:
+            errors.append('Tutor is required.')
+        # Validate cycle (fallback to first available)
         try:
             cycle_id = int(cycle_raw) if cycle_raw else (cycles[0].id if cycles else None)
         except Exception:
-            errors.append('Invalid cycle selection.')
             cycle_id = None
+        if not cycle_id:
+            errors.append('Cycle is required.')
+        # Date
         try:
             date_val = datetime.strptime(date_raw, '%Y-%m-%d').date() if date_raw else date.today()
         except Exception:
-            errors.append('Invalid date value.')
-            date_val = date.today()
+            date_val = date.today(); errors.append('Invalid date value.')
+        # Score
         try:
             score = float(score_raw)
             if score < 0 or score > 10:
                 errors.append('Score must be between 0 and 10.')
         except Exception:
-            errors.append('Observation score is required.')
-            score = 0
+            score = None; errors.append('Observation score is required.')
+        # Timeslot
+        if timeslot not in ['9-11','11-1','2-4','4-6','5-7']:
+            errors.append('Invalid timeslot.')
         if errors:
+            # Rebuild user-entered state so the form is NOT wiped
+            weekly_test_data = _deserialize_checklist('weekly_test', request.form)
+            homework_data = _deserialize_checklist('homework', request.form)
+            classwork_data = _deserialize_checklist('classwork', request.form)
+            org_mgmt_data = _deserialize_checklist('org_mgmt', request.form)
+            # Build a lightweight stub for detail-like attributes accessed in template
+            from types import SimpleNamespace
+            detail_stub = SimpleNamespace(
+                timeslot=timeslot if timeslot in ['9-11','11-1','2-4','4-6','5-7'] else '',
+                weekly_test_comment=request.form.get('weekly_test_comment') or None,
+                homework_comment=request.form.get('homework_comment') or None,
+                classwork_comment=request.form.get('classwork_comment') or None,
+                org_mgmt_comment=request.form.get('org_mgmt_comment') or None,
+                target_set=request.form.get('target_set') or '',
+                actions_taken=request.form.get('actions_taken') or '',
+                notes=request.form.get('notes') or '',
+                next_review_date=request.form.get('next_review_date') or None,
+            )
+            # Observation stub for score & staff selection
+            obs_stub = SimpleNamespace(
+                staff_id=staff_id,
+                score=score,
+                date=date_val,
+            )
+            # Dynamic lists
+            def _safe_load_list(raw):
+                try:
+                    return json.loads(raw) if raw else []
+                except Exception:
+                    return []
+            positives_list = _safe_load_list(request.form.get('positives_json'))
+            improvements_list = _safe_load_list(request.form.get('improvements_json'))
             flash('\n'.join(errors), 'danger')
-            return render_template('observations/extended_form.html', staff=staff, cycles=cycles, obs=None, detail=None,
-                                   today=date.today(), weekly_test_data={}, homework_data={}, classwork_data={}, org_mgmt_data={},
-                                   positives_json=[], improvements_json=[], form_errors=errors)
+            return render_template(
+                'observations/extended_form.html',
+                staff=staff,
+                cycles=cycles,
+                obs=obs_stub,
+                detail=detail_stub,
+                today=date.today(),
+                weekly_test_data=weekly_test_data,
+                homework_data=homework_data,
+                classwork_data=classwork_data,
+                org_mgmt_data=org_mgmt_data,
+                positives_json=positives_list,
+                improvements_json=improvements_list,
+                form_errors=errors,
+            )
+        # Create observation
         obs = Observation(cycle_id=cycle_id, staff_id=staff_id, observer_id=current_user.id, date=date_val, score=score)
-        db.session.add(obs)
-        db.session.flush()
-        from models import ObservationDetail  # local import to avoid circular
+        db.session.add(obs); db.session.flush()
+        from models import ObservationDetail
+
+        # Targets & actions now provided as JSON arrays (targets_json / actions_json)
+        def _join_list(raw):
+            try:
+                arr = json.loads(raw) if raw else []
+                if not isinstance(arr, list):
+                    return None
+                # Filter out empty/whitespace-only entries
+                cleaned = [x.strip() for x in arr if isinstance(x,str) and x.strip()]
+                return "\n".join(cleaned) if cleaned else None
+            except Exception:
+                return None
+        target_set_joined = _join_list(request.form.get('targets_json'))
+        actions_joined = _join_list(request.form.get('actions_json'))
         detail = ObservationDetail(
             observation_id=obs.id,
             timeslot=timeslot,
@@ -1575,15 +1657,15 @@ def observation_extended_new():
             org_mgmt_comment=request.form.get('org_mgmt_comment') or None,
             positives=request.form.get('positives_json'),
             improvements=request.form.get('improvements_json'),
-            target_set=request.form.get('target_set') or None,
-            actions_taken=request.form.get('actions_taken') or None,
+            target_set=target_set_joined,
+            actions_taken=actions_joined,
             notes=request.form.get('notes') or None,
             next_review_date=datetime.strptime(request.form.get('next_review_date'), '%Y-%m-%d').date() if request.form.get('next_review_date') else None
         )
-        db.session.add(detail)
-    db.session.commit()
-    flash('Observation created','success')
-    return redirect(url_for('observations_index', cycle_id=cycle_id))
+        db.session.add(detail); db.session.commit()
+        flash('Observation created','success')
+        return redirect(url_for('observations_index', cycle_id=cycle_id))
+    # GET -> blank form
     return render_template('observations/extended_form.html', staff=staff, cycles=cycles, obs=None, detail=None,
                            today=date.today(), weekly_test_data={}, homework_data={}, classwork_data={}, org_mgmt_data={},
                            positives_json=[], improvements_json=[])
@@ -1632,8 +1714,19 @@ def observation_extended_edit(oid):
         detail.org_mgmt_comment = request.form.get('org_mgmt_comment') or None
         detail.positives = request.form.get('positives_json')
         detail.improvements = request.form.get('improvements_json')
-        detail.target_set = request.form.get('target_set') or None
-        detail.actions_taken = request.form.get('actions_taken') or None
+        # New JSON-based targets/actions lists
+        try:
+            tgt_list = json.loads(request.form.get('targets_json') or '[]')
+            if isinstance(tgt_list, list):
+                detail.target_set = "\n".join([t.strip() for t in tgt_list if isinstance(t,str) and t.strip()]) or None
+        except Exception:
+            pass
+        try:
+            act_list = json.loads(request.form.get('actions_json') or '[]')
+            if isinstance(act_list, list):
+                detail.actions_taken = "\n".join([t.strip() for t in act_list if isinstance(t,str) and t.strip()]) or None
+        except Exception:
+            pass
         detail.notes = request.form.get('notes') or None
         detail.next_review_date = datetime.strptime(request.form.get('next_review_date'), '%Y-%m-%d').date() if request.form.get('next_review_date') else None
         if errors:
@@ -1672,7 +1765,7 @@ def observation_report(oid):
     except Exception:
         pass
     # Use a PDF-friendly simplified template
-    html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.utcnow())
+    html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.now(timezone.utc))
     try:
         from io import BytesIO
 
@@ -1699,7 +1792,7 @@ def observation_email(oid):
     except Exception:
         pass
     # Use dedicated email template (richer styling) and PDF template for attachment
-    email_html = render_template('observations/report_email.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.utcnow())
+    email_html = render_template('observations/report_email.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.now(timezone.utc))
     tutor_email = obs.staff.email
     ajax = request.args.get('ajax') or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept','')
     if not tutor_email:
@@ -1715,10 +1808,10 @@ def observation_email(oid):
         from xhtml2pdf import pisa
 
         # Render PDF-friendly template separately for attachment
-        pdf_html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.utcnow())
+        pdf_html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.now(timezone.utc))
         pdf_io = BytesIO(); pisa.CreatePDF(pdf_html, dest=pdf_io); pdf_io.seek(0); pdf_bytes = pdf_io.read()
     except Exception:
-        pass
+        pdf_bytes = None
     body = f"<p>Dear {obs.staff.name},</p><p>Please find your observation summary below:</p>" + email_html + "<p>Best regards,<br>Excel Tutors</p>"
     try:
         if pdf_bytes:

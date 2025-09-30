@@ -1,5 +1,32 @@
 # Version History
 
+## 0.7.0 - 2025-09-30
+
+Observation Module (Extended Tutor Observation & Reporting) Completion:
+
+- Added extended observation workflow (`/observations/extended/...`) with rich checklist + narrative detail captured in `ObservationDetail`.
+- Structured JSON-backed checklists (Weekly Test, Homework, Classwork, Organisation & Class Management) stored as text, parsed via helper methods.
+- Dynamic multi-item list inputs (positives, improvements, targets, actions) with add/remove JS; JSON stored then rendered as numbered or bulleted lists in reports.
+- Form resilience: user-entered data (all checklists, lists, targets/actions, notes) preserved on validation errors (no wiping behavior).
+- Report revamp: unified Email + PDF styling with brand colours, section numbering aligned to extended form (1–11), renamed main header to "Tutor Observation Report".
+- Criteria presentation: square tick/cross indicators; email uses 3-column responsive grid, PDF uses 3-column table for xhtml2pdf compatibility; both show met & unmet criteria.
+- Converted Positive Aspects, Areas for Improvement, Targets, Actions Taken to ordered / bullet list formats (chips removed for consistency).
+- Added per-section comment headings ("Comment Regarding <Section>").
+- Removed former "Unmet Criteria Summary" block per requirements.
+- Logo scaling adjustments (email) with aspect-ratio preservation.
+- Conditional page break inserted in PDF after Section 5 for long reports.
+- Target/Action storage backward compatibility: newline-joined lists derived from JSON arrays; legacy consumers unaffected.
+- Timezone-aware generated timestamp passed to templates.
+- Accessibility groundwork (semantic list structures) & consistent minimum font sizes (>=11) across PDF for readability.
+
+Internal / Refactor:
+
+- Macro & template simplifications removing obsolete card/table hybrids.
+- Safeguards against missing detail rows (lazy creation in edit route).
+- Clean removal of deprecated unmet-summary logic.
+
+Next Potential Enhancements (not implemented in 0.7.0): font embedding for TW Cen MT in PDF, audit trail for cycle changes, date-in-cycle validation, global unmet criteria roll-up.
+
 ## 0.6.0 - 2025-09-29
 
 - Added Tasks (To-Do) module with model fields: Description, Notes, Actions Taken, Criticality, Urgency, Status (Pending/Done), Due Date, Created By, Assigned To, timestamps.
