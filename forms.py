@@ -15,6 +15,7 @@ TODO_STATUS_CHOICES = [("Pending","Pending"),("Done","Done")]
 class LoginForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email()])
     password = PasswordField("Password", validators=[DataRequired()])
+    remember = BooleanField("Remember me", default=False)
     submit = SubmitField("Sign in")
 
 class RegisterForm(FlaskForm):

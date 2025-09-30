@@ -1,4 +1,4 @@
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 # Helper to read changelog (VERSION.md) lazily
 import os

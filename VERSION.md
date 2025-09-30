@@ -1,5 +1,23 @@
 # Version History
 
+## 0.8.0 - 2025-09-30
+
+Auth & UX Enhancements:
+
+- Modernised login & registration pages: cleaner headings, icon-decorated inputs, logo-only branding (removed adjacent text label).
+- Added dark/light mode toggle (persisted via localStorage) using Tailwind `dark` class strategy.
+- Implemented Caps Lock detection for password inputs with subtle inline indicator.
+- Added password visibility toggle consistency and remember-me checkbox (persistent session support).
+- Inserted "Back to site" convenience link under auth card.
+
+Internal:
+
+- Enabled Tailwind darkMode config in auth base template.
+- Added minimal JS bundle for theme + caps lock (no external dependency).
+- Version bumped to 0.8.0.
+
+Future (Not in 0.8.0): password strength meter, security rate-limit UI feedback, keyboard-focus outline refinement, progressive enhancement for no-JS environments.
+
 ## 0.7.0 - 2025-09-30
 
 Observation Module (Extended Tutor Observation & Reporting) Completion:

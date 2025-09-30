@@ -1,27 +1,118 @@
-{% extends 'auth/_auth_base.html' %} {% block title %}Sign in — Excel Tutors{%
-endblock %} {% block auth_content %}
-<h1
-  class="text-2xl font-semibold bg-gradient-to-r from-white to-indigo-100 bg-clip-text text-transparent mb-6"
->
+{% extends 'auth/_auth_base.html' %} {% block title %}Sign in{% endblock %} {%
+block auth_content %}
+<h1 class="text-2xl font-semibold tracking-tight text-white mb-2">
   Welcome back
 </h1>
+<p class="text-sm text-white/70 mb-6">
+  Sign in to access your dashboard and tools.
+</p>
 <form method="post" class="space-y-5">
   {{ form.hidden_tag() }}
-  <div>
+  <div class="space-y-1">
     <label
-      class="block text-xs font-semibold tracking-wide text-white/80 mb-1 uppercase"
+      class="block text-[11px] font-semibold tracking-wide text-white/70 uppercase"
       >Email</label
     >
-    {{ form.email(class_='soft-input') }}
+    <div class="relative">
+      <span
+        class="absolute inset-y-0 left-0 flex items-center pl-3 text-indigo-400"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M4 6h16M4 6l8 7 8-7M4 6v12h16V6"
+          />
+        </svg>
+      </span>
+      {{ form.email(class_='soft-input pl-10') }}
+    </div>
   </div>
-  <div>
+  <div class="space-y-1">
     <label
-      class="block text-xs font-semibold tracking-wide text-white/80 mb-1 uppercase"
+      class="block text-[11px] font-semibold tracking-wide text-white/70 uppercase"
       >Password</label
     >
-    {{ form.password(class_='soft-input') }}
+    <div class="relative">
+      <span
+        class="absolute inset-y-0 left-0 flex items-center pl-3 text-indigo-400"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 11c1.105 0 2-.672 2-1.5S13.105 8 12 8s-2 .672-2 1.5.895 1.5 2 1.5z"
+          />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"
+          />
+        </svg>
+      </span>
+      {{ form.password(class_='soft-input pl-10 pr-10', id='password') }}
+      <button
+        type="button"
+        tabindex="-1"
+        class="absolute inset-y-0 right-0 flex items-center pr-3 text-indigo-400 hover:text-indigo-600"
+        onclick="const p=document.getElementById('password'); p.type=p.type==='password'?'text':'password'; this.querySelector('svg').classList.toggle('opacity-30');"
+        aria-label="Toggle password visibility"
+      >
+        <svg
+          class="w-4 h-4 transition-opacity"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+          />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+          />
+        </svg>
+      </button>
+    </div>
+    <div class="mt-1 flex items-center justify-between text-[11px]">
+      <label class="inline-flex items-center gap-1 text-white/80">
+        {{ form.remember(class_='rounded accent-indigo-500') }}
+        <span>Remember me</span>
+      </label>
+    </div>
   </div>
-  <button class="primary-btn">Sign in</button>
+  <button class="primary-btn flex items-center justify-center gap-2 group">
+    <svg
+      class="w-4 h-4 opacity-90 group-hover:translate-x-0.5 transition-transform"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+    >
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M5 12h14M13 6l6 6-6 6"
+      />
+    </svg>
+    <span>Sign in</span>
+  </button>
   <div class="flex items-center justify-between text-xs mt-2">
     <a href="{{ url_for('request_reset') }}" class="link">Forgot password?</a>
     <a href="{{ url_for('register') }}" class="text-white/70 hover:text-white"

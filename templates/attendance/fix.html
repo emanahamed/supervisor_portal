@@ -1,0 +1,111 @@
+{% extends 'base.html' %} {% block title %}Fix Attendance Data · Excel Tutors{%
+endblock %} {% block page_title %}Fix Attendance Data{% endblock %} {% block
+content %}
+<div class="max-w-4xl mx-auto">
+  <div class="soft-card p-6 mb-8">
+    <h2 class="text-lg font-semibold mb-4">Upload Raw Attendance Export</h2>
+    <p class="text-sm text-slate-600 mb-4">
+      Upload the monthly raw Excel workbook. Sheet names must follow the pattern
+      <code>staffId.staffId[.staffId]</code> (e.g. <code>12.34</code> or
+      <code>7.18.22</code>). The tool will extract On / Off duty times, remove
+      ABSENT rows, and produce a cleaned report with a consolidated header.
+    </p>
+    <form id="attendanceForm" class="space-y-5" enctype="multipart/form-data">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"
+            >Year</label
+          >
+          <input
+            type="number"
+            name="year"
+            min="2000"
+            required
+            class="soft-input"
+            placeholder="2025"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"
+            >Month</label
+          >
+          <input
+            type="number"
+            name="month"
+            min="1"
+            max="12"
+            required
+            class="soft-input"
+            placeholder="9"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"
+            >Excel File</label
+          >
+          <input
+            type="file"
+            name="excel_file"
+            accept=".xls,.xlsx"
+            required
+            class="soft-input"
+          />
+        </div>
+      </div>
+      <div id="progressWrap" class="hidden">
+        <div class="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+          <div
+            id="progressBar"
+            class="h-full bg-indigo-500 text-[10px] text-white text-center leading-3"
+            style="width: 0%"
+          >
+            0%
+          </div>
+        </div>
+      </div>
+      <div id="message" class="hidden text-sm font-medium"></div>
+      <div class="pt-2 flex gap-3">
+        <button type="submit" class="soft-btn soft-btn-primary">
+          Generate & Download Report
+        </button>
+        <button type="reset" class="soft-btn bg-slate-100">Reset</button>
+      </div>
+    </form>
+  </div>
+  <div class="text-xs text-slate-500 space-y-1">
+    <p><strong>Notes:</strong></p>
+    <ul class="list-disc pl-5 space-y-1">
+      <li>Rows with ABSENT in any duty column are excluded.</li>
+      <li>Second time zone columns are left blank for future expansion.</li>
+      <li>
+        Output sheet titled <em>Exception Stat.</em> with merged multi-row
+        header.
+      </li>
+    </ul>
+  </div>
+</div>
+<script>
+  (function(){
+    const form = document.getElementById('attendanceForm');
+    const barWrap = document.getElementById('progressWrap');
+    const bar = document.getElementById('progressBar');
+    const msg = document.getElementById('message');
+    function setMsg(text, ok){
+      msg.textContent = text; msg.classList.remove('hidden');
+      msg.className = 'mt-3 px-3 py-2 rounded ' + (ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700');
+    }
+    form.addEventListener('submit', function(e){
+      e.preventDefault(); msg.classList.add('hidden');
+      const fd = new FormData(form);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '{{ url_for('attendance_process') }}');
+      barWrap.classList.remove('hidden'); bar.style.width='0%'; bar.textContent='0%';
+      xhr.upload.onprogress = function(ev){ if(ev.lengthComputable){ const p=Math.round(ev.loaded/ev.total*100); bar.style.width=p+'%'; bar.textContent=p+'%'; }}
+      xhr.responseType='blob';
+      xhr.onload = function(){ barWrap.classList.add('hidden'); if(xhr.status===200){ const blob=new Blob([xhr.response],{type:xhr.getResponseHeader('Content-Type')}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download='Attendance_Fixed.xlsx'; document.body.appendChild(link); link.click(); document.body.removeChild(link); setMsg('Report generated successfully.','ok'); } else { const reader=new FileReader(); reader.onload=()=> setMsg('Error: '+reader.result,false); reader.readAsText(xhr.response); }};
+      xhr.onerror = function(){ barWrap.classList.add('hidden'); setMsg('Network error during upload.', false); };
+      xhr.send(fd);
+    });
+  })();
+</script>
+{% endblock %}

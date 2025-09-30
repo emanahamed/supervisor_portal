@@ -16,6 +16,8 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import or_, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from attendance_utils import (combine_all_sheets, compute_date_range,
+                              export_with_custom_header_to_bytes)
 from email_utils import build_task_notification_email, send_email
 from forms import (AvailabilityForm, CycleForm, IssueForm, LoginForm,
                    MeetingForm, ObservationForm, RegisterForm, StaffForm,
@@ -73,6 +75,35 @@ def api_version():
         'changelog_current': current_block.strip(),
         'changelog_full': full
     })
+
+# ---------------- Attendance Fix Page ---------------- #
+@app.route('/attendance/fix')
+@login_required
+def attendance_fix():
+    return render_template('attendance/fix.html')
+
+@app.route('/attendance/fix/process', methods=['POST'])
+@login_required
+def attendance_process():
+    try:
+        year = int(request.form.get('year'))
+        month = int(request.form.get('month'))
+    except Exception:
+        return ('Invalid year or month', 400)
+    excel_file = request.files.get('excel_file')
+    if not excel_file:
+        return ('No file uploaded', 400)
+    excel_file.seek(0)
+    try:
+        df = combine_all_sheets(excel_file, year, month)
+    except Exception as e:
+        return (f'Failed to process workbook: {e}', 500)
+    start_date, end_date = compute_date_range(year, month)
+    try:
+        out = export_with_custom_header_to_bytes(df, start_date, end_date)
+    except Exception as e:
+        return (f'Failed to build output workbook: {e}', 500)
+    return send_file(out, as_attachment=True, download_name='Attendance_Fixed.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -387,7 +418,10 @@ def login():
         if user and check_password_hash(user.password_hash, form.password.data):
             if not user.is_approved:
                 return render_template("auth/pending.html")
-            login_user(user)
+            try:
+                login_user(user, remember=bool(form.remember.data))
+            except TypeError:
+                login_user(user)
             return redirect(url_for('index'))
         flash("Invalid credentials", "danger")
     return render_template("auth/login.html", form=form)
