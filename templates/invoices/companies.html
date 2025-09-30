@@ -1,0 +1,266 @@
+{% extends 'base.html' %} {% block page_title %}Companies{% endblock %} {% block
+content %}
+<div x-data="companyCrud()" class="space-y-6">
+  <div class="grid md:grid-cols-5 gap-4">
+    <div class="soft-card p-4">
+      <div class="text-[11px] uppercase text-slate-500 font-semibold">
+        Companies
+      </div>
+      <div class="text-2xl font-bold">{{ total_companies }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-[11px] uppercase text-slate-500 font-semibold">
+        Invoices
+      </div>
+      <div class="text-2xl font-bold">{{ total_invoices }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-[11px] uppercase text-slate-500 font-semibold">
+        Unpaid £
+      </div>
+      <div class="text-2xl font-bold">£{{ '%.2f'|format(unpaid_total) }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-[11px] uppercase text-slate-500 font-semibold">
+        Paid £
+      </div>
+      <div class="text-2xl font-bold">£{{ '%.2f'|format(paid_total) }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-[11px] uppercase text-slate-500 font-semibold">
+        Latest Invoice
+      </div>
+      <div class="text-xl font-semibold">
+        {{ latest_invoice_date.strftime('%Y-%m-%d') if latest_invoice_date else
+        '-' }}
+      </div>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <button @click="openCreate()" class="soft-btn">+ New Company</button>
+    <input
+      x-model="search"
+      type="text"
+      placeholder="Filter companies..."
+      class="soft-input text-sm ml-auto w-56"
+    />
+  </div>
+  <div class="overflow-x-auto text-sm">
+    <table
+      class="min-w-full border divide-y divide-slate-200 bg-white rounded-lg"
+    >
+      <thead
+        class="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"
+      >
+        <tr>
+          <th class="p-2 text-left">Logo</th>
+          <th class="p-2 text-left">Name</th>
+          <th class="p-2 text-left">Prefix</th>
+          <th class="p-2 text-left"># Inv</th>
+          <th class="p-2 text-left">Unpaid £</th>
+          <th class="p-2 text-left">Footer / Tagline</th>
+          <th class="p-2 text-left">Contact</th>
+          <th class="p-2 text-left">Updated</th>
+          <th class="p-2 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100" id="companyRows">
+        {% for c in companies %}
+        <tr x-show="match('{{ c.name|e }}')">
+          <td class="p-2">
+            {% if c.logo_path %}<img
+              src="{{ url_for('static', filename=c.logo_path) }}"
+              class="h-8 w-auto"
+              alt="logo"
+            />{% endif %}
+          </td>
+          <td class="p-2 font-medium">{{ c.name }}</td>
+          <td class="p-2">{{ c.invoice_prefix }}</td>
+          <td class="p-2 text-center">{{ company_stats[c.id].count }}</td>
+          <td class="p-2 text-center">
+            £{{ '%.2f'|format(company_stats[c.id].unpaid_sum) }}
+          </td>
+          <td
+            class="p-2 text-xs max-w-xs truncate"
+            title="{{ c.payment_footer }}"
+          >
+            {{ c.payment_footer or c.tagline }}
+          </td>
+          <td class="p-2 text-[10px] leading-tight">
+            {% if c.email %}
+            <div>{{ c.email }}</div>
+            {% endif %}{% if c.phone %}
+            <div>{{ c.phone }}</div>
+            {% endif %}{% if c.website %}
+            <div>{{ c.website }}</div>
+            {% endif %}{% if c.address %}
+            <div class="truncate" title="{{ c.address }}">{{ c.address }}</div>
+            {% endif %}
+          </td>
+          <td class="p-2 text-xs">
+            {{ c.updated_at.strftime('%Y-%m-%d') if c.updated_at else '' }}
+          </td>
+          <td class="p-2 text-right flex gap-1 justify-end">
+            <button class="soft-btn text-xs" @click="openEdit({{ c.id }})">
+              Edit
+            </button>
+            <form
+              method="post"
+              action="{{ url_for('company_delete', company_id=c.id) }}"
+              onsubmit="return confirm('Delete company?');"
+            >
+              <button class="soft-btn text-xs">Del</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="p-4 text-center text-slate-500">
+            No companies configured.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div
+    x-show="show"
+    x-cloak
+    class="fixed inset-0 z-50 flex items-start md:items-center justify-center p-4"
+  >
+    <div class="absolute inset-0 bg-slate-900/60" @click="close()"></div>
+    <div
+      class="relative bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 space-y-6"
+    >
+      <div class="flex items-center justify-between">
+        <h2
+          class="text-sm font-semibold"
+          x-text="mode==='create' ? 'New Company' : 'Edit Company'"
+        ></h2>
+        <button class="text-slate-500" @click="close()">✕</button>
+      </div>
+      <form
+        :action="mode==='create'? createUrl : updateUrl"
+        method="post"
+        enctype="multipart/form-data"
+        class="space-y-4"
+        @submit="saving=true"
+      >
+        {{ form.hidden_tag() }}
+        <div class="grid md:grid-cols-3 gap-4 text-sm">
+          <div class="md:col-span-2">
+            <label class="text-xs font-semibold">Name</label
+            ><input
+              name="name"
+              x-model="formData.name"
+              required
+              class="soft-input w-full"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold">Logo</label
+            ><input
+              type="file"
+              name="logo"
+              accept="image/png,image/jpeg"
+              class="soft-input w-full text-xs"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold">Invoice Prefix</label
+            ><input
+              name="invoice_prefix"
+              x-model="formData.invoice_prefix"
+              class="soft-input w-full"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold">Next Seq</label
+            ><input
+              name="next_invoice_seq"
+              x-model="formData.next_invoice_seq"
+              class="soft-input w-full"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold">OFSTED Reg No</label
+            ><input
+              name="ofsted_reg_no"
+              x-model="formData.ofsted_reg_no"
+              class="soft-input w-full"
+            />
+          </div>
+          <div class="md:col-span-3 grid md:grid-cols-3 gap-4">
+            <div>
+              <label class="text-xs font-semibold">Email</label
+              ><input
+                name="email"
+                x-model="formData.email"
+                class="soft-input w-full"
+              />
+            </div>
+            <div>
+              <label class="text-xs font-semibold">Phone</label
+              ><input
+                name="phone"
+                x-model="formData.phone"
+                class="soft-input w-full"
+              />
+            </div>
+            <div>
+              <label class="text-xs font-semibold">Website</label
+              ><input
+                name="website"
+                x-model="formData.website"
+                class="soft-input w-full"
+              />
+            </div>
+          </div>
+          <div class="md:col-span-3">
+            <label class="text-xs font-semibold">Address</label
+            ><textarea
+              name="address"
+              x-model="formData.address"
+              class="soft-input w-full"
+              rows="2"
+            ></textarea>
+          </div>
+          <div class="md:col-span-3">
+            <label class="text-xs font-semibold">Tagline</label
+            ><input
+              name="tagline"
+              x-model="formData.tagline"
+              class="soft-input w-full"
+            />
+          </div>
+          <div class="md:col-span-3">
+            <label class="text-xs font-semibold">Payment Footer</label
+            ><input
+              name="payment_footer"
+              x-model="formData.payment_footer"
+              class="soft-input w-full"
+            />
+          </div>
+          <template x-if="formData.logo_path"
+            ><div class="md:col-span-3">
+              <label class="text-xs font-semibold">Current Logo</label
+              ><img :src="logoSrc" alt="logo" class="h-12 mt-1" /></div
+          ></template>
+        </div>
+        <div class="flex items-center gap-3 pt-2">
+          <button
+            class="soft-btn"
+            x-text="mode==='create' ? 'Create' : 'Save'"
+          ></button
+          ><button type="button" class="soft-btn" @click="close()">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  function companyCrud(){return {show:false, mode:'create', createUrl:'{{ url_for('company_create') }}', updateUrl:'', formData:{name:'', invoice_prefix:'INV-', next_invoice_seq:'1', payment_footer:'', tagline:'', ofsted_reg_no:'', address:'', phone:'', email:'', website:'', logo_path:''}, search:'', match(name){if(!this.search) return true; return name.toLowerCase().includes(this.search.toLowerCase());}, openCreate(){this.mode='create'; this.reset(); this.show=true;}, openEdit(id){fetch(`{{ url_for('company_json', company_id=0) }}`.replace('0', id)).then(r=>r.json()).then(data=>{this.mode='edit'; this.show=true; this.formData={...data}; this.updateUrl=`{{ url_for('company_update', company_id=0) }}`.replace('0', id);});}, reset(){this.formData={name:'', invoice_prefix:'INV-', next_invoice_seq:'1', payment_footer:'', tagline:'', ofsted_reg_no:'', address:'', phone:'', email:'', website:'', logo_path:''}; this.updateUrl='';}, close(){this.show=false;}, get logoSrc(){return this.formData.logo_path? `{{ url_for('static', filename='') }}` + this.formData.logo_path : '';}}}
+</script>
+{% endblock %}

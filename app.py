@@ -7,24 +7,26 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pandas as pd
-from flask import (Flask, abort, flash, jsonify, redirect, render_template,
-                   request, send_file, url_for)
+from flask import (Flask, abort, flash, jsonify, make_response, redirect,
+                   render_template, request, send_file, url_for)
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import or_, text
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from attendance_utils import (combine_all_sheets, compute_date_range,
                               export_with_custom_header_to_bytes)
 from email_utils import build_task_notification_email, send_email
-from forms import (AvailabilityForm, CycleForm, IssueForm, LoginForm,
-                   MeetingForm, ObservationForm, RegisterForm, StaffForm,
-                   TodoForm, UserProfileForm)
-from models import (Availability, Issue, IssueChange, Meeting, Observation,
-                    ObservationCycle, Permission, PermissionAudit,
-                    RolePermission, Staff, Todo, User, UserPermission, db)
+from forms import (AvailabilityForm, CompanyForm, CycleForm, InvoiceForm,
+                   IssueForm, LoginForm, MeetingForm, ObservationForm,
+                   RegisterForm, StaffForm, TodoForm, UserProfileForm)
+from models import (Availability, Company, Invoice, Issue, IssueChange,
+                    Meeting, Observation, ObservationCycle, Permission,
+                    PermissionAudit, RolePermission, Staff, Todo, User,
+                    UserPermission, db)
 from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
 from version_info import VERSION, get_changelog
 
@@ -96,6 +98,25 @@ def permission_required(*perm_keys: str, any: bool = False):
 @app.context_processor
 def inject_version():
     return {"APP_VERSION": VERSION, 'can': user_can}
+
+# --------- Common Template Filters (dates, money) ---------- #
+@app.template_filter('fmt_date')
+def fmt_date(value):
+    try:
+        if not value:
+            return ''
+        return value.strftime('%d-%m-%Y')
+    except Exception:
+        return ''
+
+@app.template_filter('fmt_money')
+def fmt_money(value):
+    try:
+        if value is None or value == '':
+            return '£0.00'
+        return f"£{float(value):.2f}"
+    except Exception:
+        return str(value)
 
 @app.route('/version-history')
 def version_history():
@@ -280,6 +301,13 @@ def create_tables_and_superadmin():
             conn.execute(text("CREATE TABLE IF NOT EXISTS user_permission (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, permission_key VARCHAR(120) NOT NULL, allow BOOLEAN NOT NULL DEFAULT 1, UNIQUE(user_id, permission_key))"))
             # Permission audit (since 0.9.2)
             conn.execute(text("CREATE TABLE IF NOT EXISTS permission_audit (id INTEGER PRIMARY KEY, actor_user_id INTEGER NOT NULL, target_user_id INTEGER, role VARCHAR(80), permission_key VARCHAR(120) NOT NULL, action VARCHAR(40) NOT NULL, changed_at DATETIME, FOREIGN KEY(actor_user_id) REFERENCES user(id), FOREIGN KEY(target_user_id) REFERENCES user(id))"))
+            # Company table column backfill (OFSTED reg no) if table exists from older schema
+            try:
+                company_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(company)"))}
+                if 'ofsted_reg_no' not in company_cols:
+                    conn.execute(text("ALTER TABLE company ADD COLUMN ofsted_reg_no VARCHAR(64)"))
+            except Exception:
+                pass
     except Exception:
         pass
     # Seed permissions & default role mappings if empty (idempotent)
@@ -296,6 +324,7 @@ def create_tables_and_superadmin():
             ('manage_attendance_fix','Use attendance fix tool'),
             ('manage_users','Approve & manage users'),
             ('view_reports','View / generate reports'),
+            ('manage_invoices','Invoice & company management'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -311,7 +340,7 @@ def create_tables_and_superadmin():
             'staff': {'view_dashboard','manage_tasks','view_reports'},
             'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports'},
             'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports'},
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices'},
         }
         for role, perms in role_defaults.items():
             has_any = RolePermission.query.filter_by(role=role).first()
@@ -2189,6 +2218,491 @@ def observation_email(oid):
             return jsonify({'status':'error','message': err_msg}), 500
         flash(err_msg,'danger')
     return redirect(url_for('observation_extended_edit', oid=obs.id))
+
+# ---------------- Invoicing ---------------- #
+from sqlalchemy.exc import IntegrityError
+
+
+def _parse_date(val):
+    try:
+        if not val:
+            return None
+        return datetime.strptime(val.strip(), '%Y-%m-%d').date()
+    except Exception:
+        try:
+            return datetime.strptime(val.strip(), '%d/%m/%Y').date()
+        except Exception:
+            return None
+
+@app.route('/companies', methods=['GET'])
+@login_required
+@permission_required('manage_invoices')
+def companies_index():
+    form = CompanyForm()
+    companies = Company.query.order_by(Company.name.asc()).all()
+    from sqlalchemy import func
+    total_companies = len(companies)
+    total_invoices = db.session.query(func.count(Invoice.id)).scalar() or 0
+    unpaid_total = db.session.query(func.coalesce(func.sum(Invoice.total), 0)).filter(Invoice.status=='UNPAID').scalar() or 0
+    paid_total = db.session.query(func.coalesce(func.sum(Invoice.total), 0)).filter(Invoice.status=='PAID').scalar() or 0
+    latest_invoice_date = db.session.query(func.max(Invoice.invoice_date)).scalar()
+    company_stats = {}
+    # per-company quick aggregates
+    for c in companies:
+        counts = db.session.query(func.count(Invoice.id), func.coalesce(func.sum(Invoice.total),0)).filter(Invoice.company_id==c.id).first()
+        unpaid_sum = db.session.query(func.coalesce(func.sum(Invoice.total),0)).filter(Invoice.company_id==c.id, Invoice.status=='UNPAID').scalar()
+        company_stats[c.id] = {
+            'count': counts[0] if counts else 0,
+            'total_sum': float(counts[1]) if counts else 0.0,
+            'unpaid_sum': float(unpaid_sum) if unpaid_sum else 0.0,
+        }
+    return render_template('invoices/companies.html', form=form, companies=companies,
+                           total_companies=total_companies, total_invoices=total_invoices,
+                           unpaid_total=unpaid_total, paid_total=paid_total,
+                           latest_invoice_date=latest_invoice_date, company_stats=company_stats)
+
+def _save_company_logo(file, company_name):
+    if not file or not file.filename:
+        return None
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in {'.png', '.jpg', '.jpeg'}:
+        return None
+    safe_name = f"company_{company_name.lower().replace(' ','_')}{ext}"
+    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+    path = os.path.join(upload_dir, safe_name)
+    file.save(path)
+    rel = os.path.relpath(path, os.path.join(app.root_path, 'static'))
+    return rel
+
+@app.route('/companies/create', methods=['POST'])
+@login_required
+@permission_required('manage_invoices')
+def company_create():
+    form = CompanyForm()
+    if form.validate_on_submit():
+        name = form.name.data.strip()
+        if Company.query.filter_by(name=name).first():
+            flash('Company with that name already exists','danger')
+            return redirect(url_for('companies_index'))
+        company = Company(name=name)
+        company.invoice_prefix = form.invoice_prefix.data or 'INV-'
+        try:
+            if form.next_invoice_seq.data:
+                company.next_invoice_seq = int(form.next_invoice_seq.data)
+        except Exception:
+            pass
+        company.payment_footer = form.payment_footer.data or company.payment_footer
+        company.tagline = form.tagline.data or company.tagline
+        company.ofsted_reg_no = form.ofsted_reg_no.data or company.ofsted_reg_no
+        company.address = form.address.data or company.address
+        company.phone = form.phone.data or company.phone
+        company.email = form.email.data or company.email
+        company.website = form.website.data or company.website
+        logo_rel = _save_company_logo(request.files.get('logo'), name)
+        if logo_rel:
+            company.logo_path = logo_rel
+        db.session.add(company)
+        db.session.commit()
+        flash('Company created','success')
+    else:
+        flash('Failed to create company','danger')
+    return redirect(url_for('companies_index'))
+
+@app.route('/companies/<int:company_id>/update', methods=['POST'])
+@login_required
+@permission_required('manage_invoices')
+def company_update(company_id):
+    company = Company.query.get_or_404(company_id)
+    form = CompanyForm()
+    if form.validate_on_submit():
+        company.name = form.name.data.strip()
+        company.invoice_prefix = form.invoice_prefix.data or company.invoice_prefix
+        try:
+            if form.next_invoice_seq.data:
+                company.next_invoice_seq = int(form.next_invoice_seq.data)
+        except Exception:
+            pass
+        if form.payment_footer.data:
+            company.payment_footer = form.payment_footer.data
+        company.tagline = form.tagline.data or company.tagline
+        company.ofsted_reg_no = form.ofsted_reg_no.data or company.ofsted_reg_no
+        company.address = form.address.data or company.address
+        company.phone = form.phone.data or company.phone
+        company.email = form.email.data or company.email
+        company.website = form.website.data or company.website
+        logo_rel = _save_company_logo(request.files.get('logo'), company.name)
+        if logo_rel:
+            company.logo_path = logo_rel
+        db.session.commit()
+        flash('Company updated','success')
+    else:
+        flash('Update failed','danger')
+    return redirect(url_for('companies_index'))
+
+@app.route('/companies/<int:company_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_invoices')
+def company_delete(company_id):
+    company = Company.query.get_or_404(company_id)
+    # Optional: block delete if invoices exist
+    if company.invoices:
+        flash('Cannot delete company with existing invoices','danger')
+        return redirect(url_for('companies_index'))
+    db.session.delete(company)
+    db.session.commit()
+    flash('Company deleted','success')
+    return redirect(url_for('companies_index'))
+
+@app.route('/companies/<int:company_id>/json')
+@login_required
+@permission_required('manage_invoices')
+def company_json(company_id):
+    c = Company.query.get_or_404(company_id)
+    return jsonify({
+        'id': c.id,
+        'name': c.name,
+        'invoice_prefix': c.invoice_prefix,
+        'next_invoice_seq': c.next_invoice_seq,
+        'payment_footer': c.payment_footer,
+        'tagline': c.tagline,
+        'ofsted_reg_no': c.ofsted_reg_no,
+        'address': c.address,
+        'phone': c.phone,
+        'email': c.email,
+        'website': c.website,
+        'logo_path': c.logo_path,
+    })
+
+@app.route('/invoices')
+@login_required
+@permission_required('manage_invoices')
+def invoices_index():
+    q = (request.args.get('q') or '').strip().lower()
+    company_id = request.args.get('company')
+    month = request.args.get('month')  # YYYY-MM
+    status = request.args.get('status')
+    sort = request.args.get('sort','created_at')
+    direction = request.args.get('direction','desc')
+    query = Invoice.query.join(Company)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(Invoice.invoice_no.ilike(like), Invoice.parent_name.ilike(like), Invoice.child_name.ilike(like), Invoice.parent_email.ilike(like))
+        )
+    if company_id and company_id.isdigit():
+        query = query.filter(Invoice.company_id == int(company_id))
+    if status in ('PAID','UNPAID'):
+        query = query.filter(Invoice.status == status)
+    if month and len(month) == 7:
+        try:
+            year_i = int(month.split('-')[0]); month_i = int(month.split('-')[1])
+            start = date(year_i, month_i, 1)
+            # naive month end
+            if month_i == 12:
+                end = date(year_i+1,1,1)
+            else:
+                end = date(year_i, month_i+1, 1)
+            query = query.filter(Invoice.period_start < end, Invoice.period_end >= start)
+        except Exception:
+            pass
+    # Extended sortable columns
+    sort_map = {
+        'created_at': Invoice.created_at,
+        'invoice_date': Invoice.invoice_date,
+        'due_date': Invoice.due_date,
+        'total': Invoice.total,
+        'invoice_no': Invoice.invoice_no,
+        'parent_name': Invoice.parent_name,
+        'child_name': Invoice.child_name,
+        'status': Invoice.status,
+        'company': Company.name,
+    }
+    sort_col = sort_map.get(sort, Invoice.created_at)
+    if direction == 'asc':
+        query = query.order_by(sort_col.asc())
+    else:
+        query = query.order_by(sort_col.desc())
+    invoices = query.limit(500).all()  # basic cap
+    companies = Company.query.order_by(Company.name.asc()).all()
+    # Summary stats for widgets
+    total_count = len(invoices)
+    paid = sum(1 for i in invoices if i.status == 'PAID')
+    unpaid = sum(1 for i in invoices if i.status == 'UNPAID')
+    total_amount = sum(float(i.total) for i in invoices)
+    unpaid_amount = sum(float(i.total) for i in invoices if i.status == 'UNPAID')
+    recent = sorted(invoices, key=lambda x: x.created_at, reverse=True)[:5]
+    # Per-company stats (only for result set shown)
+    from collections import defaultdict
+    comp_stats = defaultdict(lambda: {'count':0,'paid':0,'unpaid':0,'total_amount':0.0,'unpaid_amount':0.0,'company':None})
+    for inv in invoices:
+        cs = comp_stats[inv.company_id]
+        cs['company'] = inv.company
+        cs['count'] += 1
+        cs['total_amount'] += float(inv.total)
+        if inv.status == 'PAID':
+            cs['paid'] += 1
+        else:
+            cs['unpaid'] += 1
+            cs['unpaid_amount'] += float(inv.total)
+    company_stats = []
+    for cid, cs in comp_stats.items():
+        company_stats.append({
+            'id': cid,
+            'name': cs['company'].name if cs['company'] else f"Company {cid}",
+            'count': cs['count'],
+            'paid': cs['paid'],
+            'unpaid': cs['unpaid'],
+            'total_amount': cs['total_amount'],
+            'unpaid_amount': cs['unpaid_amount'],
+        })
+    company_stats.sort(key=lambda x: x['total_amount'], reverse=True)
+
+    return render_template('invoices/index.html', invoices=invoices, companies=companies, inv_stats={
+        'count': total_count,
+        'paid': paid,
+        'unpaid': unpaid,
+        'total_amount': total_amount,
+        'unpaid_amount': unpaid_amount,
+        'recent': recent,
+    }, company_stats=company_stats)
+
+@app.route('/invoices/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_invoices')
+def invoices_new():
+    form = InvoiceForm()
+    companies = Company.query.order_by(Company.name.asc()).all()
+    form.company_id.choices = [(c.id, c.name) for c in companies]
+    if not companies:
+        flash('Create a company first before adding invoices', 'warning')
+        return redirect(url_for('companies_index'))
+    if request.method == 'GET':
+        today = date.today()
+        form.invoice_date.data = today
+        form.due_date.data = today
+        form.period_start.data = today
+        form.period_end.data = today
+        form.status.data = 'PAID'
+    if form.validate_on_submit():
+        company = Company.query.get(form.company_id.data)
+        if not company:
+            flash('Invalid company', 'danger')
+            return redirect(url_for('invoices_new'))
+        # Auto-generate invoice number
+        invoice_no = company.generate_invoice_no()
+        inv = Invoice(
+            invoice_no=invoice_no,
+            company_id=company.id,
+            invoice_date=form.invoice_date.data,
+            due_date=form.due_date.data,
+            parent_name=form.parent_name.data,
+            parent_phone=form.parent_phone.data,
+            parent_email=form.parent_email.data,
+            parent_address=form.parent_address.data,
+            child_name=form.child_name.data,
+            period_start=form.period_start.data,
+            period_end=form.period_end.data,
+            sub_total=form.sub_total.data,
+            total=form.total.data,
+            status=form.status.data,
+            notes=form.notes.data,
+        )
+        db.session.add(inv)
+        company.next_invoice_seq = (company.next_invoice_seq or 1) + 1
+        try:
+            db.session.commit()
+            flash('Invoice created', 'success')
+            return redirect(url_for('invoice_detail', invoice_id=inv.id))
+        except IntegrityError:
+            db.session.rollback()
+            flash('Invoice number conflict – retry', 'danger')
+    return render_template('invoices/form.html', form=form, mode='new')
+
+@app.route('/invoices/<int:invoice_id>')
+@login_required
+@permission_required('manage_invoices')
+def invoice_detail(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+    return render_template('invoices/detail.html', invoice=invoice)
+
+@app.route('/invoices/<int:invoice_id>/pdf')
+@login_required
+@permission_required('manage_invoices')
+def invoice_pdf(invoice_id):
+    """Printable invoice document.
+
+    We no longer generate a binary PDF server-side (previous xhtml2pdf approach
+    removed due to rendering issues). Instead we return a print‑optimized HTML
+    that users can print or "Save as PDF" via the browser dialog.
+
+    Query params:
+      ?print=1  -> auto-open print dialog
+      (legacy) ?download=1 treated the same as print=1 for backward compatibility
+    """
+    invoice = Invoice.query.get_or_404(invoice_id)
+    legacy_download = str(request.args.get('download','0')).lower() in ('1','true','yes','y')
+    print_flag = legacy_download or (str(request.args.get('print','0')).lower() in ('1','true','yes','y'))
+
+    # Inline CSS to ensure the print view is self-contained (robust if user saves page)
+    css_path = os.path.join(app.root_path, 'static', 'css', 'invoice.css')
+    inline_css = ''
+    try:
+        with open(css_path, 'r', encoding='utf-8') as f:
+            inline_css = f.read()
+    except Exception:
+        pass
+
+    resp = make_response(render_template(
+        'invoices/invoice_document.html',
+        invoice=invoice,
+        inline_css=inline_css,
+        print_view=print_flag,
+        logo_abs=None  # use web path for browser rendering
+    ))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
+
+# ---------------- Invoice Emailing ---------------- #
+INVOICE_SMTP_HOST = "smtp.gmail.com"
+INVOICE_SMTP_PORT = 587
+INVOICE_SMTP_USER = "info@brightstarkidsclub.org.uk"
+INVOICE_SMTP_PASS = "txxi aajf fcug hcia"
+INVOICE_SMTP_USE_TLS = True
+EMAIL_FROM_NAME = "BrightStar Kids Club"
+EMAIL_FROM_ADDR = INVOICE_SMTP_USER
+EMAIL_SUBJECT_PREFIX = "[Invoice] "
+
+def send_invoice_email(inv: Invoice):
+    import smtplib
+    from email.message import EmailMessage
+    if not inv.parent_email:
+        raise ValueError("Recipient email missing (parent_email)")
+    css_path = os.path.join(app.root_path, 'static', 'css', 'invoice.css')
+    inline_css = ''
+    try:
+        with open(css_path, 'r', encoding='utf-8') as f:
+            inline_css = f.read()
+    except Exception:
+        pass
+    html = render_template('invoices/invoice_document.html', invoice=inv, inline_css=inline_css, print_view=False, logo_abs=None)
+    msg = EmailMessage()
+    msg['Subject'] = f"{EMAIL_SUBJECT_PREFIX}{inv.invoice_no}"
+    msg['From'] = f"{EMAIL_FROM_NAME} <{EMAIL_FROM_ADDR}>"
+    msg['To'] = inv.parent_email
+    msg.set_content('HTML invoice attached. If you cannot view HTML, contact support.')
+    msg.add_alternative(html, subtype='html')
+    with smtplib.SMTP(INVOICE_SMTP_HOST, INVOICE_SMTP_PORT) as server:
+        if INVOICE_SMTP_USE_TLS:
+            server.starttls()
+        server.login(INVOICE_SMTP_USER, INVOICE_SMTP_PASS)
+        server.send_message(msg)
+    return True
+
+@app.route('/invoices/<int:invoice_id>/email', methods=['POST'])
+@login_required
+@permission_required('manage_invoices')
+def invoice_email(invoice_id):
+    inv = Invoice.query.get_or_404(invoice_id)
+    try:
+        send_invoice_email(inv)
+        flash(f"Invoice {inv.invoice_no} emailed to {inv.parent_email}", 'success')
+    except Exception as e:
+        flash(f"Email failed: {e}", 'danger')
+    return redirect(url_for('invoice_detail', invoice_id=inv.id))
+
+@app.route('/invoices/<int:invoice_id>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_invoices')
+def invoice_edit(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+    form = InvoiceForm(obj=invoice)
+    companies = Company.query.order_by(Company.name.asc()).all()
+    form.company_id.choices = [(c.id, c.name) for c in companies]
+    if form.validate_on_submit():
+        invoice.company_id = form.company_id.data
+        invoice.invoice_date = form.invoice_date.data
+        invoice.due_date = form.due_date.data
+        invoice.parent_name = form.parent_name.data
+        invoice.parent_phone = form.parent_phone.data
+        invoice.parent_email = form.parent_email.data
+        invoice.parent_address = form.parent_address.data
+        invoice.child_name = form.child_name.data
+        invoice.period_start = form.period_start.data
+        invoice.period_end = form.period_end.data
+        invoice.sub_total = form.sub_total.data
+        invoice.total = form.total.data
+        invoice.status = form.status.data
+        invoice.notes = form.notes.data
+        db.session.commit()
+        flash('Invoice updated','success')
+        return redirect(url_for('invoice_detail', invoice_id=invoice.id))
+    return render_template('invoices/form.html', form=form, mode='edit')
+
+@app.route('/invoices/<int:invoice_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_invoices')
+def invoice_delete(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+    db.session.delete(invoice)
+    db.session.commit()
+    flash('Invoice deleted','success')
+    return redirect(url_for('invoices_index'))
+
+@app.route('/invoices/import', methods=['POST'])
+@login_required
+@permission_required('manage_invoices')
+def invoices_import():
+    f = request.files.get('file')
+    if not f:
+        flash('No file uploaded','danger')
+        return redirect(url_for('invoices_index'))
+    try:
+        content = f.read().decode('utf-8').splitlines()
+        rdr = csv.DictReader(content)
+        created = 0
+        skipped = 0
+        companies_cache = {c.name.lower(): c for c in Company.query.all()}
+        for row in rdr:
+            try:
+                c_name = (row.get('company') or '').strip() or 'Default'
+                comp = companies_cache.get(c_name.lower())
+                if not comp:
+                    comp = Company(name=c_name)
+                    db.session.add(comp)
+                    db.session.flush()
+                    companies_cache[c_name.lower()] = comp
+                invoice_no = row.get('invoice_no') or comp.generate_invoice_no()
+                inv = Invoice(
+                    invoice_no=invoice_no,
+                    company_id=comp.id,
+                    invoice_date=_parse_date(row.get('invoice_date')) or date.today(),
+                    due_date=_parse_date(row.get('due_date')) or date.today(),
+                    parent_name=row.get('parent_name') or 'Unknown',
+                    parent_phone=row.get('parent_phone'),
+                    parent_email=row.get('parent_email'),
+                    parent_address=row.get('parent_address'),
+                    child_name=row.get('child_name') or 'Child',
+                    period_start=_parse_date(row.get('period_start')) or date.today(),
+                    period_end=_parse_date(row.get('period_end')) or date.today(),
+                    sub_total=row.get('sub_total') or 0,
+                    total=row.get('total') or 0,
+                    status=(row.get('status') or 'PAID').upper(),
+                    notes=row.get('notes') or None,
+                )
+                db.session.add(inv)
+                comp.next_invoice_seq = (comp.next_invoice_seq or 1) + 1
+                created += 1
+            except Exception:
+                skipped += 1
+        db.session.commit()
+        flash(f'Imported {created} invoices (skipped {skipped})','success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Import failed: {e}','danger')
+    return redirect(url_for('invoices_index'))
 
 # ---------------- Error Handlers ----------------
 @app.errorhandler(403)

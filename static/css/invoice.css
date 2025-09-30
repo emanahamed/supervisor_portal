@@ -1,0 +1,181 @@
+@page {
+  size: A4;
+  margin: 25mm;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #222;
+  font-size: 12px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid #0a4a7a;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.logo-block {
+  max-width: 60%;
+}
+.logo {
+  max-height: 75px;
+  display: block;
+  margin-bottom: 6px;
+  width: auto;
+}
+.logo-block.center {
+  text-align: center;
+}
+.logo-block.center .logo {
+  margin-left: auto;
+  margin-right: auto;
+}
+.brand {
+  line-height: 1;
+}
+.brand-1 {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.brand-2 {
+  display: block;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+.tagline {
+  font-size: 12px;
+  color: #0a4a7a;
+  margin-top: 2px;
+}
+
+.invoice-block {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.invoice-title {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #0a4a7a;
+}
+.small {
+  font-size: 12px;
+  color: #333;
+}
+.mt-1 {
+  margin-top: 4px;
+}
+
+/* Icon styles for contact info (using Unicode for PDF compatibility) */
+/* Removed emoji icon usage for print reliability */
+
+.meta {
+  margin-top: 0;
+}
+.meta table {
+  font-size: 12px;
+  margin-left: auto;
+  border-collapse: collapse;
+}
+.meta td {
+  padding: 2px 0 2px 12px;
+  white-space: nowrap;
+}
+
+.section {
+  margin-top: 14px;
+}
+.section h3 {
+  font-size: 14px;
+  color: #0a4a7a;
+  margin: 0 0 6px 0;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+}
+.box {
+  border: 1px solid #ddd;
+  padding: 10px;
+  border-radius: 4px;
+  background: #fff;
+}
+.u {
+  font-weight: 700;
+}
+
+.two-col {
+  display: flex;
+  gap: 12px;
+}
+.two-col .col {
+  flex: 1;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+.table th,
+.table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  font-size: 12px;
+}
+.table th {
+  background: #f2f6fb;
+  text-align: left;
+  color: #0a4a7a;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.table td.money {
+  text-align: right;
+}
+
+.totals {
+  width: 40%;
+  margin-left: auto;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+.totals-separator {
+  border-top: 1px solid rgba(10, 74, 122, 0.3); /* #0a4a7a at 30% */
+  margin: 10px 0 4px;
+}
+.totals td {
+  padding: 8px;
+  border: 1px solid #ddd;
+  font-size: 12px;
+}
+.totals .label {
+  background: #f2f6fb;
+  color: #0a4a7a;
+  font-weight: 700;
+}
+.totals .value {
+  text-align: right;
+}
+
+.footer {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 12px;
+}
+.footer .thanks {
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.footer .contacts {
+  margin-top: 4px;
+  color: #555;
+}

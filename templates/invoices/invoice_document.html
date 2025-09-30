@@ -1,0 +1,188 @@
+{% macro ord(n) -%}{%- set s='th' -%}{%- if n % 100 not in (11,12,13) -%}{%- if
+n % 10 == 1 -%}{% set s='st' %}{%- elif n % 10 == 2 -%}{% set s='nd' %}{%- elif
+n % 10 == 3 -%}{% set s='rd' %}{%- endif -%}{%- endif -%}{{- n ~ s -}}{%-
+endmacro %} {% set inv = invoice %}{% set s = invoice.company %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Invoice {{ inv.invoice_no }}</title>
+    {% if inline_css %}
+    <style>
+              {{ inline_css|safe }}
+              /* PDF-specific reinforcement to keep logo proportion and prevent wrapping issues */
+      .logo-block { max-width:60%; }
+      img.logo { display:block; height:75px; max-height:75px; width:auto; max-width:260px; object-fit:contain; }
+      .logo-block.center { text-align:center; }
+      .logo-block.center img.logo { margin-left:auto; margin-right:auto; }
+      .no-print { display:block; }
+      @media print { .no-print { display:none !important; } body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+    </style>
+    {% else %}
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/invoice.css') }}"
+    />
+    {% endif %}
+  </head>
+  <body>
+    <div class="header">
+      <div class="logo-block center">
+        {# Single scaled logo (75px height, proportional with max-width) #} {%
+        if logo_abs %}<img
+          class="logo"
+          src="{{ logo_abs }}"
+          alt="Logo"
+          height="75"
+          style="height: 75px; max-height: 75px; width: auto; max-width: 260px"
+        />
+        {% elif s.logo_path %}<img
+          class="logo"
+          src="{{ url_for('static', filename=s.logo_path.split('static/')[1]) if 'static/' in (s.logo_path or '') else url_for('static', filename=s.logo_path) }}"
+          alt="Logo"
+          height="75"
+          style="height: 75px; max-height: 75px; width: auto; max-width: 260px"
+        />
+        {% endif %}
+        <div class="brand">
+          <span class="brand-1">BrightStar</span>
+          <span class="brand-2">KIDS CLUB</span>
+        </div>
+        <div class="tagline">
+          {{ s.tagline or 'Learning Through Play Every Day' }}
+        </div>
+        <div class="small mt-1">
+          <div>OFSTED REGISTERED CHILDCARE PROVIDER</div>
+          <div>OFSTED REGISTRATION NO: {{ s.ofsted_reg_no }}</div>
+        </div>
+        <div class="small mt-1">
+          <strong>{{ s.name or 'BRIGHTSTAR KIDS CLUB LTD' }}</strong>
+        </div>
+        <div class="small"><strong>Address:</strong> {{ s.address }}</div>
+      </div>
+      <div class="invoice-block">
+        <div class="meta">
+          <table>
+            <tr>
+              <td>Invoice No:</td>
+              <td>{{ inv.invoice_no }}</td>
+            </tr>
+            <tr>
+              <td>Invoice Date:</td>
+              <td>{{ inv.invoice_date|fmt_date }}</td>
+            </tr>
+            <tr>
+              <td>Due Date:</td>
+              <td>{{ inv.due_date|fmt_date }}</td>
+            </tr>
+          </table>
+        </div>
+        <div class="invoice-title">INVOICE</div>
+      </div>
+    </div>
+    <div class="two-col section">
+      <div class="col">
+        <h3>INVOICE TO:</h3>
+        <div class="box">
+          <div class="u">{{ inv.parent_name }}</div>
+          {% if inv.parent_phone %}
+          <div><strong>Phone:</strong> {{ inv.parent_phone }}</div>
+          {% endif %} {% if inv.parent_address %}
+          <div><strong>Address:</strong> {{ inv.parent_address }}</div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col">
+        <h3>PROVIDER</h3>
+        <div class="box">
+          <div>{{ s.name }}</div>
+          {% if s.phone %}
+          <div><strong>Phone:</strong> {{ s.phone }}</div>
+          {% endif %} {% if s.email %}
+          <div><strong>Email:</strong> {{ s.email }}</div>
+          {% endif %} {% if s.website %}
+          <div><strong>Website:</strong> {{ s.website }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% if not print_view %}
+    <div
+      class="print-actions no-print"
+      style="text-align: right; margin-top: 4px"
+    >
+      <button
+        onclick="window.print()"
+        style="
+          background: #0a4a7a;
+          color: #fff;
+          border: none;
+          padding: 6px 12px;
+          font-size: 12px;
+          cursor: pointer;
+          border-radius: 4px;
+        "
+      >
+        Print / Save PDF
+      </button>
+    </div>
+    {% endif %}
+    <div class="section">
+      <h3>CHILDCARE FEES PAID FOR:</h3>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>CHILD CARED FOR</th>
+            <th>PERIOD OF CARE</th>
+            <th style="width: 140px">TOTAL COST</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{ inv.child_name }}</td>
+            <td>
+              {{ ord(inv.period_start.day) }} {{ inv.period_start.strftime('%B,
+              %Y') }} - {{ ord(inv.period_end.day) }} {{
+              inv.period_end.strftime('%B, %Y') }}
+            </td>
+            <td class="money">{{ inv.total|fmt_money }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <div class="totals-separator"></div>
+      <table class="totals">
+        <tr>
+          <td class="label">Total :</td>
+          <td class="value">{{ inv.total|fmt_money }}</td>
+        </tr>
+      </table>
+    </div>
+    <div class="footer">
+      {% if inv.status == 'PAID' %}
+      <div class="thanks">PAYMENT HAS BEEN RECEIVED IN FULL.</div>
+      {% elif inv.status == 'UNPAID' %}
+      <div class="thanks">PAYMENT OUTSTANDING</div>
+      {% endif %}
+      <div class="thanks">THANK YOU FOR YOUR BUSINESS</div>
+      <div class="contacts">
+        {% if s.email %}{{ s.email }}{% endif %}{% if s.website
+        %}&nbsp;•&nbsp;{{ s.website }}{% endif %}
+      </div>
+      <div class="small mt-1">
+        THIS INVOICE HAS BEEN PRODUCED ELECTRONICALLY
+      </div>
+    </div>
+    {% if print_view %}
+    <script>
+      // Auto-open print dialog when in print_view mode
+      window.addEventListener("load", function () {
+        try {
+          window.print();
+        } catch (e) {}
+      });
+    </script>
+    {% endif %}
+  </body>
+</html>

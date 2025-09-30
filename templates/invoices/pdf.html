@@ -1,0 +1,8 @@
+{% extends 'base.html' %} {% block page_title %}Invoice PDF Preview{% endblock
+%} {% block content %}
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/invoice.css') }}"
+/>
+<div class="soft-card p-4">{% include 'invoices/_invoice_core.html' %}</div>
+{% endblock %}

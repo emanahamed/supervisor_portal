@@ -1,0 +1,86 @@
+{% extends 'base.html' %} {% block page_title %}Invoice {{ invoice.invoice_no
+}}{% endblock %} {% block content %}
+<div class="flex items-center mb-4 gap-2">
+  <a href="{{ url_for('invoices_index') }}" class="soft-btn">Back</a>
+  <a
+    href="{{ url_for('invoice_edit', invoice_id=invoice.id) }}"
+    class="soft-btn"
+    >Edit</a
+  >
+  <a href="{{ url_for('invoice_pdf', invoice_id=invoice.id) }}" class="soft-btn">Print</a>
+  <a
+    href="{{ url_for('invoice_pdf', invoice_id=invoice.id, download=1) }}"
+    class="soft-btn"
+    >Download PDF</a
+  >
+  <form action="{{ url_for('invoice_email', invoice_id=invoice.id) }}" method="post" onsubmit="return confirm('Email this invoice to {{ invoice.parent_email or "recipient" }}?');">
+    <button class="soft-btn">Email</button>
+  </form>
+  <form
+    action="{{ url_for('invoice_delete', invoice_id=invoice.id) }}"
+    method="post"
+    onsubmit="return confirm('Delete invoice?');"
+  >
+    <button class="soft-btn">Delete</button>
+  </form>
+</div>
+<div class="soft-card p-6 space-y-4">
+  <div class="flex flex-wrap gap-4 justify-between">
+    <div>
+      <h3 class="text-sm font-semibold">{{ invoice.company.name }}</h3>
+      <div class="text-xs text-slate-500">{{ invoice.company.address }}</div>
+      <div class="text-xs text-slate-500">
+        {{ invoice.company.email }}{% if invoice.company.phone %} · {{
+        invoice.company.phone }}{% endif %}
+      </div>
+    </div>
+    <div class="text-right text-sm">
+      <div>
+        <span class="font-semibold">Invoice Date:</span> {{
+        invoice.invoice_date.strftime('%Y-%m-%d') }}
+      </div>
+      <div>
+        <span class="font-semibold">Due Date:</span> {{
+        invoice.due_date.strftime('%Y-%m-%d') }}
+      </div>
+      <div><span class="font-semibold">Status:</span> {{ invoice.status }}</div>
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-6">
+    <div>
+      <h4 class="font-semibold text-sm mb-1">Invoice To</h4>
+      <div class="text-sm">{{ invoice.parent_name }}</div>
+      {% if invoice.parent_phone %}
+      <div class="text-xs text-slate-500">{{ invoice.parent_phone }}</div>
+      {% endif %} {% if invoice.parent_email %}
+      <div class="text-xs text-slate-500">{{ invoice.parent_email }}</div>
+      {% endif %} {% if invoice.parent_address %}
+      <div class="text-xs text-slate-500 whitespace-pre-line">
+        {{ invoice.parent_address }}
+      </div>
+      {% endif %}
+    </div>
+    <div>
+      <h4 class="font-semibold text-sm mb-1">Childcare Fees</h4>
+      <div class="text-xs text-slate-600">Child: {{ invoice.child_name }}</div>
+      <div class="text-xs text-slate-600">
+        Period: {{ invoice.period_label() }}
+      </div>
+      <div class="text-xs text-slate-600 mt-2">
+        Sub-total: £{{ '%.2f'|format(invoice.sub_total) }}
+      </div>
+      <div class="text-xs text-slate-600">
+        Total: £{{ '%.2f'|format(invoice.total) }}
+      </div>
+    </div>
+  </div>
+  {% if invoice.notes %}
+  <div class="pt-2 border-t text-xs whitespace-pre-line">
+    {{ invoice.notes }}
+  </div>
+  {% endif %}
+  <div class="pt-2 border-t text-[10px] text-slate-500">
+    {{ invoice.company.payment_footer }}
+  </div>
+</div>
+{% endblock %}

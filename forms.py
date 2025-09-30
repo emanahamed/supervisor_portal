@@ -1,7 +1,8 @@
 from flask_wtf import FlaskForm
-from wtforms import (BooleanField, DateField, FloatField, HiddenField,
-                     PasswordField, SelectField, SelectMultipleField,
-                     StringField, SubmitField, TextAreaField, TimeField)
+from wtforms import (BooleanField, DateField, DecimalField, FloatField,
+                     HiddenField, PasswordField, SelectField,
+                     SelectMultipleField, StringField, SubmitField,
+                     TextAreaField, TimeField)
 from wtforms.validators import (DataRequired, Email, Length, NumberRange,
                                 Optional)
 from wtforms.widgets import CheckboxInput, ListWidget
@@ -109,3 +110,37 @@ class TodoForm(FlaskForm):
     due_date = DateField("Due Date", validators=[Optional()])
     assigned_to_id = SelectField("Assign To", coerce=int, validators=[DataRequired()])
     submit = SubmitField("Save Task")
+
+
+# ---------------- Invoicing ---------------- #
+class CompanyForm(FlaskForm):
+    name = StringField("Company Name", validators=[DataRequired(), Length(max=200)])
+    tagline = StringField("Tagline", validators=[Optional(), Length(max=200)])
+    ofsted_reg_no = StringField("OFSTED Registration No", validators=[Optional(), Length(max=64)])
+    address = TextAreaField("Address", validators=[Optional(), Length(max=400)])
+    phone = StringField("Phone", validators=[Optional(), Length(max=64)])
+    email = StringField("Email", validators=[Optional(), Email(), Length(max=255)])
+    website = StringField("Website", validators=[Optional(), Length(max=255)])
+    invoice_prefix = StringField("Invoice Prefix", validators=[Optional(), Length(max=20)])
+    next_invoice_seq = StringField("Next Sequence", validators=[Optional(), Length(max=10)])
+    payment_footer = StringField("Payment Footer", validators=[Optional(), Length(max=300)])
+    logo = StringField("Logo")  # will treat as file input in template via name="logo"; kept simple
+    submit = SubmitField("Save Company")
+
+
+class InvoiceForm(FlaskForm):
+    company_id = SelectField("Company", coerce=int, validators=[DataRequired()])
+    parent_name = StringField("Parent Name", validators=[DataRequired(), Length(max=200)])
+    parent_phone = StringField("Parent Phone", validators=[Optional(), Length(max=64)])
+    parent_email = StringField("Parent Email", validators=[Optional(), Email(), Length(max=255)])
+    parent_address = TextAreaField("Parent Address", validators=[Optional(), Length(max=400)])
+    child_name = StringField("Child Cared For", validators=[DataRequired(), Length(max=200)])
+    period_start = DateField("Period Start", validators=[DataRequired()])
+    period_end = DateField("Period End", validators=[DataRequired()])
+    invoice_date = DateField("Invoice Date", validators=[DataRequired()])
+    due_date = DateField("Due Date", validators=[DataRequired()])
+    sub_total = DecimalField("Sub-total", validators=[DataRequired()], places=2)
+    total = DecimalField("Total", validators=[DataRequired()], places=2)
+    status = SelectField("Status", choices=[('PAID','PAID'),('UNPAID','UNPAID')], validators=[DataRequired()])
+    notes = TextAreaField("Notes", validators=[Optional(), Length(max=2000)])
+    submit = SubmitField("Save Invoice")

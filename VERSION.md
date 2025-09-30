@@ -1,5 +1,33 @@
 # Version History
 
+## 0.9.4 - 2025-10-01
+
+Invoice Communication & Analytics Enhancements:
+
+- Replaced fragile server-side PDF generation with a robust print‑friendly HTML invoice (browser Print / Save as PDF workflow) including auto print dialog via `?print=1`.
+- Added inline CSS in print mode ensuring consistent styling when saved as PDF or forwarded.
+- Introduced invoice emailing: new `/invoices/<id>/email` POST endpoint sends fully rendered HTML invoice to recipient (parent_email) using BrightStar SMTP credentials.
+- Added Email action buttons on invoice detail & list rows (with confirmation prompt).
+- Implemented summary widgets on invoice index: counts (total/paid/unpaid) and monetary totals (total & unpaid).
+- Added per-company stats panel (count, paid/unpaid, totals) derived from current filtered result set, sorted by total billed descending.
+- Extended sorting: column header toggles with direction indicators (Invoice #, Company, Invoice Date, Parent, Child, Total, Status, plus existing defaults).
+- Added no-cache headers and inline CSS fallback to ensure immediate reflection of template/style edits.
+- Refined invoice template (icon removal for reliability, improved separator styling, scalable centered logo, streamlined metadata positioning).
+
+Technical Notes:
+
+- Stats and per-company aggregates computed in-memory for current (capped) query (500 invoices) to avoid heavy aggregate queries; future optimization may push to SQL.
+- Email content reuses print invoice template for single source of truth (avoids duplication & drift).
+- Security: SMTP credentials currently in application code; recommend environment variable extraction + secrets management in a subsequent release.
+
+Follow-Ups (Not in 0.9.4):
+
+- Track `emailed_at` & `email_fail_count` fields per invoice for audit / resend logic.
+- Optional PDF attachment using headless Chromium (WeasyPrint / Playwright) for clients requiring attached artifact.
+- Overdue highlighting (due_date < today & unpaid) and aging buckets widget (0–30 / 31–60 / 61–90 / 90+).
+- Pagination + CSV export for large invoice sets & company stats.
+- Rate limiting / debounce on rapid repeated email sends.
+
 ## 0.9.2 - 2025-09-30
 
 Permission Visibility & Audit:

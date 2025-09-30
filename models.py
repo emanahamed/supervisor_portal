@@ -261,3 +261,56 @@ class Todo(db.Model):
     def is_done(self):
         return (self.status or '').lower() == 'done'
 
+
+# ---------------- Invoicing (Company & Invoice) ---------------- #
+class Company(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False, unique=True, index=True)
+    tagline = db.Column(db.String(200))
+    ofsted_reg_no = db.Column(db.String(64))
+    address = db.Column(db.String(400))
+    phone = db.Column(db.String(64))
+    email = db.Column(db.String(255))
+    website = db.Column(db.String(255))
+    logo_path = db.Column(db.String(300))
+    invoice_prefix = db.Column(db.String(20), default='INV-')
+    next_invoice_seq = db.Column(db.Integer, default=1)
+    payment_footer = db.Column(db.String(300), default='Thank you for your business')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    invoices = db.relationship('Invoice', backref='company', lazy=True)
+
+    def generate_invoice_no(self):
+        prefix = (self.invoice_prefix or 'INV-').strip()
+        num = self.next_invoice_seq or 1
+        return f"{prefix}{num:04d}"
+
+
+class Invoice(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_no = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=False, index=True)
+    invoice_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
+    due_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
+    parent_name = db.Column(db.String(200), nullable=False)
+    parent_phone = db.Column(db.String(64))
+    parent_email = db.Column(db.String(255))
+    parent_address = db.Column(db.String(400))
+    child_name = db.Column(db.String(200), nullable=False)
+    period_start = db.Column(db.Date, nullable=False)
+    period_end = db.Column(db.Date, nullable=False)
+    sub_total = db.Column(db.Numeric(10,2), nullable=False)
+    total = db.Column(db.Numeric(10,2), nullable=False)
+    status = db.Column(db.String(20), default='PAID', index=True)  # PAID / UNPAID
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def period_label(self):
+        try:
+            return f"{self.period_start.strftime('%d %b %Y')} – {self.period_end.strftime('%d %b %Y')}"
+        except Exception:
+            return ''
+
+
