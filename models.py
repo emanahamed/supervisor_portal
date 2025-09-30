@@ -49,6 +49,63 @@ class Observation(db.Model):
     staff = db.relationship("Staff", lazy=True)
     observer = db.relationship("User", lazy=True)
 
+    detail = db.relationship("ObservationDetail", backref="observation", uselist=False, cascade="all, delete-orphan")
+
+class ObservationDetail(db.Model):
+    """Extended structured data for an observation (since 0.7.0).
+
+    Stores grouped checklist booleans as JSON blobs plus narrative sections.
+    JSON columns stored as text (SQLite) containing serialized dict/list.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    observation_id = db.Column(db.Integer, db.ForeignKey('observation.id'), nullable=False, unique=True, index=True)
+    timeslot = db.Column(db.String(20))
+    weekly_test = db.Column(db.Text)        # JSON: {flag: bool, ...}
+    weekly_test_comment = db.Column(db.Text)
+    homework = db.Column(db.Text)           # JSON
+    homework_comment = db.Column(db.Text)
+    classwork = db.Column(db.Text)          # JSON
+    classwork_comment = db.Column(db.Text)
+    org_mgmt = db.Column(db.Text)           # JSON
+    org_mgmt_comment = db.Column(db.Text)
+    positives = db.Column(db.Text)          # JSON list of strings
+    improvements = db.Column(db.Text)       # JSON list of strings
+    target_set = db.Column(db.Text)
+    actions_taken = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    next_review_date = db.Column(db.Date)
+
+    # ---------------- JSON helper methods ----------------
+    import json as _json  # local alias
+
+    def _parse(self, raw, default):
+        try:
+            return self._json.loads(raw) if raw else default
+        except Exception:
+            return default
+
+    def get_checklist(self, attr):
+        return self._parse(getattr(self, attr), {})
+
+    def set_checklist(self, attr, mapping: dict):
+        setattr(self, attr, self._json.dumps(mapping or {}))
+
+    def get_list(self, attr):
+        return self._parse(getattr(self, attr), [])
+
+    def set_list(self, attr, seq):
+        setattr(self, attr, self._json.dumps(seq or []))
+
+    def serialize_all(self):
+        return {
+            'weekly_test': self.get_checklist('weekly_test'),
+            'homework': self.get_checklist('homework'),
+            'classwork': self.get_checklist('classwork'),
+            'org_mgmt': self.get_checklist('org_mgmt'),
+            'positives': self.get_list('positives'),
+            'improvements': self.get_list('improvements'),
+        }
+
 class Availability(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False, index=True)

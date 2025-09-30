@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% block page_title %}{{ 'Edit' if obs else 'New' }} Observation{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+  <form method="POST" action="" id="observationExtendedForm" class="space-y-8">
+    {{ csrf_token() if csrf_token is defined }}
+    <div class="soft-card p-6 space-y-6">
+      <h2 class="text-lg font-semibold text-slate-700 flex items-center gap-2">1. Core Details</h2>
+      <div class="grid md:grid-cols-4 gap-4">
+        <div class="md:col-span-2">
+          <label class="soft-label">Tutor</label>
+          <select name="staff_id" class="soft-input" id="staffSelect" required>
+            <option value="">-- Select Tutor --</option>
+            {% for s in staff %}
+            <option value="{{ s.id }}" {% if obs and obs.staff_id==s.id %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="soft-label">Date</label>
+          <input type="date" name="date" class="soft-input" value="{{ obs.date if obs else today }}" required>
+        </div>
+        <div>
+          <label class="soft-label">Timeslot</label>
+          <select name="timeslot" class="soft-input" required>
+            {% set ts = detail.timeslot if detail else '' %}
+            {% for slot in ['9-11','11-1','2-4','4-6','5-7'] %}
+              <option value="{{ slot }}" {% if ts==slot %}selected{% endif %}>{{ slot }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="soft-label">Overall Observation Score</label>
+        <div class="flex flex-wrap gap-3 mt-2">
+          {% set score_val = obs.score if obs else None %}
+          {% for n in range(0,11) %}
+            <label class="flex items-center gap-1 text-sm">
+              <input type="radio" name="score" value="{{ n }}" class="text-indigo-600" {% if score_val is not none and score_val|int == n %}checked{% endif %}>
+              <span>{{ n }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {% macro checklist_block(num, title, prefix, items, data, comment) %}
+    <div class="soft-card p-6 space-y-4">
+      <h2 class="text-lg font-semibold text-slate-700">{{ num }}. {{ title }}</h2>
+      <div class="grid md:grid-cols-2 gap-2">
+        {% for item in items %}
+        {% set key = item|replace(' ','_')|lower() %}
+        <label class="flex items-center gap-2 text-sm bg-slate-50 rounded px-3 py-2">
+          <input type="checkbox" name="{{ prefix }}_{{ key }}" value="1" class="w-4 h-4 text-indigo-600" {% if data and data.get(key) %}checked{% endif %}>
+          <span class="text-slate-700">{{ item }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div>
+        <label class="soft-label">Comment</label>
+        <textarea name="{{ prefix }}_comment" class="soft-input" rows="2">{{ comment or '' }}</textarea>
+      </div>
+    </div>
+    {% endmacro %}
+
+    {{ checklist_block(2,'Weekly Test','weekly_test', ['Weekly Test Was of Appropriate Format','Suitable Difficulty Level','Labelled Correctly','Marked on Time'], weekly_test_data, detail.weekly_test_comment if detail else None) }}
+    {{ checklist_block(3,'Homework','homework', ['Enough Homework Set','Revision Task Set','Marked the Homework','Appropriate Feedback Given'], homework_data, detail.homework_comment if detail else None) }}
+    {{ checklist_block(4,'Classwork','classwork', ['Enough Classwork Done','On Track with Classwork Marking','Appropriate Feedback Given'], classwork_data, detail.classwork_comment if detail else None) }}
+    {{ checklist_block(5,'Organisation and Class Management','org_mgmt', ['Class was Distraction Free','No Off-Topic Conversation','Students were Engaged with Work','Tutor Planner Up to Date','Tutor Paper Register Up to Date','Tutor Planner is Filled in with Enough Details','Good Time Management','Good Use of Online System','Student Planner is Filled in with Enough Details'], org_mgmt_data, detail.org_mgmt_comment if detail else None) }}
+
+    <div class="soft-card p-6 space-y-4" id="positivesBlock">
+      <h2 class="text-lg font-semibold text-slate-700">6. Positive Aspects of the Lesson</h2>
+      <div id="positivesList" class="space-y-2"></div>
+      <button type="button" class="soft-btn bg-slate-100" id="addPositiveBtn">Add Positive</button>
+    </div>
+    <div class="soft-card p-6 space-y-4" id="improvementsBlock">
+      <h2 class="text-lg font-semibold text-slate-700">7. Areas of Improvement</h2>
+      <div id="improvementsList" class="space-y-2"></div>
+      <button type="button" class="soft-btn bg-slate-100" id="addImprovementBtn">Add Improvement</button>
+    </div>
+
+    <div class="soft-card p-6 space-y-4">
+      <h2 class="text-lg font-semibold text-slate-700">8-11. Targets & Notes</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="soft-label">Target Set</label>
+          <textarea name="target_set" class="soft-input" rows="2">{{ detail.target_set if detail else '' }}</textarea>
+        </div>
+        <div>
+          <label class="soft-label">Actions Taken</label>
+          <textarea name="actions_taken" class="soft-input" rows="2">{{ detail.actions_taken if detail else '' }}</textarea>
+        </div>
+        <div>
+          <label class="soft-label">Notes</label>
+          <textarea name="notes" class="soft-input" rows="3">{{ detail.notes if detail else '' }}</textarea>
+        </div>
+        <div>
+          <label class="soft-label">Next Review Date</label>
+          <input type="date" name="next_review_date" class="soft-input" value="{{ detail.next_review_date if detail and detail.next_review_date else '' }}">
+        </div>
+      </div>
+    </div>
+
+    <input type="hidden" name="positives_json" id="positivesJson" value='{{ positives_json|tojson|safe }}'>
+    <input type="hidden" name="improvements_json" id="improvementsJson" value='{{ improvements_json|tojson|safe }}'>
+
+    <div class="flex items-center gap-3">
+      <button class="soft-btn soft-btn-primary" type="submit">Save Observation</button>
+      <a href="{{ url_for('observations_index') }}" class="soft-btn bg-slate-100">Cancel</a>
+      {% if obs %}
+      <a href="{{ url_for('observation_report', oid=obs.id) }}" class="soft-btn bg-indigo-100 text-indigo-700">Download PDF</a>
+      <a href="{{ url_for('observation_email', oid=obs.id) }}" class="soft-btn bg-emerald-100 text-emerald-700">Email Tutor</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  // Dynamic list handling for positives & improvements
+  function initDynamic(listId, hiddenId){
+    const container = document.getElementById(listId);
+    const hidden = document.getElementById(hiddenId);
+    let items = [];
+    try { items = JSON.parse(hidden.value || '[]'); } catch(e){ items = []; }
+    function render(){
+      container.innerHTML='';
+      items.forEach((text, idx)=>{
+        const wrap = document.createElement('div');
+        wrap.className='flex gap-2';
+        wrap.innerHTML = `<input type="text" class="soft-input flex-1" value="${text.replace(/"/g,'&quot;')}" data-idx="${idx}">`+
+                         `<button type="button" class="soft-btn bg-rose-100 text-rose-700" data-remove="${idx}">−</button>`;
+        container.appendChild(wrap);
+      });
+      hidden.value = JSON.stringify(items);
+    }
+    container.addEventListener('input', e=>{
+      const inp = e.target.closest('input[data-idx]');
+      if(!inp) return; items[parseInt(inp.dataset.idx,10)] = inp.value; hidden.value = JSON.stringify(items);
+    });
+    container.addEventListener('click', e=>{
+      const btn = e.target.closest('button[data-remove]');
+      if(!btn) return; const i = parseInt(btn.dataset.remove,10); items.splice(i,1); render();
+    });
+    return { add: function(){ items.push(''); render(); }, render }; 
+  }
+  const positives = initDynamic('positivesList','positivesJson');
+  const improvements = initDynamic('improvementsList','improvementsJson');
+  positives.render(); improvements.render();
+  document.getElementById('addPositiveBtn').addEventListener('click', ()=> positives.add());
+  document.getElementById('addImprovementBtn').addEventListener('click', ()=> improvements.add());
+})();
+</script>
+{% endblock %}

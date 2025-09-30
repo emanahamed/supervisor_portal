@@ -1,0 +1,533 @@
+{% set data = data or detail.serialize_all() %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Observation Report (PDF)</title>
+    <style>
+      /* NOTE: This template is simplified for xhtml2pdf compatibility (no flex, gradients or complex selectors) */
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 12px;
+        color: #0a2540;
+        margin: 0;
+        padding: 20px 28px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+        color: #0b5ed7;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 18px 0 6px;
+        color: #0a53be;
+        border-bottom: 1px solid #0b5ed7;
+        padding-bottom: 2px;
+      }
+      h3 {
+        font-size: 13px;
+        margin: 14px 0 4px;
+        color: #0a2540;
+      }
+      table.meta {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 14px;
+      }
+      table.meta th {
+        text-align: left;
+        background: #0b5ed7;
+        color: #fff;
+        padding: 4px 6px;
+        font-size: 11px;
+      }
+      table.meta td {
+        padding: 5px 6px;
+        border: 1px solid #d9e3f0;
+        font-size: 11.5px;
+      }
+      table.checklist {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 6px 0 14px;
+      }
+      table.checklist th {
+        background: #e6f0fb;
+        color: #0a2540;
+        padding: 5px 6px;
+        font-size: 11px;
+        text-align: left;
+        border: 1px solid #c6d6eb;
+      }
+      table.checklist td {
+        padding: 5px 6px;
+        border: 1px solid #c6d6eb;
+        font-size: 11px;
+        vertical-align: top;
+      }
+      .cat-row th {
+        background: #0b5ed7;
+        color: #fff;
+        font-size: 11.5px;
+      }
+      .status-met {
+        color: #0f5132;
+        font-weight: bold;
+      }
+      .status-not {
+        color: #842029;
+        font-weight: bold;
+      }
+      .row-not-met td {
+        background: #fdecec;
+      }
+      ul.simple {
+        margin: 4px 0 10px 16px;
+        padding: 0;
+      }
+      ul.simple li {
+        margin: 2px 0;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 10.5px;
+        background: #0b5ed7;
+        color: #fff;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-right: 6px;
+      }
+      .badge.alt {
+        background: #1e293b;
+      }
+      .badge.warn {
+        background: #fbc02d;
+        color: #000;
+      }
+      .unmet-box {
+        border: 1px solid #f1bcc2;
+        background: #fff5f5;
+        padding: 8px 10px;
+        font-size: 11px;
+      }
+      .all-met {
+        color: #15803d;
+        font-weight: bold;
+        font-size: 11.5px;
+      }
+      .section-box {
+        border: 1px solid #d9e3f0;
+        background: #fff;
+        padding: 10px 12px 12px;
+        margin: 10px 0 14px;
+      }
+      .muted {
+        color: #64748b;
+        font-style: italic;
+      }
+      .footer {
+        margin-top: 30px;
+        font-size: 10px;
+        text-align: center;
+        color: #64748b;
+        border-top: 2px solid #0b5ed7;
+        padding-top: 6px;
+      }
+      .logo {
+        height: 54px;
+      }
+      .header-table {
+        width: 100%;
+      }
+      .header-table td {
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    {% set data = data or detail.serialize_all() %}
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Observation Report (PDF)</title>
+        <style>
+          /* Brand palette (#f47421, #363f99, #2e9b47, #ffffff, #fad50a, #507cb9, #6a2672) */
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11.8px;
+            color: #1a1f29;
+            margin: 0;
+            padding: 22px 28px 30px;
+          }
+          .brand-bar {
+            background: #363f99;
+            color: #fff;
+            padding: 8px 14px;
+          }
+          .brand-bar table {
+            width: 100%;
+          }
+          h1 {
+            margin: 0;
+            font-size: 20px;
+            letter-spacing: 0.5px;
+          }
+          .subhead {
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            color: #fad50a;
+          }
+          .logo {
+            height: 50px;
+          }
+          .badge-row {
+            text-align: right;
+            font-size: 10px;
+          }
+          .b {
+            display: inline-block;
+            background: #507cb9;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 4px;
+          }
+          .b.green {
+            background: #2e9b47;
+          }
+          .b.orange {
+            background: #f47421;
+          }
+          .b.yellow {
+            background: #fad50a;
+            color: #000;
+          }
+          table.meta {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 14px 0 18px;
+          }
+          table.meta th {
+            background: #507cb9;
+            color: #fff;
+            padding: 4px 6px;
+            font-size: 10.5px;
+            text-align: left;
+          }
+          table.meta td {
+            border: 1px solid #d0d7e3;
+            padding: 5px 6px;
+            font-size: 11px;
+          }
+          .section {
+            border: 1px solid #d0d7e3;
+            margin: 14px 0 18px;
+          }
+          .section-title {
+            background: #363f99;
+            color: #fff;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-weight: bold;
+          }
+          .section-title span.no {
+            background: #f47421;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            margin-right: 6px;
+          }
+          .section-body {
+            padding: 10px 12px 12px;
+          }
+          table.checkcat {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 6px 0 10px;
+          }
+          table.checkcat th {
+            background: #507cb9;
+            color: #fff;
+            font-size: 10px;
+            padding: 4px 5px;
+            text-align: left;
+          }
+          table.checkcat td {
+            border: 1px solid #c6d2e1;
+            padding: 4px 5px;
+            font-size: 10.5px;
+          }
+          .crit-status {
+            width: 40px;
+            text-align: center;
+            font-weight: bold;
+          }
+          .ok {
+            color: #2e9b47;
+          }
+          .bad {
+            color: #f47421;
+          }
+          .row-bad td {
+            background: #fff2ec;
+          }
+          .cat-summary {
+            font-size: 9.5px;
+            background: #f0f4fb;
+          }
+          .comment-box {
+            border: 1px solid #c6d2e1;
+            background: #ffffff;
+            padding: 6px 8px;
+            font-size: 10.5px;
+            margin-top: 4px;
+          }
+          .comment-box.empty {
+            font-style: italic;
+            color: #6b7280;
+            background: #f5f7fa;
+          }
+          ul.simple {
+            margin: 4px 0 0 16px;
+            padding: 0;
+          }
+          ul.simple li {
+            margin: 2px 0;
+          }
+          .pill {
+            display: inline-block;
+            font-size: 10.5px;
+            background: #363f99;
+            color: #fff;
+            padding: 3px 10px;
+            border-radius: 14px;
+            margin: 3px 4px 3px 0;
+          }
+          .pill.alt {
+            background: #6a2672;
+          }
+          .pill.imp {
+            background: #f47421;
+          }
+          .muted {
+            color: #6b7280;
+            font-style: italic;
+          }
+          .unmet-box {
+            border: 1px solid #f8cba7;
+            background: #fff6ef;
+            padding: 8px 10px;
+            font-size: 10.5px;
+          }
+          .all-met {
+            color: #2e9b47;
+            font-weight: bold;
+            font-size: 11px;
+          }
+          .footer {
+            margin-top: 24px;
+            font-size: 9.5px;
+            text-align: center;
+            color: #555;
+            border-top: 2px solid #363f99;
+            padding-top: 6px;
+          }
+          .legend {
+            font-size: 9px;
+            margin-top: 4px;
+          }
+          .legend span {
+            display: inline-block;
+            margin-right: 10px;
+          }
+          .legend-box {
+            width: 10px;
+            height: 10px;
+            display: inline-block;
+            margin-right: 4px;
+            border: 1px solid #999;
+          }
+          .legend-box.ok {
+            background: #2e9b47;
+            border-color: #2e9b47;
+          }
+          .legend-box.bad {
+            background: #f47421;
+            border-color: #f47421;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="brand-bar">
+          <table>
+            <tr>
+              <td style="width: 60px">
+                {% if logo_data_uri %}<img
+                  class="logo"
+                  src="{{ logo_data_uri }}"
+                />{% endif %}
+              </td>
+              <td>
+                <h1>Observation Report</h1>
+                <div class="subhead">EXCEL TUTORS QUALITY & DEVELOPMENT</div>
+              </td>
+              <td class="badge-row">
+                <span class="b green"
+                  >Score: {{ '%.1f'|format(obs.score) }}</span
+                >
+                <span class="b">Timeslot: {{ detail.timeslot or 'N/A' }}</span>
+                {% if detail.next_review_date %}<span class="b yellow"
+                  >Next: {{ detail.next_review_date }}</span
+                >{% endif %}
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <table class="meta">
+          <tr>
+            <th style="width: 17%">Tutor</th>
+            <td style="width: 33%">{{ obs.staff.name }}</td>
+            <th style="width: 17%">Observer</th>
+            <td style="width: 33%">{{ obs.observer.name }}</td>
+          </tr>
+          <tr>
+            <th>Date</th>
+            <td>{{ obs.date }}</td>
+            <th>Department</th>
+            <td>{{ obs.staff.department or '—' }}</td>
+          </tr>
+        </table>
+
+        {% set checklist_groups = [ ("2", 'Weekly Test', data.weekly_test,
+        detail.weekly_test_comment), ("3", 'Homework', data.homework,
+        detail.homework_comment), ("4", 'Classwork', data.classwork,
+        detail.classwork_comment), ("5", 'Organisation & Class Management',
+        data.org_mgmt, detail.org_mgmt_comment) ] %}
+
+        <div class="section">
+          <div class="section-title"><span class="no">1</span>Core Details</div>
+          <div class="section-body">
+            Observation date {{ obs.date }} for tutor
+            <strong>{{ obs.staff.name }}</strong> (Department: {{
+            obs.staff.department or '—' }}) observed by
+            <strong>{{ obs.observer.name }}</strong>.
+          </div>
+        </div>
+
+        {% set unmet_all = [] %} {% for num, title, mapping, comment in
+        checklist_groups %}
+        <div class="section">
+          <div class="section-title">
+            <span class="no">{{ num }}</span>{{ title }}
+          </div>
+          <div class="section-body">
+            <table class="checkcat">
+              <tr>
+                <th style="width: 55%">Criterion</th>
+                <th class="crit-status">Status</th>
+                <th>Notes</th>
+              </tr>
+              {% set met = 0 %}{% set total = 0 %} {% for k,v in mapping.items()
+              %} {% set total = total + 1 %} {% if v %}{% set met = met + 1 %}{%
+              endif %}
+              <tr class="{{ '' if v else 'row-bad' }}">
+                <td>{{ k.replace('_',' ')|title }}</td>
+                <td class="crit-status {{ 'ok' if v else 'bad' }}">
+                  {{ '✓' if v else '✗' }}
+                </td>
+                {% if not v %}{% set _ = unmet_all.append(k.replace('_','
+                ')|title) %}{% endif %} {% if loop.first %}
+                <td rowspan="{{ mapping|length }}">{{ comment or '—' }}</td>
+                {% endif %}
+              </tr>
+              {% endfor %} {% if not mapping %}
+              <tr class="row-bad">
+                <td colspan="3"><em>No criteria recorded</em></td>
+              </tr>
+              {% endif %}
+              <tr>
+                <td colspan="3" class="cat-summary">
+                  Summary: {{ met }} / {{ total }} met ({{
+                  (met/total*100)|round(0) if total else 0 }}%)
+                </td>
+              </tr>
+            </table>
+            <div class="legend">
+              <span><span class="legend-box ok"></span>Met</span
+              ><span><span class="legend-box bad"></span>Not Met</span>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        <div class="section">
+          <div class="section-title">
+            <span class="no">6</span>Unmet Criteria Summary
+          </div>
+          <div class="section-body">
+            {% if unmet_all %}
+            <div class="unmet-box">
+              {% for item in unmet_all %}• {{ item }}{% if not loop.last %}<br />{%
+              endif %}{% endfor %}
+            </div>
+            {% else %}
+            <div class="all-met">All checklist criteria were met.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            <span class="no">7</span>Positive Aspects
+          </div>
+          <div class="section-body">
+            {% if data.positives %} {% for p in data.positives %}<span
+              class="pill"
+              >{{ p }}</span
+            >{% endfor %} {% else %}<span class="muted">None listed</span>{%
+            endif %}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            <span class="no">8</span>Areas For Improvement
+          </div>
+          <div class="section-body">
+            {% if data.improvements %} {% for p in data.improvements %}<span
+              class="pill imp"
+              >{{ p }}</span
+            >{% endfor %} {% else %}<span class="muted">None listed</span>{%
+            endif %}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            <span class="no">9</span>Targets / Actions / Notes
+          </div>
+          <div class="section-body">
+            <strong>Target Set:</strong><br />{{ detail.target_set or '<span
+              class="muted"
+              >None</span
+            >'|safe }}<br /><br />
+            <strong>Actions Taken:</strong><br />{{ detail.actions_taken or
+            '<span class="muted">None</span>'|safe }}<br /><br />
+            <strong>Notes:</strong><br />{{ detail.notes or '<span class="muted"
+              >No additional notes</span
+            >'|safe }}
+          </div>
+        </div>
+
+        <div class="footer">
+          Excel Tutors • Generated {{ generated_at.strftime('%Y-%m-%d %H:%M
+          UTC') if generated_at else '' }}
+        </div>
+      </body>
+    </html>
+  </body>
+</html>

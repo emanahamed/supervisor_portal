@@ -1,5 +1,7 @@
+import base64
 import csv
 import io
+import json
 import os
 from datetime import date, datetime
 from uuid import uuid4
@@ -162,6 +164,8 @@ def create_tables_and_superadmin():
                     conn.execute(text("ALTER TABLE todo ADD COLUMN actions_taken TEXT"))
             except Exception:
                 pass
+            # Observation detail extended table
+            conn.execute(text("CREATE TABLE IF NOT EXISTS observation_detail (id INTEGER PRIMARY KEY, observation_id INTEGER NOT NULL UNIQUE, timeslot VARCHAR(20), weekly_test TEXT, weekly_test_comment TEXT, homework TEXT, homework_comment TEXT, classwork TEXT, classwork_comment TEXT, org_mgmt TEXT, org_mgmt_comment TEXT, positives TEXT, improvements TEXT, target_set TEXT, actions_taken TEXT, notes TEXT, next_review_date DATE, FOREIGN KEY(observation_id) REFERENCES observation(id))"))
     except Exception:
         pass
 
@@ -996,6 +1000,7 @@ def availability_delete(aid):
 @app.route('/availability/import_remote', methods=['POST'])
 @login_required
 def availability_import_remote():
+    import base64
     import json
 
     import requests
@@ -1499,6 +1504,247 @@ def observation_delete(oid):
     db.session.commit()
     flash("Observation deleted", "success")
     return redirect(url_for('observations_index', cycle_id=cid))
+
+# ---------------- Extended Observations (rich form + report/email) -----------
+def _deserialize_checklist(prefix, form):
+    data = {}
+    plen = len(prefix) + 1
+    for k in form.keys():
+        if k.startswith(prefix + '_') and not k.endswith('_comment'):
+            key = k[plen:]
+            data[key] = form.get(k) == '1'
+    return data
+
+@app.route('/observations/extended/new', methods=['GET','POST'])
+@login_required
+def observation_extended_new():
+    cycles = ObservationCycle.query.order_by(ObservationCycle.start_date.desc().nullslast()).all()
+    staff = Staff.query.order_by(Staff.name.asc()).all()
+    if request.method == 'POST':
+        errors = []
+        staff_raw = request.form.get('staff_id')
+        if not staff_raw:
+            errors.append('Tutor is required.')
+        cycle_raw = request.form.get('cycle_id')
+        date_raw = request.form.get('date')
+        score_raw = request.form.get('score')
+        timeslot = request.form.get('timeslot')
+        if timeslot not in ['9-11','11-1','2-4','4-6','5-7']:
+            errors.append('Invalid timeslot.')
+        try:
+            staff_id = int(staff_raw) if staff_raw else None
+        except Exception:
+            errors.append('Invalid tutor selection.')
+            staff_id = None
+        try:
+            cycle_id = int(cycle_raw) if cycle_raw else (cycles[0].id if cycles else None)
+        except Exception:
+            errors.append('Invalid cycle selection.')
+            cycle_id = None
+        try:
+            date_val = datetime.strptime(date_raw, '%Y-%m-%d').date() if date_raw else date.today()
+        except Exception:
+            errors.append('Invalid date value.')
+            date_val = date.today()
+        try:
+            score = float(score_raw)
+            if score < 0 or score > 10:
+                errors.append('Score must be between 0 and 10.')
+        except Exception:
+            errors.append('Observation score is required.')
+            score = 0
+        if errors:
+            flash('\n'.join(errors), 'danger')
+            return render_template('observations/extended_form.html', staff=staff, cycles=cycles, obs=None, detail=None,
+                                   today=date.today(), weekly_test_data={}, homework_data={}, classwork_data={}, org_mgmt_data={},
+                                   positives_json=[], improvements_json=[], form_errors=errors)
+        obs = Observation(cycle_id=cycle_id, staff_id=staff_id, observer_id=current_user.id, date=date_val, score=score)
+        db.session.add(obs)
+        db.session.flush()
+        from models import ObservationDetail  # local import to avoid circular
+        detail = ObservationDetail(
+            observation_id=obs.id,
+            timeslot=timeslot,
+            weekly_test=json.dumps(_deserialize_checklist('weekly_test', request.form)),
+            weekly_test_comment=request.form.get('weekly_test_comment') or None,
+            homework=json.dumps(_deserialize_checklist('homework', request.form)),
+            homework_comment=request.form.get('homework_comment') or None,
+            classwork=json.dumps(_deserialize_checklist('classwork', request.form)),
+            classwork_comment=request.form.get('classwork_comment') or None,
+            org_mgmt=json.dumps(_deserialize_checklist('org_mgmt', request.form)),
+            org_mgmt_comment=request.form.get('org_mgmt_comment') or None,
+            positives=request.form.get('positives_json'),
+            improvements=request.form.get('improvements_json'),
+            target_set=request.form.get('target_set') or None,
+            actions_taken=request.form.get('actions_taken') or None,
+            notes=request.form.get('notes') or None,
+            next_review_date=datetime.strptime(request.form.get('next_review_date'), '%Y-%m-%d').date() if request.form.get('next_review_date') else None
+        )
+        db.session.add(detail)
+    db.session.commit()
+    flash('Observation created','success')
+    return redirect(url_for('observations_index', cycle_id=cycle_id))
+    return render_template('observations/extended_form.html', staff=staff, cycles=cycles, obs=None, detail=None,
+                           today=date.today(), weekly_test_data={}, homework_data={}, classwork_data={}, org_mgmt_data={},
+                           positives_json=[], improvements_json=[])
+
+@app.route('/observations/extended/<int:oid>/edit', methods=['GET','POST'])
+@login_required
+def observation_extended_edit(oid):
+    from models import ObservationDetail
+    obs = Observation.query.get_or_404(oid)
+    detail = obs.detail
+    if not detail:
+        detail = ObservationDetail(observation_id=obs.id)
+        db.session.add(detail)
+        db.session.commit()
+    if request.method == 'POST':
+        # Permission: only original observer or superadmin may edit
+        if current_user.id != obs.observer_id and not current_user.is_superadmin:
+            abort(403)
+        errors = []
+        try:
+            obs.staff_id = int(request.form.get('staff_id'))
+        except Exception:
+            errors.append('Invalid tutor.')
+        try:
+            obs.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d').date()
+        except Exception:
+            errors.append('Invalid date.')
+        try:
+            score_val = float(request.form.get('score'))
+            if score_val < 0 or score_val > 10:
+                errors.append('Score must be 0-10.')
+            obs.score = score_val
+        except Exception:
+            errors.append('Score is required.')
+        ts = request.form.get('timeslot')
+        if ts not in ['9-11','11-1','2-4','4-6','5-7']:
+            errors.append('Invalid timeslot.')
+        detail.timeslot = ts
+        detail.weekly_test = json.dumps(_deserialize_checklist('weekly_test', request.form))
+        detail.weekly_test_comment = request.form.get('weekly_test_comment') or None
+        detail.homework = json.dumps(_deserialize_checklist('homework', request.form))
+        detail.homework_comment = request.form.get('homework_comment') or None
+        detail.classwork = json.dumps(_deserialize_checklist('classwork', request.form))
+        detail.classwork_comment = request.form.get('classwork_comment') or None
+        detail.org_mgmt = json.dumps(_deserialize_checklist('org_mgmt', request.form))
+        detail.org_mgmt_comment = request.form.get('org_mgmt_comment') or None
+        detail.positives = request.form.get('positives_json')
+        detail.improvements = request.form.get('improvements_json')
+        detail.target_set = request.form.get('target_set') or None
+        detail.actions_taken = request.form.get('actions_taken') or None
+        detail.notes = request.form.get('notes') or None
+        detail.next_review_date = datetime.strptime(request.form.get('next_review_date'), '%Y-%m-%d').date() if request.form.get('next_review_date') else None
+        if errors:
+            for e in errors: flash(e,'danger')
+        else:
+            db.session.commit()
+            flash('Observation updated','success')
+            return redirect(url_for('observation_extended_edit', oid=obs.id))
+    def load_json(text):
+        try: return json.loads(text) if text else {}
+        except Exception: return {}
+    def load_list(text):
+        try: return json.loads(text) if text else []
+        except Exception: return []
+    cycles = ObservationCycle.query.order_by(ObservationCycle.start_date.desc().nullslast()).all()
+    staff = Staff.query.order_by(Staff.name.asc()).all()
+    return render_template('observations/extended_form.html', obs=obs, detail=detail, staff=staff, cycles=cycles,
+                           today=date.today(), weekly_test_data=load_json(detail.weekly_test), homework_data=load_json(detail.homework),
+                           classwork_data=load_json(detail.classwork), org_mgmt_data=load_json(detail.org_mgmt),
+                           positives_json=load_list(detail.positives), improvements_json=load_list(detail.improvements))
+
+@app.route('/observations/<int:oid>/report')
+@login_required
+def observation_report(oid):
+    obs = Observation.query.get_or_404(oid)
+    detail = obs.detail
+    if not detail:
+        abort(404)
+    # Embed logo as data URI for portability in PDF/email rendering
+    logo_data_uri = None
+    try:
+        logo_path = os.path.join(app.root_path, 'static', 'img', 'excel tutors logo 2023.png')
+        with open(logo_path, 'rb') as lf:
+            b64 = base64.b64encode(lf.read()).decode('utf-8')
+            logo_data_uri = f"data:image/png;base64,{b64}"
+    except Exception:
+        pass
+    # Use a PDF-friendly simplified template
+    html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.utcnow())
+    try:
+        from io import BytesIO
+
+        from xhtml2pdf import pisa
+        pdf_io = BytesIO(); pisa.CreatePDF(html, dest=pdf_io); pdf_io.seek(0)
+        return send_file(pdf_io, mimetype='application/pdf', as_attachment=True, download_name=f'observation_{oid}.pdf')
+    except Exception:
+        return html
+        return html
+
+@app.route('/observations/<int:oid>/email')
+@login_required
+def observation_email(oid):
+    obs = Observation.query.get_or_404(oid)
+    detail = obs.detail
+    if not detail:
+        abort(404)
+    logo_data_uri = None
+    try:
+        logo_path = os.path.join(app.root_path, 'static', 'img', 'excel tutors logo 2023.png')
+        with open(logo_path, 'rb') as lf:
+            b64 = base64.b64encode(lf.read()).decode('utf-8')
+            logo_data_uri = f"data:image/png;base64,{b64}"
+    except Exception:
+        pass
+    # Use dedicated email template (richer styling) and PDF template for attachment
+    email_html = render_template('observations/report_email.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.utcnow())
+    tutor_email = obs.staff.email
+    ajax = request.args.get('ajax') or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept','')
+    if not tutor_email:
+        msg = 'Tutor has no email on record'
+        if ajax:
+            return jsonify({'status':'error','message': msg}), 400
+        flash(msg,'warning')
+        return redirect(url_for('observation_extended_edit', oid=obs.id))
+    pdf_bytes = None
+    try:
+        from io import BytesIO
+
+        from xhtml2pdf import pisa
+
+        # Render PDF-friendly template separately for attachment
+        pdf_html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.utcnow())
+        pdf_io = BytesIO(); pisa.CreatePDF(pdf_html, dest=pdf_io); pdf_io.seek(0); pdf_bytes = pdf_io.read()
+    except Exception:
+        pass
+    body = f"<p>Dear {obs.staff.name},</p><p>Please find your observation summary below:</p>" + email_html + "<p>Best regards,<br>Excel Tutors</p>"
+    try:
+        if pdf_bytes:
+            import smtplib
+            from email.message import EmailMessage
+
+            from email_utils import (FROM_EMAIL, FROM_NAME, SMTP_HOST,
+                                     SMTP_PASSWORD, SMTP_PORT, SMTP_USERNAME)
+            msg = EmailMessage(); msg['Subject'] = f"Observation Report - {obs.staff.name} ({obs.date})"; msg['From'] = f"{FROM_NAME} <{FROM_EMAIL}>"; msg['To'] = tutor_email
+            msg.set_content('HTML observation report attached.')
+            msg.add_alternative(body, subtype='html')
+            msg.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename=f'observation_{oid}.pdf')
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+                server.starttls(); server.login(SMTP_USERNAME, SMTP_PASSWORD); server.send_message(msg)
+        else:
+            send_email(tutor_email, f"Observation Report - {obs.staff.name} ({obs.date})", body)
+        success_msg = 'Observation emailed to tutor'
+        if ajax:
+            return jsonify({'status':'ok','message': success_msg})
+        flash(success_msg,'success')
+    except Exception as e:
+        err_msg = f'Email failed: {e}'
+        if ajax:
+            return jsonify({'status':'error','message': err_msg}), 500
+        flash(err_msg,'danger')
+    return redirect(url_for('observation_extended_edit', oid=obs.id))
 
 # ---------------- Error Handlers ----------------
 @app.errorhandler(403)

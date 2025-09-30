@@ -1,0 +1,352 @@
+{% set data = data or detail.serialize_all() %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Observation Email Summary</title>
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 14px;
+        color: #1a1f29;
+        margin: 0;
+        padding: 0;
+        background: #f5f7fa;
+      }
+      .wrapper {
+        max-width: 840px;
+        margin: 0 auto;
+        padding: 24px 18px 40px;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+        padding: 26px 34px 40px;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05);
+      }
+      .brand-head {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        border-bottom: 4px solid #363f99;
+        padding-bottom: 14px;
+        margin-bottom: 26px;
+      }
+      .brand-head img {
+        height: 70px;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0;
+        letter-spacing: 0.5px;
+        color: #363f99;
+      }
+      .muted {
+        color: #6b7280;
+      }
+      .sub {
+        font-size: 12px;
+        letter-spacing: 2px;
+        color: #f47421;
+        font-weight: 600;
+        margin-top: 4px;
+      }
+      table.meta {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 6px 0 22px;
+      }
+      table.meta th {
+        text-align: left;
+        font-size: 11px;
+        background: #507cb9;
+        color: #fff;
+        padding: 6px 8px;
+        letter-spacing: 0.5px;
+      }
+      table.meta td {
+        font-size: 13px;
+        padding: 8px 10px;
+        border: 1px solid #e2e8f0;
+      }
+      .section {
+        margin: 34px 0 0;
+      }
+      .section h2 {
+        font-size: 18px;
+        margin: 0 0 14px;
+        color: #363f99;
+        letter-spacing: 0.4px;
+      }
+      .group {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        margin: 0 0 24px;
+        overflow: hidden;
+      }
+      .group-head {
+        background: #363f99;
+        color: #fff;
+        padding: 10px 14px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 10px 12px;
+        padding: 14px 18px 4px;
+      }
+      .crit {
+        position: relative;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-left: 6px solid transparent;
+        padding: 10px 12px 10px 42px;
+        font-size: 12.5px;
+        border-radius: 10px;
+      }
+      .crit.good {
+        border-left-color: #2e9b47;
+      }
+      .crit.bad {
+        border-left-color: #f47421;
+        background: #fff5ef;
+      }
+      .crit .icon {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 24px;
+        height: 24px;
+        font-size: 14px;
+        font-weight: 700;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .crit.good .icon {
+        background: #2e9b47;
+        color: #fff;
+      }
+      .crit.bad .icon {
+        background: #f47421;
+        color: #fff;
+      }
+      .comment-box {
+        margin: 0 18px 18px;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 12.5px;
+      }
+      .comment-box.empty {
+        font-style: italic;
+        color: #6b7280;
+        background: #f8fafc;
+      }
+      .chips {
+        padding: 4px 6px 2px;
+      }
+      .chip {
+        display: inline-block;
+        font-size: 12px;
+        background: #363f99;
+        color: #fff;
+        padding: 6px 12px;
+        border-radius: 30px;
+        margin: 4px 6px 4px 0;
+      }
+      .chip.imp {
+        background: #f47421;
+      }
+      .summary-box {
+        background: #fff5ef;
+        border: 1px solid #fbcfb1;
+        padding: 12px 16px;
+        border-radius: 12px;
+        font-size: 13px;
+      }
+      .summary-box.ok {
+        background: #ecfdf3;
+        border-color: #bbf7d0;
+      }
+      .narr {
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 18px 20px 8px;
+      }
+      .narr h3 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        color: #363f99;
+      }
+      .narr p {
+        margin: 0 0 14px;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .legend {
+        font-size: 11px;
+        color: #6b7280;
+        padding: 0 18px 12px;
+      }
+      .footer {
+        margin-top: 44px;
+        font-size: 11px;
+        text-align: center;
+        color: #6b7280;
+      }
+      @media (max-width: 600px) {
+        .brand-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .card {
+          padding: 22px 24px 36px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="card">
+        <div class="brand-head">
+          {% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Logo" />{%
+          endif %}
+          <div>
+            <h1>Observation Report</h1>
+            <div class="sub">EXCEL TUTORS QUALITY & DEVELOPMENT</div>
+          </div>
+        </div>
+
+        <table class="meta" role="presentation">
+          <tr>
+            <th style="width: 18%">Tutor</th>
+            <td style="width: 32%">{{ obs.staff.name }}</td>
+            <th style="width: 18%">Observer</th>
+            <td style="width: 32%">{{ obs.observer.name }}</td>
+          </tr>
+          <tr>
+            <th>Date</th>
+            <td>{{ obs.date }}</td>
+            <th>Timeslot</th>
+            <td>{{ detail.timeslot or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Department</th>
+            <td>{{ obs.staff.department or '—' }}</td>
+            <th>Score</th>
+            <td>{{ '%.1f'|format(obs.score) }}</td>
+          </tr>
+          {% if detail.next_review_date %}
+          <tr>
+            <th>Next Review</th>
+            <td colspan="3">{{ detail.next_review_date }}</td>
+          </tr>
+          {% endif %}
+        </table>
+
+        {% set checklist_groups = [ ('Weekly Test', data.weekly_test,
+        detail.weekly_test_comment), ('Homework', data.homework,
+        detail.homework_comment), ('Classwork', data.classwork,
+        detail.classwork_comment), ('Organisation & Class Management',
+        data.org_mgmt, detail.org_mgmt_comment) ] %} {% set unmet_all = [] %} {%
+        for title, mapping, comment in checklist_groups %}
+        <div class="group">
+          <div class="group-head">{{ title }}</div>
+          <div class="grid">
+            {% for k,v in mapping.items() %}
+            <div class="crit {{ 'good' if v else 'bad' }}">
+              <div class="icon">{{ '✓' if v else '✗' }}</div>
+              <strong>{{ k.replace('_',' ')|title }}</strong><br />
+              <span
+                style="font-size:11px; letter-spacing:.4px; font-weight:600; color: {{ '#2e9b47' if v else '#f47421' }};"
+                >{{ 'Met' if v else 'Not Met' }}</span
+              >
+              {% if not v %}{% set _ = unmet_all.append(k.replace('_','
+              ')|title) %}{% endif %}
+            </div>
+            {% endfor %} {% if not mapping %}
+            <div class="crit bad">
+              <div class="icon">–</div>
+              <em>No criteria recorded</em>
+            </div>
+            {% endif %}
+          </div>
+          <div class="comment-box {{ '' if comment else 'empty' }}">
+            {{ comment or 'No additional comment.' }}
+          </div>
+        </div>
+        {% endfor %}
+
+        <div class="section">
+          <h2>Unmet Criteria Summary</h2>
+          {% if unmet_all %}
+          <div class="summary-box">
+            {% for item in unmet_all %}• {{ item }}{% if not loop.last %}<br />{%
+            endif %}{% endfor %}
+          </div>
+          {% else %}
+          <div class="summary-box ok">All checklist criteria were met.</div>
+          {% endif %}
+        </div>
+
+        <div class="section">
+          <h2>Positive Aspects</h2>
+          <div class="chips">
+            {% if data.positives %} {% for p in data.positives %}<span
+              class="chip"
+              >{{ p }}</span
+            >{% endfor %} {% else %}<span class="muted">None listed</span>{%
+            endif %}
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Areas For Improvement</h2>
+          <div class="chips">
+            {% if data.improvements %} {% for p in data.improvements %}<span
+              class="chip imp"
+              >{{ p }}</span
+            >{% endfor %} {% else %}<span class="muted">None listed</span>{%
+            endif %}
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Targets / Actions / Notes</h2>
+          <div class="narr">
+            <h3>Target Set</h3>
+            <p>
+              {{ detail.target_set or '<span class="muted">None</span>'|safe }}
+            </p>
+            <h3>Actions Taken</h3>
+            <p>
+              {{ detail.actions_taken or '<span class="muted">None</span>'|safe
+              }}
+            </p>
+            <h3>Notes</h3>
+            <p>
+              {{ detail.notes or '<span class="muted">No additional notes</span
+              >'|safe }}
+            </p>
+          </div>
+        </div>
+
+        <div class="legend">Legend: ✓ Met | ✗ Not Met</div>
+        <div class="footer">
+          Excel Tutors • Generated {{ generated_at.strftime('%Y-%m-%d %H:%M
+          UTC') if generated_at else '' }}
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

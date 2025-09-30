@@ -7,3 +7,4 @@ itsdangerous==2.2.0
 pandas==2.2.2
 openpyxl==3.1.2
 requests==2.32.3
+xhtml2pdf==0.2.15

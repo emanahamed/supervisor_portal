@@ -8,7 +8,8 @@
     <span class="text-xs text-slate-400">{{ observations|length }} records</span>
   </div>
   <div class="flex items-center gap-2 flex-wrap">
-    <a class="soft-btn soft-btn-primary" href="{{ url_for('observation_new') }}">New Observation</a>
+  <a class="soft-btn soft-btn-primary" href="{{ url_for('observation_extended_new') }}">New Observation</a>
+  <a class="soft-btn bg-slate-100" href="{{ url_for('observation_new') }}">Simple Form</a>
   </div>
 </div>
 
@@ -66,25 +67,31 @@
       <thead class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase">
         <tr class="border-b border-slate-200">
           <th class="py-2 px-3 text-left">Tutor</th>
+          <th class="py-2 px-3 text-left">Department</th>
           <th class="py-2 px-3 text-left">Cycle</th>
           <th class="py-2 px-3 text-left">Observer</th>
           <th class="py-2 px-3 text-left">Date</th>
           <th class="py-2 px-3 text-left">Score</th>
-          <th class="py-2 px-3 text-left w-24 no-sort"></th>
+          <th class="py-2 px-3 text-left w-40 no-sort"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
         {% for o in observations %}
         <tr class="hover:bg-slate-50">
           <td class="py-2 px-3 whitespace-nowrap">{{ o.staff.name }}</td>
+          <td class="py-2 px-3 whitespace-nowrap text-xs">{{ o.staff.department or '-' }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ o.cycle.title }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ o.observer.name }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ o.date }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ '%.1f'|format(o.score) }}</td>
-          <td class="py-2 px-3 text-xs whitespace-nowrap">
-            <a class="text-indigo-600" href="{{ url_for('observation_edit', oid=o.id) }}">Edit</a>
-            <span class="text-slate-400">·</span>
-            <a class="text-rose-600" href="{{ url_for('observation_delete', oid=o.id) }}" onclick="return confirm('Delete?')">Delete</a>
+          <td class="py-2 px-3 text-xs whitespace-nowrap flex gap-2 items-center">
+            <a class="text-indigo-600" href="{{ url_for('observation_extended_edit', oid=o.id) }}" title="Edit Extended">Edit</a>
+            <span class="text-slate-300">|</span>
+            <a class="text-slate-600" href="{{ url_for('observation_report', oid=o.id) }}" title="Download PDF">PDF</a>
+            <span class="text-slate-300">|</span>
+            <a class="text-emerald-600 obsEmailLink" href="{{ url_for('observation_email', oid=o.id) }}" data-oid="{{ o.id }}" title="Email Tutor">Email</a>
+            <span class="text-slate-300">|</span>
+            <a class="text-rose-600" href="{{ url_for('observation_delete', oid=o.id) }}" onclick="return confirm('Delete?')" title="Delete">Del</a>
           </td>
         </tr>
         {% endfor %}
@@ -136,5 +143,52 @@
     });
     clear.addEventListener('click', () => { window.location = window.location.pathname; });
   })();
+// Toast & AJAX email sending
+(function(){
+  function ensureToastContainer(){
+    let c = document.getElementById('toastContainer');
+    if(!c){
+      c = document.createElement('div');
+      c.id='toastContainer';
+      c.style.position='fixed';c.style.top='12px';c.style.right='12px';c.style.zIndex='9999';c.style.display='flex';c.style.flexDirection='column';c.style.gap='10px';
+      document.body.appendChild(c);
+    }
+    return c;
+  }
+  function showToast(msg, type){
+    const c = ensureToastContainer();
+    const el = document.createElement('div');
+    el.className='toast-msg';
+    el.style.padding='12px 16px';
+    el.style.minWidth='260px';
+    el.style.background= type==='success' ? '#059669' : (type==='warning' ? '#f59e0b' : '#dc2626');
+    el.style.color='#fff';
+    el.style.fontSize='13px';
+    el.style.fontWeight='500';
+    el.style.borderRadius='8px';
+    el.style.boxShadow='0 4px 12px rgba(0,0,0,.15)';
+    el.style.position='relative';
+    el.style.overflow='hidden';
+    el.innerHTML = '<span>'+msg+'</span><button aria-label="Close" style="position:absolute;top:4px;right:6px;background:transparent;border:none;color:#fff;font-size:16px;cursor:pointer;line-height:1">×</button>';
+    el.querySelector('button').addEventListener('click', ()=> el.remove());
+    c.appendChild(el);
+    setTimeout(()=>{ try{ el.style.transition='opacity .5s'; el.style.opacity='0'; setTimeout(()=>el.remove(), 520);}catch(e){} }, 4200);
+  }
+  document.querySelectorAll('.obsEmailLink').forEach(a => {
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      const url = this.href + (this.href.indexOf('?')>-1?'&':'?') + 'ajax=1';
+      this.classList.add('opacity-50','pointer-events-none');
+      fetch(url, {headers:{'Accept':'application/json'}})
+        .then(r=> r.json().then(j=>({ok:r.ok, data:j})))
+        .then(res=>{
+          if(res.ok){ showToast(res.data.message || 'Email sent','success'); }
+          else { showToast(res.data.message || 'Email failed','error'); }
+        })
+        .catch(()=> showToast('Email failed','error'))
+        .finally(()=>{ this.classList.remove('opacity-50','pointer-events-none'); });
+    });
+  });
+})();
 </script>
 {% endblock %}
