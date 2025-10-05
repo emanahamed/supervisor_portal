@@ -1610,6 +1610,35 @@ def meetings_index():
                            user_today=len(user_today), user_week=len(user_week), search=search,
                            sel_part=part, sel_booked=booked, start_date=start_date, end_date=end_date)
 
+# Fallback: handle accidental POSTs to /meetings (collection) by treating as create
+@app.route('/meetings', methods=['POST'])
+@login_required
+def meetings_index_post():
+    """Fallback creation endpoint if the create form posts to /meetings instead of /meetings/new.
+
+    This guards against stale cached form markup or JS overrides causing a 405.
+    Prefer using /meetings/new for creation; this simply delegates.
+    """
+    form = MeetingForm()
+    users = User.query.order_by(User.name.asc()).all()
+    form.participant_id.choices = [(u.id, u.name) for u in users]
+    if form.validate_on_submit():
+        m = Meeting(participant_id=form.participant_id.data, booked_by_id=current_user.id,
+                    agenda=form.agenda.data.strip(), date=form.date.data, time=form.time.data.strip(),
+                    student_name=form.student_name.data.strip() if form.student_name.data else None,
+                    parent_name=form.parent_name.data.strip() if form.parent_name.data else None,
+                    outcome=form.outcome.data.strip() if form.outcome.data else None)
+        db.session.add(m)
+        db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'id': m.id})
+        flash('Meeting created','success')
+        return redirect(url_for('meetings_index'))
+    # On validation failure, re-render form (non-AJAX full page fallback)
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render_template('meetings/form.html', form=form, meeting=None)
+    return render_template('meetings/form.html', form=form, meeting=None)
+
 @app.route('/meetings/new', methods=['GET','POST'])
 @login_required
 def meeting_new():

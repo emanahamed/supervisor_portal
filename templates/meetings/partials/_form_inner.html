@@ -1,6 +1,6 @@
 <form
   method="POST"
-  action=""
+  action="{{ url_for('meeting_edit', mid=meeting.id) if meeting else url_for('meeting_new') }}"
   class="soft-card p-6 space-y-6"
   data-form-mode="{{ 'edit' if meeting else 'create' }}"
 >
