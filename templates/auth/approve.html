@@ -101,6 +101,14 @@
             >
               <button class="soft-btn bg-indigo-100">Toggle SA</button>
             </form>
+            <form
+              method="post"
+              action="{{ url_for('delete_user', uid=u.id) }}"
+              class="inline"
+              onsubmit="return confirm('Delete this user? This cannot be undone.');"
+            >
+              <button class="soft-btn bg-rose-100">Delete</button>
+            </form>
           </td>
         </tr>
         {% endfor %}

@@ -1,5 +1,45 @@
 # Version History
 
+## 0.9.5 - 2025-10-05
+
+Appointment Scheduling (Public & Admin) + Access Control:
+
+- Introduced public bilingual (English / Bangla) appointment booking portal at `/booking` allowing visitors to reserve a slot with a member of the management team (formerly referred to as "Super Admin").
+- Added management-side slot administration UI `/admin/appointments` with:
+  - Single and bulk slot creation (duration auto-splitting).
+  - Real‑time status indicators (Available / Booked / Inactive).
+  - Per-slot actions: Activate / Deactivate / Cancel (cascades booking cancel + notification).
+  - Booking cancellation (admin and attendee flows) with email notifications (confirmation, reminder 12h before, cancellations) to attendee and management member.
+  - Automatic reminder scheduling via APScheduler (12 hours pre‑start) with resilient lazy initialization.
+  - Schema auto-migrations: `appointment_slot` and `appointment_booking` tables (idempotent creation guarded by runtime checks).
+- Implemented robust filtering, searching & sorting for Upcoming Slots (and mirrored criteria for Past Slots source list):
+  - Text search across management member name, notes, and active booking (name, student ref, email, reason).
+  - Status filter (Available / Booked / Inactive).
+  - Management member filter.
+  - Date range (start / end) filtering.
+  - Sort by Date/Time, Member, or Status with direction toggle (asc/desc).
+- Unified terminology: replaced all public & email occurrences of "Super Admin" with "member of our management team" (Bangla copy updated accordingly). Admin UI labels updated (column headings, badges, error text, form labels).
+- Added new permission `manage_appointments` seeded for role `admin` (and automatically granted to `superadmin`) controlling all appointment admin endpoints.
+- Navigation: Appointments link only renders if user is superadmin or has `manage_appointments`.
+- Context processor now exposes `supported_languages` & `SUPPORTED_LANGUAGES` for templates needing bilingual labels.
+- Hardened templates against 404 / 500 rendering errors by guarding `request.endpoint` before invoking `startswith`.
+- Booking creation fixed: ensured `cancel_token` populated before building external cancellation URL (resolves intermittent BuildError on form submit).
+- Superadmin user management: ability to delete users with safeguards (cannot delete self, last superadmin, or users with linked operational records).
+
+Technical Notes:
+
+- Email generation includes structured, bilingual customer + management copy with consistent HTML shell and button styling, using explicit slot time range formatting.
+- Reminder jobs skip past-due windows and reschedule only future booked, non-cancelled appointments on first request (lazy priming pattern replacing deprecated Flask hook).
+- Filtering and sorting operate in-memory over fetched slot list (sufficient for current scale; future optimization could push filtering into SQL with dynamic query composition).
+
+Follow-Ups (Not in 0.9.5):
+
+- Pagination & batched loading for large slot histories.
+- ICS calendar attachment in confirmation/reminder emails.
+- Timezone awareness using `zoneinfo` & user preference.
+- Audit logging for slot/booking state transitions (PermissionAudit analogue).
+- Rate limiting / captcha for public booking to mitigate automated abuse.
+
 ## 0.9.4 - 2025-10-01
 
 Invoice Communication & Analytics Enhancements:

@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import uuid4
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
@@ -225,6 +226,59 @@ class Meeting(db.Model):
             return datetime(self.date.year, self.date.month, self.date.day, int(hh), int(mm))
         except Exception:
             return datetime(self.date.year, self.date.month, self.date.day)
+
+
+class AppointmentSlot(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    superadmin_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    start_at = db.Column(db.DateTime, nullable=False, index=True)
+    end_at = db.Column(db.DateTime, nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    notes = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    superadmin = db.relationship('User', foreign_keys=[superadmin_id], lazy=True)
+    created_by = db.relationship('User', foreign_keys=[created_by_id], lazy=True)
+
+    __table_args__ = (
+        db.CheckConstraint('end_at > start_at', name='ck_slot_duration_positive'),
+    )
+
+    def active_booking(self):
+        return next((b for b in self.bookings if b.is_active()), None)
+
+    def is_available(self):
+        return self.is_active and self.active_booking() is None and self.start_at >= datetime.utcnow()
+
+
+class AppointmentBooking(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    slot_id = db.Column(db.Integer, db.ForeignKey('appointment_slot.id', ondelete='CASCADE'), nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, default='booked', index=True)
+    name = db.Column(db.String(200), nullable=False)
+    student_ref = db.Column(db.String(200), nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    email = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(50), nullable=False)
+    language = db.Column(db.String(5), nullable=False, default='en')
+    cancel_token = db.Column(db.String(64), unique=True, nullable=False, default=lambda: uuid4().hex)
+    cancel_url = db.Column(db.String(500), nullable=True)
+    confirmation_sent_at = db.Column(db.DateTime)
+    reminder_sent_at = db.Column(db.DateTime)
+    cancelled_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    slot = db.relationship('AppointmentSlot', backref=db.backref('bookings', lazy=True, cascade='all, delete-orphan'))
+
+    __table_args__ = (
+        db.CheckConstraint("status IN ('booked','cancelled')", name='ck_booking_status'),
+    )
+
+    def is_active(self):
+        return self.status == 'booked' and self.cancelled_at is None
 
 
 class Todo(db.Model):

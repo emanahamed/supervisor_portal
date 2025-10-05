@@ -37,11 +37,11 @@
     <div class="text-right text-sm">
       <div>
         <span class="font-semibold">Invoice Date:</span> {{
-        invoice.invoice_date.strftime('%Y-%m-%d') }}
+        invoice.invoice_date|fmt_date }}
       </div>
       <div>
         <span class="font-semibold">Due Date:</span> {{
-        invoice.due_date.strftime('%Y-%m-%d') }}
+        invoice.due_date|fmt_date }}
       </div>
       <div><span class="font-semibold">Status:</span> {{ invoice.status }}</div>
     </div>

@@ -1,0 +1,420 @@
+{% extends 'base.html' %} {% block page_title %}Appointments{% endblock %} {%
+block content %}
+<div class="grid md:grid-cols-4 sm:grid-cols-2 gap-3 mb-6 text-sm">
+  <div class="soft-card p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">
+      Total Slots
+    </div>
+    <div class="text-2xl font-semibold text-slate-700">{{ stats.total }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">Upcoming</div>
+    <div class="text-2xl font-semibold text-indigo-600">
+      {{ stats.upcoming }}
+    </div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">Available</div>
+    <div class="text-2xl font-semibold text-emerald-600">
+      {{ stats.available }}
+    </div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">Booked</div>
+    <div class="text-2xl font-semibold text-amber-600">{{ stats.booked }}</div>
+  </div>
+</div>
+
+<div class="soft-card p-5 mb-6 bg-white border border-slate-200">
+  <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+    <span class="font-semibold uppercase tracking-wide">Note</span>
+    <span
+      >Times are stored in UTC. Current server time: {{ now.strftime('%d %b %Y
+      %H:%M') }} UTC.</span
+    >
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-5 mb-8">
+  <form
+    method="post"
+    action="{{ url_for('admin_appointments_create') }}"
+    class="soft-card p-6 space-y-4"
+  >
+    {{ slot_form.hidden_tag() }}
+    <div class="flex items-center gap-2">
+      <h2 class="text-sm font-semibold text-slate-700">Create Single Slot</h2>
+      <span class="soft-badge">Management team availability</span>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4 text-sm">
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ slot_form.superadmin_id.label.text }}</label
+        >
+        {{ slot_form.superadmin_id(class='soft-input w-full') }} {% if
+        slot_form.superadmin_id.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ slot_form.superadmin_id.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ slot_form.date.label.text }}</label
+        >
+        {{ slot_form.date(class='soft-input w-full') }} {% if
+        slot_form.date.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ slot_form.date.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ slot_form.start_time.label.text }}</label
+        >
+        {{ slot_form.start_time(class='soft-input w-full') }} {% if
+        slot_form.start_time.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ slot_form.start_time.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ slot_form.end_time.label.text }}</label
+        >
+        {{ slot_form.end_time(class='soft-input w-full') }} {% if
+        slot_form.end_time.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ slot_form.end_time.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="text-sm">
+      <label class="text-xs font-semibold uppercase text-slate-500"
+        >{{ slot_form.notes.label.text }}</label
+      >
+      {{ slot_form.notes(class='soft-input w-full', placeholder='Optional notes
+      visible to admins') }}
+    </div>
+    <div class="flex items-center gap-2 text-sm">
+      {{ slot_form.is_active(class='soft-input h-4 w-4') }}
+      <label class="text-xs font-semibold uppercase text-slate-500"
+        >{{ slot_form.is_active.label.text }}</label
+      >
+    </div>
+    <div class="pt-2">
+      <button class="soft-btn bg-indigo-600 text-white hover:bg-indigo-700">
+        Create Slot
+      </button>
+    </div>
+  </form>
+
+  <form
+    method="post"
+    action="{{ url_for('admin_appointments_bulk') }}"
+    class="soft-card p-6 space-y-4"
+  >
+    {{ bulk_form.hidden_tag() }}
+    <div class="flex items-center gap-2">
+      <h2 class="text-sm font-semibold text-slate-700">Bulk Create Slots</h2>
+      <span class="soft-badge bg-indigo-100 text-indigo-700"
+        >Auto split duration</span
+      >
+    </div>
+    <div class="grid md:grid-cols-2 gap-4 text-sm">
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ bulk_form.superadmin_id.label.text }}</label
+        >
+        {{ bulk_form.superadmin_id(class='soft-input w-full') }} {% if
+        bulk_form.superadmin_id.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ bulk_form.superadmin_id.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ bulk_form.date.label.text }}</label
+        >
+        {{ bulk_form.date(class='soft-input w-full') }} {% if
+        bulk_form.date.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ bulk_form.date.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ bulk_form.start_time.label.text }}</label
+        >
+        {{ bulk_form.start_time(class='soft-input w-full') }} {% if
+        bulk_form.start_time.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ bulk_form.start_time.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ bulk_form.end_time.label.text }}</label
+        >
+        {{ bulk_form.end_time(class='soft-input w-full') }} {% if
+        bulk_form.end_time.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ bulk_form.end_time.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase text-slate-500"
+          >{{ bulk_form.duration_minutes.label.text }}</label
+        >
+        {{ bulk_form.duration_minutes(class='soft-input w-full', min='5') }} {%
+        if bulk_form.duration_minutes.errors %}
+        <div class="text-xs text-red-600 mt-1">
+          {{ bulk_form.duration_minutes.errors[0] }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="text-sm">
+      <label class="text-xs font-semibold uppercase text-slate-500"
+        >{{ bulk_form.notes.label.text }}</label
+      >
+      {{ bulk_form.notes(class='soft-input w-full', placeholder='Optional notes
+      for each generated slot') }}
+    </div>
+    <div class="pt-2">
+      <button class="soft-btn bg-emerald-600 text-white hover:bg-emerald-700">
+        Bulk Create
+      </button>
+    </div>
+  </form>
+</div>
+
+<section class="mb-10">
+  <div class="flex flex-col gap-3 mb-4">
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Upcoming Slots</h2>
+      <span class="soft-badge">{{ upcoming_slots|length }} slot{{ 's' if upcoming_slots|length != 1 else '' }}</span>
+    </div>
+    <form method="get" class="grid lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3 gap-2 text-xs items-end">
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="Search (name / notes / reason)" class="soft-input py-2 px-2 text-xs" />
+      <select name="status" class="soft-input py-2 px-2 text-xs">
+        <option value="">Any Status</option>
+        {% for opt in ['available','booked','inactive'] %}
+        <option value="{{ opt }}" {% if filters.status==opt %}selected{% endif %}>{{ opt|capitalize }}</option>
+        {% endfor %}
+      </select>
+      <select name="sa" class="soft-input py-2 px-2 text-xs">
+        <option value="">Any Member</option>
+        {% for sa in superadmins %}
+        <option value="{{ sa.id }}" {% if filters.sa and filters.sa|int == sa.id %}selected{% endif %}>{{ sa.name }}</option>
+        {% endfor %}
+      </select>
+      <input type="date" name="start" value="{{ filters.start }}" class="soft-input py-2 px-2 text-xs" />
+      <input type="date" name="end" value="{{ filters.end }}" class="soft-input py-2 px-2 text-xs" />
+      <div class="flex gap-2">
+        <select name="sort" class="soft-input py-2 px-2 text-xs w-full">
+          <option value="date" {% if filters.sort=='date' %}selected{% endif %}>Date/Time</option>
+          <option value="member" {% if filters.sort=='member' %}selected{% endif %}>Member</option>
+          <option value="status" {% if filters.sort=='status' %}selected{% endif %}>Status</option>
+        </select>
+        <select name="direction" class="soft-input py-2 px-2 text-xs">
+          <option value="asc" {% if filters.direction=='asc' %}selected{% endif %}>▲</option>
+          <option value="desc" {% if filters.direction=='desc' %}selected{% endif %}>▼</option>
+        </select>
+      </div>
+      <div class="col-span-full flex gap-2 pt-1">
+        <button class="soft-btn bg-indigo-600 text-white hover:bg-indigo-700 text-xs">Apply</button>
+        <a href="{{ url_for('admin_appointments') }}" class="soft-btn text-xs">Reset</a>
+      </div>
+    </form>
+  </div>
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full bg-white border border-slate-200 rounded-lg text-sm"
+    >
+      <thead
+        class="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"
+      >
+        <tr>
+          <th class="p-2 text-left">Date</th>
+          <th class="p-2 text-left">Time</th>
+          <th class="p-2 text-left">Management Member</th>
+          <th class="p-2 text-left">Status</th>
+          <th class="p-2 text-left">Booking</th>
+          <th class="p-2 text-left">Notes</th>
+          <th class="p-2 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for slot in upcoming_slots %} {% set booking = slot.active_booking()
+        %}
+        <tr class="align-top">
+          <td class="p-3 font-mono text-xs">{{ slot.start_at|fmt_date }}</td>
+          <td class="p-3 text-sm">
+            {{ slot.start_at.strftime('%H:%M') }} – {{
+            slot.end_at.strftime('%H:%M') }}
+          </td>
+          <td class="p-3 text-sm">{{ slot.superadmin.name }}</td>
+          <td class="p-3 text-sm">
+            {% if booking %}
+            <span class="soft-badge bg-amber-100 text-amber-700">Booked</span>
+            {% elif slot.is_active %}
+            <span class="soft-badge bg-emerald-100 text-emerald-700"
+              >Available</span
+            >
+            {% else %}
+            <span class="soft-badge bg-slate-200 text-slate-600">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="p-3">
+            {% if booking %}
+            <div class="text-sm font-semibold text-slate-700">
+              {{ booking.name }}
+            </div>
+            <div class="text-xs text-slate-500">
+              Student: {{ booking.student_ref }}
+            </div>
+            <div class="text-xs text-slate-500">Email: {{ booking.email }}</div>
+            <div class="text-xs text-slate-500">Phone: {{ booking.phone }}</div>
+            <div class="text-xs text-slate-500 mt-1">
+              Reason: {{ booking.reason }}
+            </div>
+            <div class="text-xs text-slate-500 mt-1">
+              Language: {{ supported_languages.get(booking.language,
+              booking.language) }}
+            </div>
+            <div class="mt-2 flex gap-2">
+              <form
+                method="post"
+                action="{{ url_for('admin_appointments_booking_action') }}"
+                onsubmit="return confirm('Cancel this booking and notify the attendee?');"
+              >
+                {{ booking_action_form.csrf_token }}
+                <input
+                  type="hidden"
+                  name="booking_id"
+                  value="{{ booking.id }}"
+                />
+                <input type="hidden" name="action" value="cancel" />
+                <button
+                  class="soft-btn bg-amber-600 text-white hover:bg-amber-700 text-xs"
+                >
+                  Cancel Booking
+                </button>
+              </form>
+            </div>
+            {% else %}
+            <span class="text-xs text-slate-400 italic">No booking yet.</span>
+            {% endif %}
+          </td>
+          <td class="p-3 text-xs text-slate-500">{{ slot.notes or '—' }}</td>
+          <td class="p-3 text-right space-y-2">
+            <form
+              method="post"
+              action="{{ url_for('admin_appointments_slot_action', slot_id=slot.id) }}"
+            >
+              {{ slot_action_form.csrf_token }}
+              <input type="hidden" name="slot_id" value="{{ slot.id }}" />
+              <input type="hidden" name="action" value="toggle" />
+              <button
+                class="soft-btn text-xs {{ 'bg-emerald-600 text-white hover:bg-emerald-700' if not slot.is_active else 'bg-slate-200 text-slate-700 hover:bg-slate-300' }}"
+              >
+                {{ 'Activate' if not slot.is_active else 'Deactivate' }}
+              </button>
+            </form>
+            <form
+              method="post"
+              action="{{ url_for('admin_appointments_slot_action', slot_id=slot.id) }}"
+              onsubmit="return confirm('Cancel this slot? Any booking will be cancelled.');"
+            >
+              {{ slot_action_form.csrf_token }}
+              <input type="hidden" name="slot_id" value="{{ slot.id }}" />
+              <input type="hidden" name="action" value="cancel" />
+              <button
+                class="soft-btn bg-red-600 text-white hover:bg-red-700 text-xs"
+              >
+                Cancel Slot
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="p-6 text-center text-slate-500 text-sm">
+            No upcoming slots.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="mb-12">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Past Slots</h2>
+    <span class="soft-badge bg-slate-100 text-slate-600">{{ past_slots|length }}</span>
+  </div>
+  <div class="soft-card p-0 overflow-hidden">
+    <table class="min-w-full text-sm">
+      <thead
+        class="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"
+      >
+        <tr>
+          <th class="p-2 text-left">Date</th>
+          <th class="p-2 text-left">Time</th>
+          <th class="p-2 text-left">Management Member</th>
+          <th class="p-2 text-left">Status</th>
+          <th class="p-2 text-left">Booking</th>
+          <th class="p-2 text-left">Notes</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for slot in past_slots %} {% set booking = slot.active_booking() %}
+        {% if not booking %} {% set booking = None %} {% endif %}
+        <tr class="align-top">
+          <td class="p-2 font-mono text-xs">{{ slot.start_at|fmt_date }}</td>
+          <td class="p-2 text-sm">
+            {{ slot.start_at.strftime('%H:%M') }} – {{
+            slot.end_at.strftime('%H:%M') }}
+          </td>
+          <td class="p-2 text-sm">{{ slot.superadmin.name }}</td>
+          <td class="p-2 text-sm">
+            {% if slot.is_active %}
+            <span class="soft-badge bg-emerald-100 text-emerald-700"
+              >Active (Past)</span
+            >
+            {% else %}
+            <span class="soft-badge bg-slate-200 text-slate-600">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="p-2">
+            {% if slot.bookings %} {% for booking in slot.bookings %}
+            <div class="text-xs text-slate-600">
+              {{ booking.name }} — {{ booking.status|capitalize }}
+            </div>
+            {% endfor %} {% else %}
+            <span class="text-xs text-slate-400 italic">No bookings.</span>
+            {% endif %}
+          </td>
+          <td class="p-2 text-xs text-slate-500">{{ slot.notes or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="p-4 text-center text-slate-500 text-sm">
+            No past slots logged yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

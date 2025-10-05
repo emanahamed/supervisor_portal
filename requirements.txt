@@ -9,3 +9,4 @@ openpyxl==3.1.2
 xlrd==2.0.1
 requests==2.32.3
 xhtml2pdf==0.2.15
+APScheduler==3.10.4

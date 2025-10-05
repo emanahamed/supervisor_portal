@@ -19,7 +19,29 @@
   </svg>
   Dashboard
 </a>
-{% if can('manage_attendance_fix') %}
+{# Alphabetical after Dashboard: Appointments, Attendance Fix, Availability,
+Cycles, Invoices, Issues, Meetings, Observation List, Staff List, Tasks #} {% if
+can('manage_appointments') %}
+<a
+  href="{{ url_for('admin_appointments') }}"
+  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if (request.endpoint and request.endpoint.startswith('admin_appointments')) else '' }}"
+>
+  <svg
+    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+  >
+    <path
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      d="M8 7V3m8 4V3M4 11h16M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
+    />
+  </svg>
+  Appointments
+</a>
+{% endif %} {% if can('manage_attendance_fix') %}
 <a
   href="{{ url_for('attendance_fix') }}"
   class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='attendance_fix' else '' }}"
@@ -38,6 +60,66 @@
     />
   </svg>
   Fix Attendance Data
+</a>
+{% endif %} {% if can('manage_availability') %}
+<a
+  href="{{ url_for('availability_index') }}"
+  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='availability_index' else '' }}"
+>
+  <svg
+    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+  >
+    <path
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
+  </svg>
+  Tutors Availability
+</a>
+{% endif %} {% if can('manage_cycles') %}
+<a
+  href="{{ url_for('cycles_index') }}"
+  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='cycles_index' else '' }}"
+>
+  <svg
+    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+  >
+    <path
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      d="M4.05 11a8 8 0 0114.9-2M19.95 13a8 8 0 01-14.9 2M12 8v4l2.5 2.5"
+    />
+  </svg>
+  Observation Cycles
+</a>
+{% endif %} {% if can('manage_invoices') %}
+<a
+  href="{{ url_for('invoices_index') }}"
+  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if (request.endpoint and (request.endpoint.startswith('invoice_') or request.endpoint.startswith('invoices_'))) else '' }}"
+>
+  <svg
+    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+  >
+    <path
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      d="M9 3h6a2 2 0 012 2v14l-5-3-5 3V5a2 2 0 012-2z"
+    />
+  </svg>
+  Invoices
 </a>
 {% endif %} {% if can('manage_issues') %}
 <a
@@ -78,26 +160,6 @@
     />
   </svg>
   Meetings
-</a>
-{% endif %} {% if can('manage_cycles') %}
-<a
-  href="{{ url_for('cycles_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='cycles_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M4.05 11a8 8 0 0114.9-2M19.95 13a8 8 0 01-14.9 2M12 8v4l2.5 2.5"
-    />
-  </svg>
-  Observation Cycles
 </a>
 {% endif %} {% if can('manage_observations') %}
 <a
@@ -158,46 +220,6 @@
     />
   </svg>
   Tasks
-</a>
-{% endif %} {% if can('manage_availability') %}
-<a
-  href="{{ url_for('availability_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='availability_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-  Tutors Availability
-</a>
-{% endif %} {% if can('manage_invoices') %}
-<a
-  href="{{ url_for('invoices_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if (request.endpoint.startswith('invoice_') or request.endpoint.startswith('invoices_')) else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M9 3h6a2 2 0 012 2v14l-5-3-5 3V5a2 2 0 012-2z"
-    />
-  </svg>
-  Invoices
 </a>
 {% endif %}
 <a

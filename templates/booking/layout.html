@@ -1,0 +1,127 @@
+{% set active_language = language or 'en' %}
+<!DOCTYPE html>
+<html lang="{{ active_language }}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ copy.page_title }} · Excel Tutors</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: "#eef2ff",
+                100: "#e0e7ff",
+                500: "#6366f1",
+                600: "#4f46e5",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .gradient-bg {
+        background: radial-gradient(
+            circle at top left,
+            rgba(99, 102, 241, 0.35),
+            transparent 60%
+          ),
+          radial-gradient(
+            circle at bottom right,
+            rgba(79, 70, 229, 0.3),
+            transparent 55%
+          ),
+          #0f172a;
+      }
+      .glass-card {
+        backdrop-filter: blur(16px) saturate(140%);
+        background-color: rgba(15, 23, 42, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .glass-light {
+        backdrop-filter: blur(18px) saturate(160%);
+        background-color: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(99, 102, 241, 0.12);
+        box-shadow: 0 20px 50px -25px rgba(79, 70, 229, 0.35);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen gradient-bg text-slate-100">
+    <div class="relative min-h-screen">
+      <div
+        class="absolute inset-0 opacity-30 mix-blend-screen"
+        aria-hidden="true"
+      >
+        <div
+          class="absolute left-1/3 top-10 w-72 h-72 bg-indigo-400 blur-3xl rounded-full"
+        ></div>
+        <div
+          class="absolute right-10 bottom-10 w-80 h-80 bg-sky-400 blur-3xl rounded-full"
+        ></div>
+      </div>
+      <header class="relative z-10">
+        <div
+          class="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
+        >
+          <a
+            href="{{ url_for('booking_index') }}"
+            class="inline-flex items-center gap-3"
+          >
+            <img
+              src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+              alt="Excel Tutors"
+              class="h-12 w-auto rounded-xl shadow-lg"
+            />
+            <span class="text-lg font-semibold tracking-wide text-white"
+              >Excel Tutors — Appointments</span
+            >
+          </a>
+          <div
+            class="flex items-center gap-3 glass-card px-3 py-2 rounded-full text-xs text-indigo-100"
+          >
+            <span class="uppercase tracking-[0.2em] text-slate-200/70"
+              >{{ copy.language_label }}</span
+            >
+            <div class="flex gap-1">
+              {% for code, label in supported_languages.items() %}
+              <a
+                href="{{ url_for('booking_set_language', lang_code=code) }}"
+                class="px-3 py-1 rounded-full transition {{ 'bg-white text-slate-900 font-semibold shadow' if code == active_language else 'hover:bg-white/20 text-indigo-100' }}"
+                aria-current="{{ 'true' if code == active_language else 'false' }}"
+                >{{ label }}</a
+              >
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </header>
+      <main class="relative z-10 pb-20">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6">
+          {% with messages = get_flashed_messages(with_categories=true) %} {% if
+          messages %}
+          <div class="space-y-3 mb-6">
+            {% for category, message in messages %}
+            <div
+              class="glass-light rounded-xl px-4 py-3 border-l-4 {{ 'border-emerald-400 text-emerald-900' if category=='success' else 'border-amber-400 text-amber-900' }}"
+            >
+              <div class="text-sm">{{ message|safe }}</div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %} {% endwith %} {% block content %}{% endblock %}
+        </div>
+      </main>
+      <footer class="relative z-10 border-t border-white/10">
+        <div
+          class="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between text-xs text-indigo-100/80"
+        >
+          <span>© {{ 2025 }} Excel Tutors</span>
+          <span>Powered by Excel Tutors Appointment Scheduler</span>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

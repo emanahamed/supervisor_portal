@@ -1,34 +1,297 @@
+import atexit
 import base64
 import csv
 import io
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from functools import wraps
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pandas as pd
 from flask import (Flask, abort, flash, jsonify, make_response, redirect,
-                   render_template, request, send_file, url_for)
+                   render_template, request, send_file, session, url_for)
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import or_, text
+from sqlalchemy import and_, or_, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
+
+try:
+    from apscheduler.schedulers.background import \
+        BackgroundScheduler  # type: ignore[import]
+except ImportError:  # pragma: no cover - optional dependency handled gracefully
+    BackgroundScheduler = None
 
 from attendance_utils import (combine_all_sheets, compute_date_range,
                               export_with_custom_header_to_bytes)
-from email_utils import build_task_notification_email, send_email
-from forms import (AvailabilityForm, CompanyForm, CycleForm, InvoiceForm,
-                   IssueForm, LoginForm, MeetingForm, ObservationForm,
-                   RegisterForm, StaffForm, TodoForm, UserProfileForm)
-from models import (Availability, Company, Invoice, Issue, IssueChange,
-                    Meeting, Observation, ObservationCycle, Permission,
-                    PermissionAudit, RolePermission, Staff, Todo, User,
-                    UserPermission, db)
+from email_utils import (build_appointment_admin_email,
+                         build_appointment_email,
+                         build_task_notification_email, send_email)
+from forms import (AppointmentBookingActionForm, AppointmentBookingForm,
+                   AppointmentSlotActionForm, AppointmentSlotBulkForm,
+                   AppointmentSlotForm, AvailabilityForm, CompanyForm,
+                   CycleForm, InvoiceForm, IssueForm, LoginForm, MeetingForm,
+                   ObservationForm, RegisterForm, StaffForm, TodoForm,
+                   UserProfileForm)
+from models import (AppointmentBooking, AppointmentSlot, Availability, Company,
+                    Invoice, Issue, IssueChange, Meeting, Observation,
+                    ObservationCycle, Permission, PermissionAudit,
+                    RolePermission, Staff, Todo, User, UserPermission, db)
 from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
 from version_info import VERSION, get_changelog
+
+SUPPORTED_LANGUAGES = {'en': 'English', 'bn': 'বাংলা'}
+
+PUBLIC_BOOKING_COPY = {
+    'en': {
+        'page_title': 'Book an appointment',
+        'headline': 'Meet with a member of our management team',
+        'subheadline': 'Choose a convenient slot with a member of our management team. All fields are required.',
+        'name': 'Your name',
+        'student_ref': 'Student name / ID',
+        'reason': 'Reason for appointment',
+        'email': 'Email address',
+        'phone': 'Phone number',
+        'slot_label': 'Available slots',
+        'submit': 'Book appointment',
+        'no_slots': 'No slots are currently available. Please check back soon.',
+        'slot_taken': 'That slot has just been taken. Please choose a different available time.',
+        'language_label': 'Language',
+        'toggle_en': 'English',
+        'toggle_bn': 'বাংলা',
+        'timezone_note': 'All times are shown in UK local time.',
+        'slots_heading': 'Upcoming availability',
+    'superadmin_label': 'Management team member',
+        'form_help': 'We will send a confirmation email immediately and a reminder 12 hours before your meeting.',
+        'success_title': 'Appointment booked!',
+        'success_message': 'Thank you. We have emailed you the details. A reminder will arrive 12 hours before the meeting.',
+        'success_cta': 'Book another appointment',
+        'cancel_title': 'Cancel appointment',
+        'cancel_message': 'Are you sure you want to cancel your appointment on {date} at {time} with {superadmin}?',
+        'cancel_button': 'Cancel appointment',
+        'cancelled_title': 'Appointment cancelled',
+        'cancelled_message': 'Your appointment has been cancelled. Feel free to book another available slot.',
+        'already_cancelled_title': 'Appointment already cancelled',
+        'already_cancelled_message': 'This appointment has already been cancelled. You can book another slot from the public booking page.',
+        'back_home': 'Return to booking page',
+    },
+    'bn': {
+        'page_title': 'অ্যাপয়েন্টমেন্ট বুক করুন',
+        'headline': 'ম্যানেজমেন্ট দলের একজন সদস্যের সাথে দেখা করুন',
+        'subheadline': 'ম্যানেজমেন্ট দলের একজন সদস্যের উপলব্ধ সময় থেকে নির্বাচন করুন। সব ঘর পূরণ করা বাধ্যতামূলক।',
+        'name': 'আপনার নাম',
+        'student_ref': 'শিক্ষার্থীর নাম / আইডি',
+        'reason': 'অ্যাপয়েন্টমেন্টের কারণ',
+        'email': 'ইমেইল',
+        'phone': 'ফোন',
+        'slot_label': 'উপলব্ধ সময়',
+        'submit': 'অ্যাপয়েন্টমেন্ট বুক করুন',
+        'no_slots': 'এই মুহূর্তে কোনো সময় পাওয়া যাচ্ছে না। পরে আবার চেষ্টা করুন।',
+        'slot_taken': 'এই সময়টি ইতিমধ্যে বুক হয়ে গেছে। অনুগ্রহ করে অন্য সময় নির্বাচন করুন।',
+        'language_label': 'ভাষা',
+        'toggle_en': 'English',
+        'toggle_bn': 'বাংলা',
+        'timezone_note': 'সময়গুলো যুক্তরাজ্যের স্থানীয় সময় অনুযায়ী প্রদর্শিত হয়েছে।',
+        'slots_heading': 'উপলব্ধ সময়সূচি',
+    'superadmin_label': 'ম্যানেজমেন্ট দলের সদস্য',
+        'form_help': 'বুকিং করার সাথে সাথেই নিশ্চিতকরণ ইমেইল এবং অ্যাপয়েন্টমেন্টের ১২ ঘণ্টা আগে স্মারক পাঠানো হবে।',
+        'success_title': 'অ্যাপয়েন্টমেন্ট বুক সম্পন্ন',
+        'success_message': 'ধন্যবাদ। বিস্তারিত আপনাকে ইমেইলে পাঠানো হয়েছে। অ্যাপয়েন্টমেন্টের ১২ ঘণ্টা আগে স্মারক পাঠানো হবে।',
+        'success_cta': 'আরেকটি অ্যাপয়েন্টমেন্ট বুক করুন',
+        'cancel_title': 'অ্যাপয়েন্টমেন্ট বাতিল করুন',
+        'cancel_message': '{superadmin}-এর সাথে {date} তারিখের {time} সময়ের অ্যাপয়েন্টমেন্ট বাতিল করতে চান?',
+        'cancel_button': 'অ্যাপয়েন্টমেন্ট বাতিল করুন',
+        'cancelled_title': 'অ্যাপয়েন্টমেন্ট বাতিল হয়েছে',
+        'cancelled_message': 'আপনার অ্যাপয়েন্টমেন্ট বাতিল করা হয়েছে। প্রয়োজনে নতুন সময় বুক করতে পারেন।',
+        'already_cancelled_title': 'অ্যাপয়েন্টমেন্ট আগে থেকেই বাতিল',
+        'already_cancelled_message': 'এই অ্যাপয়েন্টমেন্টটি আগেই বাতিল করা হয়েছে। প্রয়োজনে জনসাধারণের বুকিং পেজ থেকে নতুন সময় বুক করুন।',
+        'back_home': 'বুকিং পাতায় ফিরে যান',
+    },
+}
+
+
+def _current_booking_language() -> str:
+    lang = session.get('booking_lang', 'en') if session else 'en'
+    if lang not in SUPPORTED_LANGUAGES:
+        lang = 'en'
+    return lang
+
+
+def _set_booking_language(lang: str) -> None:
+    if lang not in SUPPORTED_LANGUAGES:
+        lang = 'en'
+    session['booking_lang'] = lang
+
+
+def _populate_superadmin_choices(form) -> None:
+    if not hasattr(form, 'superadmin_id'):
+        return
+    superadmins = (User.query.filter_by(is_superadmin=True, is_approved=True)
+                   .order_by(User.name.asc())
+                   .all())
+    form.superadmin_id.choices = [(sa.id, sa.name) for sa in superadmins]
+
+
+def _combine_datetime(date_field, time_field) -> datetime:
+    return datetime.combine(date_field, time_field)
+
+
+def _slot_overlaps(superadmin_id: int, start_at: datetime, end_at: datetime, exclude_id: int | None = None) -> bool:
+    q = AppointmentSlot.query.filter(AppointmentSlot.superadmin_id == superadmin_id)
+    if exclude_id:
+        q = q.filter(AppointmentSlot.id != exclude_id)
+    q = q.filter(and_(AppointmentSlot.end_at > start_at, AppointmentSlot.start_at < end_at))
+    return db.session.query(q.exists()).scalar()
+
+
+def _send_email_safe(to_email: str, subject: str, html: str, *, log_prefix: str) -> None:
+    try:
+        send_email(to_email, subject, html)
+    except Exception as exc:  # pragma: no cover - email transport failure should not break UX
+        print(f"[WARN] {log_prefix} email send failed to {to_email}: {exc}")
+
+
+def _active_booking(slot: AppointmentSlot) -> AppointmentBooking | None:
+    for booking in slot.bookings:
+        if booking.is_active():
+            return booking
+    return None
+
+
+def _slot_label(slot: AppointmentSlot) -> str:
+    return f"{slot.start_at.strftime('%d %b %Y %H:%M')} – {slot.end_at.strftime('%H:%M')} ({slot.superadmin.name})"
+
+
+def _available_slots_query():
+    now = datetime.utcnow()
+    slots = (
+        AppointmentSlot.query
+        .options(joinedload(AppointmentSlot.superadmin), joinedload(AppointmentSlot.bookings))
+        .filter(AppointmentSlot.is_active.is_(True))
+        .filter(AppointmentSlot.start_at >= now)
+        .order_by(AppointmentSlot.start_at.asc())
+        .all()
+    )
+    return [slot for slot in slots if slot.is_available()]
+
+
+def _upcoming_slots_query(limit: int | None = None):
+    now = datetime.utcnow()
+    query = (
+        AppointmentSlot.query
+        .options(joinedload(AppointmentSlot.superadmin), joinedload(AppointmentSlot.bookings))
+        .filter(AppointmentSlot.start_at >= now)
+        .order_by(AppointmentSlot.start_at.asc())
+    )
+    if limit:
+        return query.limit(limit).all()
+    return query.all()
+
+
+def _populate_booking_form(form: AppointmentBookingForm) -> None:
+    available_slots = _available_slots_query()
+    form.slot_id.choices = [(slot.id, _slot_label(slot)) for slot in available_slots]
+
+
+def _booking_copy(language: str | None = None) -> dict:
+    lang = language or _current_booking_language()
+    return PUBLIC_BOOKING_COPY.get(lang, PUBLIC_BOOKING_COPY['en'])
+
+
+scheduler = None
+
+
+def _shutdown_scheduler():
+    global scheduler
+    if scheduler:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+        scheduler = None
+
+
+def _ensure_scheduler_started():
+    global scheduler
+    if BackgroundScheduler is None:
+        return
+    if scheduler is None:
+        scheduler = BackgroundScheduler(timezone='UTC')  # type: ignore[call-arg]
+        scheduler.start()
+        atexit.register(_shutdown_scheduler)
+
+
+def _send_reminder_job(booking_id: int) -> None:
+    with app.app_context():
+        booking = (AppointmentBooking.query
+                   .options(joinedload(AppointmentBooking.slot).joinedload(AppointmentSlot.superadmin))
+                   .get(booking_id))
+        if not booking or not booking.is_active():
+            return
+        slot = booking.slot
+        if not slot or slot.start_at <= datetime.utcnow():
+            return
+        cancel_url = booking.cancel_url or url_for('booking_cancel', token=booking.cancel_token, _external=True)
+        subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='reminder', cancel_url=cancel_url)
+        _send_email_safe(booking.email, subj, html, log_prefix='Appointment reminder')
+        admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='reminder')
+        _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment reminder admin')
+        booking.reminder_sent_at = datetime.utcnow()
+        db.session.commit()
+
+
+def _schedule_reminder(booking: AppointmentBooking) -> None:
+    if BackgroundScheduler is None:
+        return
+    _ensure_scheduler_started()
+    if scheduler is None:
+        return
+    slot = booking.slot
+    if not slot:
+        return
+    run_at = slot.start_at - timedelta(hours=12)
+    if run_at <= datetime.utcnow():
+        return
+    job_id = f"booking-reminder-{booking.id}"
+    try:
+        scheduler.add_job(_send_reminder_job, 'date', run_date=run_at, id=job_id, replace_existing=True, args=[booking.id])
+    except Exception as exc:
+        print(f"[WARN] Failed to schedule reminder for booking {booking.id}: {exc}")
+
+
+def _cancel_reminder(booking_id: int) -> None:
+    if scheduler is None:
+        return
+    job_id = f"booking-reminder-{booking_id}"
+    try:
+        scheduler.remove_job(job_id)
+    except Exception:
+        pass
+
+
+def _prime_existing_reminders() -> None:
+    if BackgroundScheduler is None:
+        return
+    _ensure_scheduler_started()
+    if scheduler is None:
+        return
+    now = datetime.utcnow()
+    upcoming = (
+        AppointmentBooking.query
+        .join(AppointmentSlot)
+        .options(joinedload(AppointmentBooking.slot).joinedload(AppointmentSlot.superadmin))
+        .filter(AppointmentBooking.status == 'booked')
+        .filter(AppointmentBooking.cancelled_at.is_(None))
+        .filter(AppointmentSlot.start_at > now)
+        .all()
+    )
+    for booking in upcoming:
+        _schedule_reminder(booking)
 
 SECRET_KEY = "change-this-in-production"
 SECURITY_SALT = "excel-tutors-reset-salt"
@@ -50,7 +313,6 @@ login_manager.login_view = "login"
 ts = URLSafeTimedSerializer(SECRET_KEY)
 
 # --------------- Permission Helpers (server-side) --------------- #
-from functools import wraps
 
 
 def user_can(perm_key: str) -> bool:
@@ -97,7 +359,14 @@ def permission_required(*perm_keys: str, any: bool = False):
 
 @app.context_processor
 def inject_version():
-    return {"APP_VERSION": VERSION, 'can': user_can}
+    lang = _current_booking_language()
+    return {
+        "APP_VERSION": VERSION,
+        'can': user_can,
+        'booking_language': lang,
+        'supported_languages': SUPPORTED_LANGUAGES,  # lower-case for standard use
+        'SUPPORTED_LANGUAGES': SUPPORTED_LANGUAGES,  # expose uppercase name used in some templates
+    }
 
 # --------- Common Template Filters (dates, money) ---------- #
 @app.template_filter('fmt_date')
@@ -199,7 +468,7 @@ def create_tables_and_superadmin():
     sa = User.query.filter_by(email="superadmin@exceltutors.org.uk").first()
     if not sa:
         sa = User(
-            name="Super Admin",
+            name="Management Team Member",
             email="superadmin@exceltutors.org.uk",
             password_hash=generate_password_hash("superadmin123"),
             is_superadmin=True,
@@ -325,6 +594,7 @@ def create_tables_and_superadmin():
             ('manage_users','Approve & manage users'),
             ('view_reports','View / generate reports'),
             ('manage_invoices','Invoice & company management'),
+            ('manage_appointments','Manage appointment slots & bookings'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -340,7 +610,7 @@ def create_tables_and_superadmin():
             'staff': {'view_dashboard','manage_tasks','view_reports'},
             'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports'},
             'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices'},
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments'},
         }
         for role, perms in role_defaults.items():
             has_any = RolePermission.query.filter_by(role=role).first()
@@ -365,6 +635,63 @@ def create_tables_and_superadmin():
         db.session.commit()
     except Exception as e:
         print(f"[WARN] Permission seed failed: {e}")
+    # Schema patches for appointments
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS appointment_slot (
+                id INTEGER PRIMARY KEY,
+                superadmin_id INTEGER NOT NULL,
+                created_by_id INTEGER NOT NULL,
+                start_at DATETIME NOT NULL,
+                end_at DATETIME NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                notes VARCHAR(255),
+                created_at DATETIME,
+                updated_at DATETIME,
+                FOREIGN KEY(superadmin_id) REFERENCES user(id),
+                FOREIGN KEY(created_by_id) REFERENCES user(id)
+            )
+            """))
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS appointment_booking (
+                id INTEGER PRIMARY KEY,
+                slot_id INTEGER NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'booked',
+                name VARCHAR(200) NOT NULL,
+                student_ref VARCHAR(200) NOT NULL,
+                reason TEXT NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(50) NOT NULL,
+                language VARCHAR(5) NOT NULL DEFAULT 'en',
+                cancel_token VARCHAR(64) UNIQUE NOT NULL,
+                cancel_url VARCHAR(500),
+                confirmation_sent_at DATETIME,
+                reminder_sent_at DATETIME,
+                cancelled_at DATETIME,
+                created_at DATETIME,
+                updated_at DATETIME,
+                FOREIGN KEY(slot_id) REFERENCES appointment_slot(id) ON DELETE CASCADE
+            )
+            """))
+    except Exception as exc:
+        print(f"[WARN] Appointment schema init failed: {exc}")
+
+
+# Flask 3.x removed before_first_request style hooks in some contexts; we lazily
+# prime appointment reminder jobs on the first real request instead.
+_BOOKING_SCHEDULER_PRIMED = False
+
+@app.before_request
+def _bootstrap_booking_scheduler():  # pragma: no cover - trivial guard
+    global _BOOKING_SCHEDULER_PRIMED
+    if not _BOOKING_SCHEDULER_PRIMED:
+        try:
+            _prime_existing_reminders()
+        except Exception as exc:
+            print(f"[WARN] Failed to prime booking reminders: {exc}")
+        _BOOKING_SCHEDULER_PRIMED = True
+
 
 @app.route("/")
 def index():
@@ -614,7 +941,7 @@ def approve_users():
             # Superadmin implicit all permissions
             role_caps.append({
                 'key': r,
-                'label': 'Super Admin',
+                'label': 'Management Member',
                 'permissions': sorted([p.description or p.key for p in Permission.query.all()])
             })
             continue
@@ -626,7 +953,7 @@ def approve_users():
                 'supervisor':'Supervisor',
                 'centre_manager':'Centre Manager',
                 'admin':'Admin',
-                'superadmin':'Super Admin'
+                'superadmin':'Management Member'
             }.get(r, r.title()),
             'permissions': sorted([perm_desc.get(k, k) for k in assigned])
         })
@@ -717,6 +1044,54 @@ def set_user_role(uid):
     flash(f"Role for {u.email} set to {role}", 'success')
     return redirect(url_for('approve_users'))
 
+@app.route('/approve/<int:uid>/delete', methods=['POST'])
+@login_required
+def delete_user(uid):
+    """Delete a user (superadmin only).
+
+    Safety guards:
+    - Cannot delete yourself.
+    - Cannot delete the last remaining superadmin.
+    - Blocks deletion if the user has dependent records (observations, meetings, tasks, appointment slots/bookings, permission audits, todos) to avoid orphaned references.
+    """
+    if not current_user.is_superadmin:
+        abort(403)
+    user = User.query.get_or_404(uid)
+    if user.id == current_user.id:
+        flash('You cannot delete your own account.', 'warning')
+        return redirect(url_for('approve_users'))
+    if user.is_superadmin:
+        others = User.query.filter(User.is_superadmin, User.id != user.id).count()
+        if others == 0:
+            flash('Cannot delete the last superadmin user.', 'danger')
+            return redirect(url_for('approve_users'))
+    # Lightweight dependency checks (avoid accidental orphaning)
+    dep_counts = 0
+    try:
+        from models import (AppointmentBooking, AppointmentSlot, Meeting,
+                            Observation, PermissionAudit, Todo)
+        dep_counts += Observation.query.filter_by(observer_id=user.id).count()
+        dep_counts += Meeting.query.filter((Meeting.participant_id==user.id) | (Meeting.booked_by_id==user.id)).count()
+        dep_counts += AppointmentSlot.query.filter((AppointmentSlot.superadmin_id==user.id) | (AppointmentSlot.created_by_id==user.id)).count()
+        dep_counts += AppointmentBooking.query.join(AppointmentSlot).filter(AppointmentSlot.superadmin_id==user.id).count()
+        dep_counts += Todo.query.filter((Todo.created_by_id==user.id) | (Todo.assigned_to_id==user.id)).count()
+        dep_counts += PermissionAudit.query.filter((PermissionAudit.actor_user_id==user.id) | (PermissionAudit.target_user_id==user.id)).count()
+    except Exception:
+        # If any issues (circular import etc.), fall back to allowing deletion; but keep guard variable.
+        pass
+    if dep_counts > 0:
+        flash('User cannot be deleted while linked records exist (observations, meetings, slots, bookings, tasks, audits). Reassign or remove those first.', 'warning')
+        return redirect(url_for('approve_users'))
+    email = user.email
+    try:
+        db.session.delete(user)
+        db.session.commit()
+        flash(f'User {email} deleted.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete user: {exc}', 'danger')
+    return redirect(url_for('approve_users'))
+
 @app.route('/approve/<int:uid>/picture', methods=['POST'])
 @login_required
 def upload_user_picture(uid):
@@ -761,6 +1136,7 @@ def role_permissions():
     roles = sorted({r[0] for r in db.session.query(User.role).distinct() if r[0] and r[0] != 'superadmin'} | {'staff','supervisor','centre_manager','admin'})
     perms = Permission.query.order_by(Permission.key.asc()).all()
     if request.method == 'POST':
+
         # For each role/perm pair, expect checkbox name rp_<role>__<perm>
         existing = {(rp.role, rp.permission_key): rp for rp in RolePermission.query.all()}
         seen_keys = set()
@@ -791,6 +1167,52 @@ def role_permissions():
     for rp in RolePermission.query.all():
         role_map.setdefault(rp.role, set()).add(rp.permission_key)
     return render_template('admin/role_permissions.html', roles=roles, perms=perms, role_map=role_map)
+
+@app.route('/admin/role-permissions/appointments', methods=['POST'])
+@login_required
+def role_permissions_appointments():
+    """Quick update endpoint to adjust only the manage_appointments permission per role.
+
+    Does not disturb other role permissions (unlike full matrix save which rewrites all).
+    Superadmin only.
+    """
+    if not current_user.is_superadmin:
+        abort(403)
+    roles = sorted({r[0] for r in db.session.query(User.role).distinct() if r[0] and r[0] != 'superadmin'} | {'staff','supervisor','centre_manager','admin'})
+    target_perm = 'manage_appointments'
+    # Snapshot existing state
+    existing = {rp.role: rp for rp in RolePermission.query.filter_by(permission_key=target_perm).all() if rp.role in roles}
+    desired_roles = set(request.form.getlist('roles'))
+    changed_any = False
+    for role in roles:
+        has_now = role in existing
+        want = role in desired_roles
+        if want and not has_now:
+            db.session.add(RolePermission(role=role, permission_key=target_perm))
+            try:
+                db.session.flush()
+                db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=target_perm, action='added'))
+            except Exception:
+                pass
+            changed_any = True
+        if has_now and not want:
+            db.session.delete(existing[role])
+            try:
+                db.session.flush()
+                db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=target_perm, action='removed'))
+            except Exception:
+                pass
+            changed_any = True
+    if changed_any:
+        try:
+            db.session.commit()
+            flash('Appointment permission updated for selected roles.', 'success')
+        except Exception as exc:
+            db.session.rollback()
+            flash(f'Failed to update appointment access: {exc}', 'danger')
+    else:
+        flash('No changes to appointment access.', 'info')
+    return redirect(url_for('role_permissions'))
 
 @app.route('/admin/user-permissions', methods=['GET','POST'])
 @login_required
@@ -839,6 +1261,430 @@ def user_permissions():
     if selected_user:
         overrides = {up.permission_key: up.allow for up in UserPermission.query.filter_by(user_id=selected_user.id).all()}
     return render_template('admin/user_permissions.html', users=users, selected_user=selected_user, perms=perms, overrides=overrides)
+
+# ---------------- Appointment Admin ---------------- #
+
+def _render_admin_appointments(slot_form: AppointmentSlotForm | None = None,
+                               bulk_form: AppointmentSlotBulkForm | None = None):
+    slot_form = slot_form or AppointmentSlotForm()
+    bulk_form = bulk_form or AppointmentSlotBulkForm()
+    _populate_superadmin_choices(slot_form)
+    _populate_superadmin_choices(bulk_form)
+    now = datetime.utcnow()
+    slots = (AppointmentSlot.query
+             .options(joinedload(AppointmentSlot.superadmin), joinedload(AppointmentSlot.bookings))
+             .all())
+
+    # Filters
+    q = (request.args.get('q') or '').strip().lower()
+    status_filter = (request.args.get('status') or '').lower()  # available|booked|inactive
+    sa_filter = (request.args.get('sa') or '').strip()
+    start_raw = (request.args.get('start') or '').strip()
+    end_raw = (request.args.get('end') or '').strip()
+    sort_key = (request.args.get('sort') or 'date').lower()  # date|member|status
+    direction = (request.args.get('direction') or 'asc').lower()
+
+    def slot_status(slot: AppointmentSlot):
+        b = _active_booking(slot)
+        if b:
+            return 'booked'
+        if not slot.is_active:
+            return 'inactive'
+        return 'available'
+
+    def matches(slot: AppointmentSlot) -> bool:
+        if status_filter in {'available','booked','inactive'} and slot_status(slot) != status_filter:
+            return False
+        if sa_filter and str(slot.superadmin_id) != sa_filter:
+            return False
+        if start_raw:
+            try:
+                sd = datetime.strptime(start_raw, '%Y-%m-%d').date()
+                if slot.start_at.date() < sd:
+                    return False
+            except Exception:
+                pass
+        if end_raw:
+            try:
+                ed = datetime.strptime(end_raw, '%Y-%m-%d').date()
+                if slot.start_at.date() > ed:
+                    return False
+            except Exception:
+                pass
+        if q:
+            pieces = [slot.superadmin.name if slot.superadmin else '', slot.notes or '']
+            bk = _active_booking(slot)
+            if bk:
+                pieces.extend([bk.name or '', bk.student_ref or '', bk.email or '', bk.reason or ''])
+            if q not in ' '.join(pieces).lower():
+                return False
+        return True
+
+    filtered = [s for s in slots if matches(s)]
+
+    # Sorting
+    def sort_value(slot: AppointmentSlot):
+        if sort_key == 'member':
+            return (slot.superadmin.name.lower() if slot.superadmin else '')
+        if sort_key == 'status':
+            return slot_status(slot)
+        return slot.start_at
+
+    filtered.sort(key=sort_value, reverse=(direction == 'desc'))
+
+    upcoming = [s for s in filtered if s.end_at >= now]
+    past = [s for s in filtered if s.end_at < now]
+    booked_upcoming = [s for s in upcoming if _active_booking(s)]
+    available_upcoming = [s for s in upcoming if s.is_active and not _active_booking(s)]
+
+    stats = {
+        'total': len(slots),
+        'upcoming': len([s for s in slots if s.end_at >= now]),
+        'available': len([s for s in slots if s.end_at >= now and s.is_active and not _active_booking(s)]),
+        'booked': len([s for s in slots if s.end_at >= now and _active_booking(s)]),
+    }
+
+    filters = {
+        'q': q,
+        'status': status_filter,
+        'sa': sa_filter,
+        'start': start_raw,
+        'end': end_raw,
+        'sort': sort_key,
+        'direction': direction,
+    }
+
+    slot_action_form = AppointmentSlotActionForm()
+    booking_action_form = AppointmentBookingActionForm()
+    superadmins = (User.query.filter_by(is_superadmin=True, is_approved=True)
+                   .order_by(User.name.asc()).all())
+    return render_template(
+        'admin/appointments/index.html',
+        slot_form=slot_form,
+        bulk_form=bulk_form,
+        slot_action_form=slot_action_form,
+        booking_action_form=booking_action_form,
+        stats=stats,
+        upcoming_slots=upcoming,
+        past_slots=past,
+        now=now,
+        filters=filters,
+        superadmins=superadmins,
+    )
+
+
+@app.route('/admin/appointments')
+@login_required
+@permission_required('manage_appointments')
+def admin_appointments():
+    return _render_admin_appointments()
+
+
+@app.route('/admin/appointments/create', methods=['POST'])
+@login_required
+@permission_required('manage_appointments')
+def admin_appointments_create():
+    form = AppointmentSlotForm()
+    _populate_superadmin_choices(form)
+    if form.validate_on_submit():
+        start_at = _combine_datetime(form.date.data, form.start_time.data)
+        end_at = _combine_datetime(form.date.data, form.end_time.data)
+        if end_at <= start_at:
+            form.end_time.errors.append('End time must be after start time.')
+            return _render_admin_appointments(slot_form=form)
+        if _slot_overlaps(form.superadmin_id.data, start_at, end_at):
+            form.start_time.errors.append('This slot overlaps with an existing slot for the selected management team member.')
+            return _render_admin_appointments(slot_form=form)
+        slot = AppointmentSlot(
+            superadmin_id=form.superadmin_id.data,
+            created_by_id=current_user.id,
+            start_at=start_at,
+            end_at=end_at,
+            is_active=bool(form.is_active.data),
+            notes=form.notes.data.strip() if form.notes.data else None,
+        )
+        db.session.add(slot)
+        db.session.commit()
+        flash('Appointment slot created.', 'success')
+        return redirect(url_for('admin_appointments'))
+    flash('Please correct the errors below.', 'danger')
+    return _render_admin_appointments(slot_form=form)
+
+
+@app.route('/admin/appointments/bulk', methods=['POST'])
+@login_required
+@permission_required('manage_appointments')
+def admin_appointments_bulk():
+    form = AppointmentSlotBulkForm()
+    _populate_superadmin_choices(form)
+    if form.validate_on_submit():
+        start_at = _combine_datetime(form.date.data, form.start_time.data)
+        end_at = _combine_datetime(form.date.data, form.end_time.data)
+        duration = timedelta(minutes=form.duration_minutes.data)
+        if end_at <= start_at:
+            form.end_time.errors.append('End time must be after start time.')
+            return _render_admin_appointments(bulk_form=form)
+        if duration <= timedelta(0):
+            form.duration_minutes.errors.append('Duration must be greater than zero.')
+            return _render_admin_appointments(bulk_form=form)
+        cursor = start_at
+        created = 0
+        skipped = 0
+        while cursor < end_at:
+            slot_end = cursor + duration
+            if slot_end > end_at:
+                break
+            if _slot_overlaps(form.superadmin_id.data, cursor, slot_end):
+                skipped += 1
+            else:
+                slot = AppointmentSlot(
+                    superadmin_id=form.superadmin_id.data,
+                    created_by_id=current_user.id,
+                    start_at=cursor,
+                    end_at=slot_end,
+                    is_active=True,
+                    notes=form.notes.data.strip() if form.notes.data else None,
+                )
+                db.session.add(slot)
+                created += 1
+            cursor = slot_end
+        if created:
+            db.session.commit()
+        else:
+            db.session.rollback()
+        flash(f'Bulk creation complete: {created} slot(s) created, {skipped} skipped.', 'success' if created else 'warning')
+        return redirect(url_for('admin_appointments'))
+    flash('Please correct the errors below.', 'danger')
+    return _render_admin_appointments(bulk_form=form)
+
+
+@app.route('/admin/appointments/<int:slot_id>/action', methods=['POST'])
+@login_required
+@permission_required('manage_appointments')
+def admin_appointments_slot_action(slot_id: int):
+    form = AppointmentSlotActionForm()
+    if not form.validate_on_submit() or int(form.slot_id.data) != slot_id:
+        flash('Invalid slot action request.', 'danger')
+        return redirect(url_for('admin_appointments'))
+    slot = (AppointmentSlot.query
+            .options(joinedload(AppointmentSlot.superadmin), joinedload(AppointmentSlot.bookings))
+            .get_or_404(slot_id))
+    action = (form.action.data or '').lower()
+    booking = _active_booking(slot)
+    if action == 'toggle':
+        if booking and slot.is_active:
+            flash('Cannot deactivate a slot that already has a booking. Cancel the booking first.', 'warning')
+        else:
+            slot.is_active = not slot.is_active
+            db.session.commit()
+            state = 'activated' if slot.is_active else 'deactivated'
+            flash(f'Slot {state}.', 'success')
+    elif action == 'cancel':
+        slot.is_active = False
+        if booking and booking.is_active():
+            booking.status = 'cancelled'
+            booking.cancelled_at = datetime.utcnow()
+            _cancel_reminder(booking.id)
+            if slot.start_at > datetime.utcnow():
+                slot.is_active = False
+            db.session.commit()
+            subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
+            _send_email_safe(booking.email, subj, html, log_prefix='Appointment cancellation')
+            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='cancelled_admin')
+            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin cancellation')
+            flash('Slot and associated booking cancelled.', 'success')
+        else:
+            db.session.commit()
+            flash('Slot cancelled.', 'success')
+    else:
+        flash('Unsupported action.', 'danger')
+    return redirect(url_for('admin_appointments'))
+
+
+@app.route('/admin/appointments/bookings/action', methods=['POST'])
+@login_required
+@permission_required('manage_appointments')
+def admin_appointments_booking_action():
+    form = AppointmentBookingActionForm()
+    if not form.validate_on_submit():
+        flash('Invalid booking action request.', 'danger')
+        return redirect(url_for('admin_appointments'))
+    booking = (AppointmentBooking.query
+               .options(joinedload(AppointmentBooking.slot).joinedload(AppointmentSlot.superadmin))
+               .get_or_404(int(form.booking_id.data)))
+    if form.action.data == 'cancel':
+        if not booking.is_active():
+            flash('Booking already cancelled.', 'info')
+        else:
+            booking.status = 'cancelled'
+            booking.cancelled_at = datetime.utcnow()
+            slot = booking.slot
+            if slot and slot.start_at > datetime.utcnow():
+                slot.is_active = True
+            _cancel_reminder(booking.id)
+            db.session.commit()
+            subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
+            _send_email_safe(booking.email, subj, html, log_prefix='Appointment cancellation')
+            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='cancelled_admin')
+            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin cancellation')
+            flash('Booking cancelled and attendee notified.', 'success')
+    else:
+        flash('Unsupported action.', 'danger')
+    return redirect(url_for('admin_appointments'))
+
+
+# ---------------- Public Booking ---------------- #
+
+
+def _booking_context_lang(lang: str | None = None) -> tuple[str, dict]:
+    language = lang or _current_booking_language()
+    copy = _booking_copy(language)
+    return language, copy
+
+
+@app.route('/booking', methods=['GET', 'POST'])
+def booking_index():
+    lang, copy = _booking_context_lang()
+    form = AppointmentBookingForm()
+    _populate_booking_form(form)
+    form.language.data = lang
+    upcoming_slots = _upcoming_slots_query()
+    available_choices = list(form.slot_id.choices)
+
+    if request.method == 'POST' and form.validate_on_submit():
+        # Use SQLAlchemy 2.0 style session.get (avoids legacy warning)
+        slot = (db.session.get(AppointmentSlot, form.slot_id.data)
+                if form.slot_id.data else None)
+        if slot is None or not slot.is_available():
+            form.slot_id.errors.append(copy.get('slot_taken') or 'Selected slot is no longer available.')
+            _populate_booking_form(form)
+            available_choices = list(form.slot_id.choices)
+        else:
+            # Create booking; explicitly seed cancel_token to avoid timing issues before flush
+            booking = AppointmentBooking(
+                slot_id=slot.id,
+                name=form.name.data.strip(),
+                student_ref=form.student_ref.data.strip(),
+                reason=form.reason.data.strip(),
+                email=form.email.data.strip(),
+                phone=form.phone.data.strip(),
+                language=lang,
+                cancel_token=uuid4().hex,  # ensure present prior to flush
+            )
+            db.session.add(booking)
+            db.session.flush()  # booking.id now available
+            token = booking.cancel_token
+            booking.cancel_url = url_for('booking_cancel', token=token, _external=True)
+
+            cancel_url = booking.cancel_url
+            subj, html = build_appointment_email(booking, slot, slot.superadmin, language=lang, mode='confirmation', cancel_url=cancel_url)
+            _send_email_safe(booking.email, subj, html, log_prefix='Appointment confirmation')
+            booking.confirmation_sent_at = datetime.utcnow()
+
+            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='confirmation')
+            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin confirmation')
+
+            db.session.commit()
+            _schedule_reminder(booking)
+
+            return render_template(
+                'booking/success.html',
+                form=form,
+                copy=copy,
+                booking=booking,
+                slot=slot,
+                language=lang,
+                supported_languages=SUPPORTED_LANGUAGES,
+            )
+
+    form_disabled = len(available_choices) == 0
+    return render_template(
+        'booking/index.html',
+        form=form,
+        copy=copy,
+        language=lang,
+        supported_languages=SUPPORTED_LANGUAGES,
+        upcoming_slots=upcoming_slots,
+        form_disabled=form_disabled,
+    )
+
+
+@app.route('/booking/lang/<lang_code>')
+def booking_set_language(lang_code: str):
+    _set_booking_language(lang_code)
+    return redirect(url_for('booking_index'))
+
+
+@app.route('/booking/cancel/<token>', methods=['GET', 'POST'])
+def booking_cancel(token: str):
+    booking = (AppointmentBooking.query
+               .options(joinedload(AppointmentBooking.slot).joinedload(AppointmentSlot.superadmin))
+               .filter_by(cancel_token=token)
+               .first())
+    if not booking:
+        abort(404)
+
+    _set_booking_language(booking.language)
+    lang, copy = _booking_context_lang(booking.language)
+    slot = booking.slot
+
+    if request.method == 'POST':
+        if booking.is_active():
+            booking.status = 'cancelled'
+            booking.cancelled_at = datetime.utcnow()
+            if slot and slot.start_at > datetime.utcnow():
+                slot.is_active = True
+            _cancel_reminder(booking.id)
+            db.session.commit()
+            subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
+            _send_email_safe(booking.email, subj, html, log_prefix='Appointment cancellation')
+            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='cancelled_user')
+            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin cancellation')
+            return render_template(
+                'booking/cancelled.html',
+                copy=copy,
+                booking=booking,
+                slot=slot,
+                language=lang,
+                supported_languages=SUPPORTED_LANGUAGES,
+                already=False,
+            )
+        return render_template(
+            'booking/cancelled.html',
+            copy=copy,
+            booking=booking,
+            slot=slot,
+            language=lang,
+            supported_languages=SUPPORTED_LANGUAGES,
+            already=True,
+        )
+
+    if not booking.is_active():
+        return render_template(
+            'booking/cancelled.html',
+            copy=copy,
+            booking=booking,
+            slot=slot,
+            language=lang,
+            supported_languages=SUPPORTED_LANGUAGES,
+            already=True,
+        )
+
+    if not slot:
+        abort(404)
+
+    date_label = slot.start_at.strftime('%d %B %Y')
+    time_label = f"{slot.start_at.strftime('%H:%M')} – {slot.end_at.strftime('%H:%M')}"
+    return render_template(
+        'booking/cancel.html',
+        copy=copy,
+        booking=booking,
+        slot=slot,
+        date_label=date_label,
+        time_label=time_label,
+        language=lang,
+        supported_languages=SUPPORTED_LANGUAGES,
+    )
 
 @app.route('/profile', methods=['GET','POST'])
 @login_required
@@ -2366,161 +3212,145 @@ def company_update(company_id):
         db.session.commit()
         flash('Company updated','success')
     else:
-        flash('Update failed','danger')
+        flash('Failed to update company','danger')
     return redirect(url_for('companies_index'))
 
-@app.route('/companies/<int:company_id>/delete', methods=['POST'])
-@login_required
-@permission_required('manage_invoices')
-def company_delete(company_id):
-    company = Company.query.get_or_404(company_id)
-    # Optional: block delete if invoices exist
-    if company.invoices:
-        flash('Cannot delete company with existing invoices','danger')
-        return redirect(url_for('companies_index'))
-    db.session.delete(company)
-    db.session.commit()
-    flash('Company deleted','success')
-    return redirect(url_for('companies_index'))
-
-@app.route('/companies/<int:company_id>/json')
-@login_required
-@permission_required('manage_invoices')
-def company_json(company_id):
-    c = Company.query.get_or_404(company_id)
-    return jsonify({
-        'id': c.id,
-        'name': c.name,
-        'invoice_prefix': c.invoice_prefix,
-        'next_invoice_seq': c.next_invoice_seq,
-        'payment_footer': c.payment_footer,
-        'tagline': c.tagline,
-        'ofsted_reg_no': c.ofsted_reg_no,
-        'address': c.address,
-        'phone': c.phone,
-        'email': c.email,
-        'website': c.website,
-        'logo_path': c.logo_path,
-    })
 
 @app.route('/invoices')
 @login_required
 @permission_required('manage_invoices')
 def invoices_index():
-    q = (request.args.get('q') or '').strip().lower()
-    company_id = request.args.get('company')
-    month = request.args.get('month')  # YYYY-MM
-    status = request.args.get('status')
-    sort = request.args.get('sort','created_at')
-    direction = request.args.get('direction','desc')
-    query = Invoice.query.join(Company)
+    q = (request.args.get('q') or '').strip()
+    company_filter = request.args.get('company', type=int)
+    month_filter = (request.args.get('month') or '').strip()
+    status_filter = (request.args.get('status') or '').strip().upper()
+    sort_key = (request.args.get('sort') or 'created_at').strip()
+    direction = (request.args.get('direction') or 'desc').strip().lower()
+
+    query = Invoice.query.options(joinedload(Invoice.company)).join(Company)
+
     if q:
-        like = f"%{q}%"
+        like = f"%{q.lower()}%"
         query = query.filter(
-            or_(Invoice.invoice_no.ilike(like), Invoice.parent_name.ilike(like), Invoice.child_name.ilike(like), Invoice.parent_email.ilike(like))
+            or_(
+                db.func.lower(Invoice.invoice_no).like(like),
+                db.func.lower(Invoice.parent_name).like(like),
+                db.func.lower(Invoice.child_name).like(like),
+            )
         )
-    if company_id and company_id.isdigit():
-        query = query.filter(Invoice.company_id == int(company_id))
-    if status in ('PAID','UNPAID'):
-        query = query.filter(Invoice.status == status)
-    if month and len(month) == 7:
+
+    if company_filter:
+        query = query.filter(Invoice.company_id == company_filter)
+
+    if status_filter in {'PAID', 'UNPAID'}:
+        query = query.filter(Invoice.status == status_filter)
+
+    if month_filter:
         try:
-            year_i = int(month.split('-')[0]); month_i = int(month.split('-')[1])
-            start = date(year_i, month_i, 1)
-            # naive month end
-            if month_i == 12:
-                end = date(year_i+1,1,1)
+            month_dt = datetime.strptime(month_filter, '%Y-%m')
+            start_date = month_dt.replace(day=1).date()
+            if month_dt.month == 12:
+                next_month = month_dt.replace(year=month_dt.year + 1, month=1, day=1)
             else:
-                end = date(year_i, month_i+1, 1)
-            query = query.filter(Invoice.period_start < end, Invoice.period_end >= start)
-        except Exception:
+                next_month = month_dt.replace(month=month_dt.month + 1, day=1)
+            end_date = (next_month - timedelta(days=1)).date()
+            query = query.filter(Invoice.invoice_date >= start_date, Invoice.invoice_date <= end_date)
+        except ValueError:
             pass
-    # Extended sortable columns
+
     sort_map = {
-        'created_at': Invoice.created_at,
+        'invoice_no': Invoice.invoice_no,
+        'company': Company.name,
         'invoice_date': Invoice.invoice_date,
         'due_date': Invoice.due_date,
         'total': Invoice.total,
-        'invoice_no': Invoice.invoice_no,
         'parent_name': Invoice.parent_name,
         'child_name': Invoice.child_name,
         'status': Invoice.status,
-        'company': Company.name,
+        'created_at': Invoice.created_at,
     }
-    sort_col = sort_map.get(sort, Invoice.created_at)
+    sort_column = sort_map.get(sort_key, Invoice.created_at)
     if direction == 'asc':
-        query = query.order_by(sort_col.asc())
+        query = query.order_by(sort_column.asc())
     else:
-        query = query.order_by(sort_col.desc())
-    invoices = query.limit(500).all()  # basic cap
-    companies = Company.query.order_by(Company.name.asc()).all()
-    # Summary stats for widgets
+        query = query.order_by(sort_column.desc())
+
+    invoices = query.all()
+
     total_count = len(invoices)
-    paid = sum(1 for i in invoices if i.status == 'PAID')
-    unpaid = sum(1 for i in invoices if i.status == 'UNPAID')
-    total_amount = sum(float(i.total) for i in invoices)
-    unpaid_amount = sum(float(i.total) for i in invoices if i.status == 'UNPAID')
-    recent = sorted(invoices, key=lambda x: x.created_at, reverse=True)[:5]
-    # Per-company stats (only for result set shown)
-    from collections import defaultdict
-    comp_stats = defaultdict(lambda: {'count':0,'paid':0,'unpaid':0,'total_amount':0.0,'unpaid_amount':0.0,'company':None})
+    paid_count = sum(1 for inv in invoices if (inv.status or '').upper() == 'PAID')
+    unpaid_count = sum(1 for inv in invoices if (inv.status or '').upper() == 'UNPAID')
+    total_amount = float(sum((inv.total or 0) for inv in invoices))
+    unpaid_amount = float(sum((inv.total or 0) for inv in invoices if (inv.status or '').upper() == 'UNPAID'))
+
+    inv_stats = SimpleNamespace(
+        count=total_count,
+        paid=paid_count,
+        unpaid=unpaid_count,
+        total_amount=total_amount,
+        unpaid_amount=unpaid_amount,
+    ) if invoices else None
+
+    company_rollup = {}
     for inv in invoices:
-        cs = comp_stats[inv.company_id]
-        cs['company'] = inv.company
-        cs['count'] += 1
-        cs['total_amount'] += float(inv.total)
-        if inv.status == 'PAID':
-            cs['paid'] += 1
-        else:
-            cs['unpaid'] += 1
-            cs['unpaid_amount'] += float(inv.total)
-    company_stats = []
-    for cid, cs in comp_stats.items():
-        company_stats.append({
-            'id': cid,
-            'name': cs['company'].name if cs['company'] else f"Company {cid}",
-            'count': cs['count'],
-            'paid': cs['paid'],
-            'unpaid': cs['unpaid'],
-            'total_amount': cs['total_amount'],
-            'unpaid_amount': cs['unpaid_amount'],
+        bucket = company_rollup.setdefault(inv.company_id, {
+            'name': inv.company.name if inv.company else 'Unknown',
+            'count': 0,
+            'paid': 0,
+            'unpaid': 0,
+            'total_amount': 0.0,
+            'unpaid_amount': 0.0,
         })
-    company_stats.sort(key=lambda x: x['total_amount'], reverse=True)
+        bucket['count'] += 1
+        bucket['total_amount'] += float(inv.total or 0)
+        if (inv.status or '').upper() == 'PAID':
+            bucket['paid'] += 1
+        else:
+            bucket['unpaid'] += 1
+            bucket['unpaid_amount'] += float(inv.total or 0)
 
-    return render_template('invoices/index.html', invoices=invoices, companies=companies, inv_stats={
-        'count': total_count,
-        'paid': paid,
-        'unpaid': unpaid,
-        'total_amount': total_amount,
-        'unpaid_amount': unpaid_amount,
-        'recent': recent,
-    }, company_stats=company_stats)
+    company_stats = sorted(
+        (
+            SimpleNamespace(
+                id=cid,
+                name=data['name'],
+                count=data['count'],
+                paid=data['paid'],
+                unpaid=data['unpaid'],
+                total_amount=data['total_amount'],
+                unpaid_amount=data['unpaid_amount'],
+            )
+            for cid, data in company_rollup.items()
+        ),
+        key=lambda item: item.name.lower(),
+    )
 
-@app.route('/invoices/new', methods=['GET','POST'])
+    companies = Company.query.order_by(Company.name.asc()).all()
+
+    return render_template(
+        'invoices/index.html',
+        invoices=invoices,
+        companies=companies,
+        inv_stats=inv_stats,
+        company_stats=company_stats,
+    )
+
+
+@app.route('/invoices/new', methods=['GET', 'POST'])
 @login_required
 @permission_required('manage_invoices')
 def invoices_new():
     form = InvoiceForm()
     companies = Company.query.order_by(Company.name.asc()).all()
     form.company_id.choices = [(c.id, c.name) for c in companies]
-    if not companies:
-        flash('Create a company first before adding invoices', 'warning')
-        return redirect(url_for('companies_index'))
-    if request.method == 'GET':
-        today = date.today()
-        form.invoice_date.data = today
-        form.due_date.data = today
-        form.period_start.data = today
-        form.period_end.data = today
-        form.status.data = 'PAID'
+
     if form.validate_on_submit():
         company = Company.query.get(form.company_id.data)
         if not company:
-            flash('Invalid company', 'danger')
+            flash('Selected company was not found','danger')
             return redirect(url_for('invoices_new'))
-        # Auto-generate invoice number
         invoice_no = company.generate_invoice_no()
-        inv = Invoice(
+        invoice = Invoice(
             invoice_no=invoice_no,
             company_id=company.id,
             invoice_date=form.invoice_date.data,
@@ -2537,23 +3367,30 @@ def invoices_new():
             status=form.status.data,
             notes=form.notes.data,
         )
-        db.session.add(inv)
+        db.session.add(invoice)
         company.next_invoice_seq = (company.next_invoice_seq or 1) + 1
-        try:
-            db.session.commit()
-            flash('Invoice created', 'success')
-            return redirect(url_for('invoice_detail', invoice_id=inv.id))
-        except IntegrityError:
-            db.session.rollback()
-            flash('Invoice number conflict – retry', 'danger')
+        db.session.commit()
+        flash(f'Invoice {invoice.invoice_no} created','success')
+        return redirect(url_for('invoice_detail', invoice_id=invoice.id))
+
+    if request.method == 'GET':
+        today = date.today()
+        form.invoice_date.data = today
+        form.due_date.data = today
+        form.period_start.data = today
+        form.period_end.data = today
+        form.status.data = form.status.data or 'PAID'
+
     return render_template('invoices/form.html', form=form, mode='new')
+
 
 @app.route('/invoices/<int:invoice_id>')
 @login_required
 @permission_required('manage_invoices')
 def invoice_detail(invoice_id):
-    invoice = Invoice.query.get_or_404(invoice_id)
+    invoice = Invoice.query.options(joinedload(Invoice.company)).get_or_404(invoice_id)
     return render_template('invoices/detail.html', invoice=invoice)
+
 
 @app.route('/invoices/<int:invoice_id>/pdf')
 @login_required

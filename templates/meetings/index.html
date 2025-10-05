@@ -106,7 +106,7 @@
       <tbody class="divide-y divide-slate-100">
         {% for m in meetings %}
         <tr class="hover:bg-slate-50 align-top">
-          <td class="py-2 px-3 whitespace-nowrap">{{ m.date.strftime('%Y-%m-%d') }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ m.date|fmt_date }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ m.time }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ m.participant.name if m.participant else '-' }}</td>
           <td class="py-2 px-3 max-w-xs"><div class="text-slate-800 font-medium truncate" title="{{ m.agenda }}">{{ m.agenda }}</div></td>

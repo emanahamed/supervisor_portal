@@ -29,6 +29,7 @@ Open http://127.0.0.1:5000/
 - Issue Tracking module (status, criticality, urgency, branch, metrics dashboard)
 - Meetings module (agenda scheduling + analytics, modal create/edit)
 - Tailwind (CDN) + Soft UI styling
+- Public appointment booking portal with bilingual (English/Bangla) copy, email confirmations, and 12-hour reminders (`/booking`)
 
 ### Tutor Availability Module (since 0.3.0)
 

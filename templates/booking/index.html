@@ -1,0 +1,192 @@
+{% extends 'booking/layout.html' %} {% block content %}
+<section class="grid lg:grid-cols-[1.1fr_0.9fr] gap-10 pb-16">
+  <div class="glass-light rounded-3xl p-8 sm:p-10 text-slate-800 shadow-2xl">
+    <div class="space-y-4 mb-8">
+      <span
+        class="inline-flex items-center gap-2 text-xs uppercase tracking-[0.35em] text-indigo-500"
+        >{{ copy.language_label }}</span
+      >
+      <h1 class="text-3xl sm:text-4xl font-semibold text-slate-900">
+        {{ copy.headline }}
+      </h1>
+      <p class="text-base sm:text-lg text-slate-600 leading-relaxed">
+        {{ copy.subheadline }}
+      </p>
+      <p class="text-xs uppercase tracking-wide text-indigo-500/80">
+        {{ copy.timezone_note }}
+      </p>
+    </div>
+    <form method="post" class="space-y-6">
+      {{ form.hidden_tag() }}
+      <div class="space-y-1.5">
+        <label class="text-sm font-semibold text-slate-700" for="slot_id"
+          >{{ copy.slot_label }}</label
+        >
+        {{ form.slot_id(class_='soft-input w-full text-sm rounded-xl border
+        border-slate-200 focus:ring-2 focus:ring-indigo-500
+        focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500',
+        disabled=form_disabled) }} {% for error in form.slot_id.errors %}
+        <p class="text-sm text-rose-600">{{ error }}</p>
+        {% endfor %}
+      </div>
+      <div class="grid sm:grid-cols-2 gap-6">
+        <div class="space-y-1.5">
+          <label class="text-sm font-semibold text-slate-700" for="name"
+            >{{ copy.name }}</label
+          >
+          {{ form.name(class_='soft-input w-full text-sm rounded-xl border
+          border-slate-200 focus:ring-2 focus:ring-indigo-500
+          focus:border-indigo-500', placeholder=copy.name, required=true,
+          disabled=form_disabled) }} {% for error in form.name.errors %}
+          <p class="text-sm text-rose-600">{{ error }}</p>
+          {% endfor %}
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-sm font-semibold text-slate-700" for="student_ref"
+            >{{ copy.student_ref }}</label
+          >
+          {{ form.student_ref(class_='soft-input w-full text-sm rounded-xl
+          border border-slate-200 focus:ring-2 focus:ring-indigo-500
+          focus:border-indigo-500', placeholder=copy.student_ref, required=true,
+          disabled=form_disabled) }} {% for error in form.student_ref.errors %}
+          <p class="text-sm text-rose-600">{{ error }}</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="space-y-1.5">
+        <label class="text-sm font-semibold text-slate-700" for="reason"
+          >{{ copy.reason }}</label
+        >
+        {{ form.reason(class_='soft-input w-full text-sm rounded-xl border
+        border-slate-200 focus:ring-2 focus:ring-indigo-500
+        focus:border-indigo-500', rows=4, placeholder=copy.reason,
+        required=true, disabled=form_disabled) }} {% for error in
+        form.reason.errors %}
+        <p class="text-sm text-rose-600">{{ error }}</p>
+        {% endfor %}
+      </div>
+      <div class="grid sm:grid-cols-2 gap-6">
+        <div class="space-y-1.5">
+          <label class="text-sm font-semibold text-slate-700" for="email"
+            >{{ copy.email }}</label
+          >
+          {{ form.email(class_='soft-input w-full text-sm rounded-xl border
+          border-slate-200 focus:ring-2 focus:ring-indigo-500
+          focus:border-indigo-500', placeholder='your@email.com', required=true,
+          disabled=form_disabled) }} {% for error in form.email.errors %}
+          <p class="text-sm text-rose-600">{{ error }}</p>
+          {% endfor %}
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-sm font-semibold text-slate-700" for="phone"
+            >{{ copy.phone }}</label
+          >
+          {{ form.phone(class_='soft-input w-full text-sm rounded-xl border
+          border-slate-200 focus:ring-2 focus:ring-indigo-500
+          focus:border-indigo-500', placeholder='+44 1234 567890',
+          required=true, disabled=form_disabled) }} {% for error in
+          form.phone.errors %}
+          <p class="text-sm text-rose-600">{{ error }}</p>
+          {% endfor %}
+        </div>
+      </div>
+      <p class="text-xs text-slate-500">{{ copy.form_help }}</p>
+      <button
+        type="submit"
+        class="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        {%
+        if
+        form_disabled
+        %}disabled{%
+        endif
+        %}
+      >
+        {{ copy.submit }}
+      </button>
+      {% if form_disabled %}
+      <div
+        class="rounded-xl border border-dashed border-indigo-300 bg-indigo-50 px-4 py-3 text-sm text-indigo-700"
+      >
+        {{ copy.no_slots }}
+      </div>
+      {% endif %}
+    </form>
+  </div>
+  <div class="space-y-6 text-indigo-50/90">
+    <div class="glass-card rounded-3xl p-8 border border-white/10">
+      <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+        <span
+          class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/30 text-indigo-100 font-semibold"
+          >ℹ️</span
+        >
+        {{ copy.slots_heading }}
+      </h2>
+      {% if upcoming_slots %}
+      <div class="space-y-4">
+        {% for slot in upcoming_slots %} {% set active_booking =
+        slot.active_booking() %}
+        <div
+          class="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-inner hover:bg-white/10 transition"
+        >
+          <div class="flex flex-col gap-2">
+            <div
+              class="flex flex-wrap items-center gap-3 text-sm uppercase tracking-wide text-indigo-200/80"
+            >
+              <span>{{ slot.start_at.strftime('%A, %d %B %Y') }}</span>
+              <span
+                class="px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-100 font-semibold"
+                >{{ slot.start_at.strftime('%H:%M') }} – {{
+                slot.end_at.strftime('%H:%M') }}</span
+              >
+            </div>
+            <div class="text-lg font-semibold text-white">
+              {{ copy.superadmin_label }}: {{ slot.superadmin.name }}
+            </div>
+            {% if slot.notes %}
+            <p class="text-sm text-indigo-100/80">{{ slot.notes }}</p>
+            {% endif %}
+            <div class="flex items-center gap-2 text-sm">
+              {% if slot.is_active and not active_booking %}
+              <span
+                class="px-2.5 py-1 rounded-full bg-emerald-400/20 text-emerald-100 font-medium"
+                >Available</span
+              >
+              {% elif active_booking %}
+              <span
+                class="px-2.5 py-1 rounded-full bg-rose-400/30 text-rose-100 font-medium"
+                >Booked</span
+              >
+              <span class="text-xs text-indigo-100/70"
+                >{{ active_booking.name }}</span
+              >
+              {% else %}
+              <span
+                class="px-2.5 py-1 rounded-full bg-slate-500/30 text-slate-100 font-medium"
+                >Unavailable</span
+              >
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div
+        class="rounded-2xl border border-dashed border-indigo-300/50 bg-indigo-500/10 px-4 py-6 text-sm text-indigo-100"
+      >
+        {{ copy.no_slots }}
+      </div>
+      {% endif %}
+    </div>
+    <div
+      class="glass-card rounded-3xl p-8 border border-white/5 text-sm leading-relaxed"
+    >
+      <p>
+        Need to reschedule? Use the cancellation link in your confirmation email
+        anytime before the meeting. Slots that get cancelled automatically
+        reopen for others.
+      </p>
+    </div>
+  </div>
+</section>
+{% endblock %}

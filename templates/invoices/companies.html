@@ -31,8 +31,7 @@ content %}
         Latest Invoice
       </div>
       <div class="text-xl font-semibold">
-        {{ latest_invoice_date.strftime('%Y-%m-%d') if latest_invoice_date else
-        '-' }}
+        {{ latest_invoice_date|fmt_date if latest_invoice_date else '-' }}
       </div>
     </div>
   </div>
@@ -98,7 +97,7 @@ content %}
             {% endif %}
           </td>
           <td class="p-2 text-xs">
-            {{ c.updated_at.strftime('%Y-%m-%d') if c.updated_at else '' }}
+            {{ c.updated_at|fmt_date if c.updated_at else '' }}
           </td>
           <td class="p-2 text-right flex gap-1 justify-end">
             <button class="soft-btn text-xs" @click="openEdit({{ c.id }})">

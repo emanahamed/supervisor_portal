@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from wtforms import (BooleanField, DateField, DecimalField, FloatField,
-                     HiddenField, PasswordField, SelectField,
+                     HiddenField, IntegerField, PasswordField, SelectField,
                      SelectMultipleField, StringField, SubmitField,
                      TextAreaField, TimeField)
 from wtforms.validators import (DataRequired, Email, Length, NumberRange,
@@ -110,6 +110,50 @@ class TodoForm(FlaskForm):
     due_date = DateField("Due Date", validators=[Optional()])
     assigned_to_id = SelectField("Assign To", coerce=int, validators=[DataRequired()])
     submit = SubmitField("Save Task")
+
+
+# ---------------- Appointment Scheduling ---------------- #
+class AppointmentSlotForm(FlaskForm):
+    superadmin_id = SelectField("Management Team Member", coerce=int, validators=[DataRequired()])
+    date = DateField("Date", validators=[DataRequired()])
+    start_time = TimeField("Start Time", validators=[DataRequired()])
+    end_time = TimeField("End Time", validators=[DataRequired()])
+    notes = StringField("Notes", validators=[Optional(), Length(max=255)])
+    is_active = BooleanField("Active", default=True)
+    submit = SubmitField("Create Slot")
+
+
+class AppointmentSlotBulkForm(FlaskForm):
+    superadmin_id = SelectField("Management Team Member", coerce=int, validators=[DataRequired()])
+    date = DateField("Date", validators=[DataRequired()])
+    start_time = TimeField("Start Time", validators=[DataRequired()])
+    end_time = TimeField("End Time", validators=[DataRequired()])
+    duration_minutes = IntegerField("Duration (minutes)", validators=[DataRequired(), NumberRange(min=5, max=480)])
+    notes = StringField("Notes", validators=[Optional(), Length(max=255)])
+    submit = SubmitField("Bulk Create")
+
+
+class AppointmentSlotActionForm(FlaskForm):
+    slot_id = HiddenField(validators=[DataRequired()])
+    action = HiddenField(validators=[DataRequired()])
+    submit = SubmitField()
+
+
+class AppointmentBookingForm(FlaskForm):
+    slot_id = SelectField("Available Slots", coerce=int, validators=[DataRequired()])
+    name = StringField("Your Name", validators=[DataRequired(), Length(max=200)])
+    student_ref = StringField("Student Name / ID", validators=[DataRequired(), Length(max=200)])
+    reason = TextAreaField("Reason for Appointment", validators=[DataRequired(), Length(max=1000)])
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
+    phone = StringField("Phone", validators=[DataRequired(), Length(max=50)])
+    language = HiddenField(validators=[Optional()])
+    submit = SubmitField("Book Appointment")
+
+
+class AppointmentBookingActionForm(FlaskForm):
+    booking_id = HiddenField(validators=[DataRequired()])
+    action = HiddenField(validators=[DataRequired()])
+    submit = SubmitField()
 
 
 # ---------------- Invoicing ---------------- #

@@ -367,7 +367,7 @@ page_title %}Issues{% endblock %} {% block content %}
           </td>
           <td class="py-2 px-3 whitespace-nowrap">{{ i.branch or '-' }}</td>
           <td class="py-2 px-3 whitespace-nowrap text-xs">
-            {{ i.created_at.strftime('%Y-%m-%d') }}
+            {{ i.created_at|fmt_date }}
           </td>
           <td class="py-2 px-3 whitespace-nowrap text-xs">
             {{ i.created_by.name if i.created_by else '-' }}

@@ -259,7 +259,7 @@
             <td>{{ obs.cycle.title if obs.cycle else '—' }}</td>
             <th>Generated</th>
             <td>
-              {{ generated_at.strftime('%Y-%m-%d %H:%M UTC') if generated_at
+              {{ generated_at.strftime('%d-%m-%Y %H:%M UTC') if generated_at
               else '' }}
             </td>
           </tr>
@@ -407,7 +407,7 @@
     {# Unmet Criteria Summary removed per request #}
 
     <div class="footer">
-      Excel Tutors • Generated {{ generated_at.strftime('%Y-%m-%d %H:%M UTC') if
+      Excel Tutors • Generated {{ generated_at.strftime('%d-%m-%Y %H:%M UTC') if
       generated_at else '' }}
     </div>
   </body>

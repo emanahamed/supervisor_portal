@@ -285,7 +285,7 @@
             <td>{{ obs.cycle.title if obs.cycle else '—' }}</td>
             <th>Generated</th>
             <td>
-              {{ generated_at.strftime('%Y-%m-%d %H:%M UTC') if generated_at
+              {{ generated_at.strftime('%d-%m-%Y %H:%M UTC') if generated_at
               else '' }}
             </td>
           </tr>
@@ -410,7 +410,7 @@
 
         <div class="legend">Legend: ✓ Met | ✗ Not Met</div>
         <div class="footer">
-          Excel Tutors • Generated {{ generated_at.strftime('%Y-%m-%d %H:%M
+          Excel Tutors • Generated {{ generated_at.strftime('%d-%m-%Y %H:%M
           UTC') if generated_at else '' }}
         </div>
       </div>
