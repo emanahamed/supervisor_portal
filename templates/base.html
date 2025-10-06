@@ -160,6 +160,12 @@
           <div class="flex items-center gap-4 ml-auto">
             {% block page_actions %}{% endblock %} {% if
             current_user.is_authenticated %}
+            <button
+              class="soft-btn text-xs"
+              @click="window.dispatchEvent(new CustomEvent('open-report-modal'))"
+            >
+              Report Issue
+            </button>
             <div class="flex items-center gap-2">
               {% if current_user.picture %}
               <img
@@ -210,6 +216,69 @@
         </div>
         {% endif %} {% endwith %} {% block content %}{% endblock %}
       </main>
+    </div>
+
+    <!-- Global Report Issue Modal -->
+    <div
+      x-data="{show:false}"
+      @open-report-modal.window="show=true"
+      x-cloak
+      x-show="show"
+      class="fixed inset-0 z-50 flex items-start md:items-center justify-center p-4"
+    >
+      <div class="absolute inset-0 bg-slate-900/60" @click="show=false"></div>
+      <div
+        class="relative bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4"
+      >
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold">Report a System Issue</h2>
+          <button class="text-slate-500" @click="show=false">✕</button>
+        </div>
+        <form
+          method="post"
+          action="{{ url_for('error_report_create') }}"
+          enctype="multipart/form-data"
+          class="space-y-4"
+        >
+          <div>
+            <label class="text-xs font-semibold">Title</label>
+            <input
+              name="title"
+              required
+              class="soft-input w-full text-sm"
+              placeholder="Short summary"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold">Comment / Details</label>
+            <textarea
+              name="comment"
+              rows="4"
+              class="soft-input w-full text-sm"
+              placeholder="Describe the issue, steps to reproduce, expected vs actual"
+            ></textarea>
+          </div>
+          <div>
+            <label class="text-xs font-semibold">Screenshot (optional)</label>
+            <input
+              type="file"
+              name="screenshot"
+              accept="image/png,image/jpeg"
+              class="soft-input w-full text-xs"
+            />
+          </div>
+          <div class="flex items-center gap-2 pt-2">
+            <button class="soft-btn">Submit</button>
+            <button type="button" class="soft-btn" @click="show=false">
+              Cancel
+            </button>
+          </div>
+          <p class="text-[10px] text-slate-500">
+            Diagnostic metadata is only attached if reporting from an error
+            page.
+          </p>
+        </form>
+      </div>
     </div>
 
     <!-- Version Modal -->

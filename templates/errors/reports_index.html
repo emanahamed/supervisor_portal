@@ -1,0 +1,114 @@
+{% extends 'base.html' %} {% block page_title %}Error Reports{% endblock %} {%
+block content %}
+<div
+  class="space-y-6"
+  x-data="{search:'', status:'', match(r){const q=this.search.toLowerCase(); if(q && !(r.title.toLowerCase().includes(q) || (r.error_message||'').toLowerCase().includes(q))) return false; if(this.status && r.status!==this.status) return false; return true;}}"
+>
+  <div class="flex flex-wrap items-center gap-3">
+    <input
+      x-model="search"
+      type="text"
+      placeholder="Search title or message..."
+      class="soft-input text-sm w-64"
+    />
+    <select x-model="status" class="soft-input text-sm">
+      <option value="">All Statuses</option>
+      <option>Open</option>
+      <option>In Progress</option>
+      <option>Resolved</option>
+    </select>
+    <div class="ml-auto text-xs text-slate-500">
+      Total: {{ reports|length }}
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm border divide-y divide-slate-200 bg-white rounded-lg"
+    >
+      <thead
+        class="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"
+      >
+        <tr>
+          <th class="p-2 text-left">ID</th>
+          <th class="p-2 text-left">Title</th>
+          <th class="p-2 text-left">Status</th>
+          <th class="p-2 text-left">Reporter</th>
+          <th class="p-2 text-left">Created</th>
+          <th class="p-2 text-left">Resolved</th>
+          <th class="p-2 text-left">Screenshot</th>
+          <th class="p-2 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in reports %}
+        <tr
+          x-show="match({title:'{{ r.title|e }}', error_message: '{{ (r.error_message or '')|e }}', status:'{{ r.status }}'})"
+        >
+          <td class="p-2">#{{ r.id }}</td>
+          <td class="p-2 max-w-xs truncate" title="{{ r.title }}">
+            {{ r.title }}
+          </td>
+          <td class="p-2">
+            <span
+              class="px-2 py-0.5 rounded text-xs font-medium {% if r.status=='Resolved' %}bg-green-100 text-green-700{% elif r.status=='In Progress' %}bg-amber-100 text-amber-700{% else %}bg-red-100 text-red-700{% endif %}"
+              >{{ r.status }}</span
+            >
+          </td>
+          <td class="p-2 text-xs">
+            {{ r.reporter.name if r.reporter else '-' }}
+          </td>
+          <td class="p-2 text-xs">{{ r.created_at|fmt_date }}</td>
+          <td class="p-2 text-xs">
+            {{ r.resolved_at|fmt_date if r.resolved_at else '' }}
+          </td>
+          <td class="p-2 text-xs">
+            {% if r.screenshot_path %}<a
+              href="{{ url_for('static', filename=r.screenshot_path) }}"
+              target="_blank"
+              class="underline"
+              >View</a
+            >{% endif %}
+          </td>
+          <td class="p-2 text-right">
+            <a
+              href="{{ url_for('error_report_detail', rid=r.id) }}"
+              class="soft-btn text-xs"
+              >View</a
+            >
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="p-4 text-center text-slate-500">
+            No error reports.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pagination %}
+  <div class="flex items-center justify-between text-xs text-slate-600 mt-3">
+    <div>
+      Page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total
+      }} total)
+    </div>
+    <div class="flex gap-1">
+      {% if pagination.has_prev %}
+      <a
+        class="soft-btn text-xs"
+        href="?page={{ pagination.prev_num }}&per_page={{ pagination.per_page }}"
+        >Prev</a
+      >
+      {% endif %} {% if pagination.has_next %}
+      <a
+        class="soft-btn text-xs"
+        href="?page={{ pagination.next_num }}&per_page={{ pagination.per_page }}"
+        >Next</a
+      >
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -215,6 +215,40 @@ class IssueChange(db.Model):
     changed_by = db.relationship('User', lazy=True)
 
 
+class ErrorReport(db.Model):
+        """Captured application error reports (user or system initiated) since 0.9.7.
+
+        Two creation flows:
+            1. Automatic 500 page -> user clicks 'Report this error' and we persist cached traceback details
+            2. Manual top-nav 'Report Issue' form (no traceback unless provided)
+        """
+        id = db.Column(db.Integer, primary_key=True)
+        title = db.Column(db.String(255), nullable=False, index=True)
+        description = db.Column(db.Text)  # Extended description (manual) or synthesized from traceback
+        reporter_comment = db.Column(db.Text)  # Optional free-text comment supplied at report time
+        status = db.Column(db.String(40), default='Open', index=True)  # Open, In Progress, Resolved
+        reporter_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+        updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+        resolved_at = db.Column(db.DateTime)
+        resolved_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+        # Technical diagnostic fields (populated for automatic error flow)
+        error_type = db.Column(db.String(200))
+        error_message = db.Column(db.Text)
+        traceback = db.Column(db.Text)
+        request_path = db.Column(db.String(500))
+        request_method = db.Column(db.String(10))
+        user_agent = db.Column(db.String(400))
+        screenshot_path = db.Column(db.String(400))  # relative to /static
+        fingerprint = db.Column(db.String(64), index=True)  # optional grouping/future de-dupe
+
+        reporter = db.relationship('User', foreign_keys=[reporter_id])
+        resolved_by = db.relationship('User', foreign_keys=[resolved_by_id])
+
+        def is_resolved(self):
+                return (self.status or '').lower() == 'resolved'
+
+
 class Meeting(db.Model):
     """Scheduled meeting between a user and (optionally) another user/staff (since 0.5.0)."""
     id = db.Column(db.Integer, primary_key=True)
@@ -263,7 +297,9 @@ class AppointmentSlot(db.Model):
         return next((b for b in self.bookings if b.is_active()), None)
 
     def is_available(self):
-        return self.is_active and self.active_booking() is None and self.start_at >= datetime.utcnow()
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
+        return self.is_active and self.active_booking() is None and self.start_at >= _dt.now(_tz.utc)
 
 
 class AppointmentBooking(db.Model):

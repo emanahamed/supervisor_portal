@@ -39,17 +39,58 @@ content %}
             placeholder="9"
           />
         </div>
-        <div>
+        <div class="md:col-span-1 md:col-start-3">
           <label class="block text-xs font-medium text-slate-600 mb-1"
             >Excel File</label
           >
-          <input
-            type="file"
-            name="excel_file"
-            accept=".xls,.xlsx"
-            required
-            class="soft-input"
-          />
+          <!-- Drag & Drop Zone -->
+          <div
+            id="dropZone"
+            class="relative group border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition bg-white hover:border-indigo-400 hover:bg-indigo-50 border-slate-300"
+          >
+            <input
+              id="excelFileInput"
+              type="file"
+              name="excel_file"
+              accept=".xls,.xlsx"
+              class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              required
+            />
+            <div
+              class="flex flex-col items-center justify-center pointer-events-none select-none"
+            >
+              <svg
+                class="h-8 w-8 mb-2 text-slate-400 group-hover:text-indigo-500"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v9"
+                />
+              </svg>
+              <span id="dzPrompt" class="text-[11px] font-medium text-slate-600"
+                >Click or Drag & Drop Excel (.xls/.xlsx)</span
+              >
+              <span
+                id="dzFile"
+                class="mt-1 text-[10px] text-indigo-600 hidden"
+              ></span>
+            </div>
+            <div
+              id="dzOverlay"
+              class="absolute inset-0 rounded-lg bg-indigo-100/70 backdrop-blur-sm hidden items-center justify-center text-indigo-700 font-semibold text-xs"
+            >
+              Drop file to upload
+            </div>
+          </div>
+          <p class="mt-2 text-[10px] text-slate-500 leading-tight">
+            Single monthly workbook only. Sheet names:
+            <code>staffId.staffId[.staffId]</code>
+          </p>
         </div>
       </div>
       <div id="progressWrap" class="hidden">
@@ -90,13 +131,47 @@ content %}
     const barWrap = document.getElementById('progressWrap');
     const bar = document.getElementById('progressBar');
     const msg = document.getElementById('message');
+    const dz = document.getElementById('dropZone');
+    const dzOverlay = document.getElementById('dzOverlay');
+    const dzFile = document.getElementById('dzFile');
+    const dzPrompt = document.getElementById('dzPrompt');
+    const fileInput = document.getElementById('excelFileInput');
+
     function setMsg(text, ok){
       msg.textContent = text; msg.classList.remove('hidden');
       msg.className = 'mt-3 px-3 py-2 rounded ' + (ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700');
     }
+
+    function setFileDisplay(file){
+      if(!file){ dzFile.classList.add('hidden'); dzPrompt.classList.remove('hidden'); dzFile.textContent=''; return; }
+      dzFile.textContent = file.name + ' (' + Math.round(file.size/1024) + ' KB)';
+      dzFile.classList.remove('hidden');
+      dzPrompt.classList.add('hidden');
+    }
+
+    // Click to trigger file dialog (handled by input overlay). Keep anyway for inner elements.
+    dz.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => setFileDisplay(fileInput.files[0]));
+
+    function highlight(on){ dz.classList.toggle('ring-2', on); dz.classList.toggle('ring-indigo-400', on); dzOverlay.classList.toggle('hidden', !on); }
+    function validExt(name){ return /\.(xlsx?|XLSX?)$/.test(name); }
+
+    ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); highlight(true); }));
+    ['dragleave','dragend'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); highlight(false); }));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation(); highlight(false);
+      const files = e.dataTransfer.files;
+      if(!files || !files.length) return;
+      const file = files[0];
+      if(!validExt(file.name)){ setMsg('Invalid file type. Please drop an .xls or .xlsx file.', false); return; }
+      fileInput.files = files; // assign
+      setFileDisplay(file);
+    });
+
     form.addEventListener('submit', function(e){
       e.preventDefault(); msg.classList.add('hidden');
       const fd = new FormData(form);
+      if(!fileInput.files.length){ setMsg('Please select a file first.', false); return; }
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '{{ url_for('attendance_process') }}');
       barWrap.classList.remove('hidden'); bar.style.width='0%'; bar.textContent='0%';

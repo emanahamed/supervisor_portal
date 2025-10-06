@@ -39,8 +39,8 @@ from forms import (AppointmentBookingActionForm, AppointmentBookingForm,
                    ObservationForm, RegisterForm, StaffForm, TodoForm,
                    UserProfileForm)
 from models import (AppointmentBooking, AppointmentSlot, Availability, Company,
-                    Invoice, Issue, IssueChange, Meeting, Observation,
-                    ObservationCycle, Permission, PermissionAudit,
+                    ErrorReport, Invoice, Issue, IssueChange, Meeting,
+                    Observation, ObservationCycle, Permission, PermissionAudit,
                     RolePermission, Staff, Todo, User, UserPermission, db)
 from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
 from version_info import VERSION, get_changelog
@@ -1332,7 +1332,7 @@ def _render_admin_appointments(slot_form: AppointmentSlotForm | None = None,
     bulk_form = bulk_form or AppointmentSlotBulkForm()
     _populate_superadmin_choices(slot_form)
     _populate_superadmin_choices(bulk_form)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     slots = (AppointmentSlot.query
              .options(joinedload(AppointmentSlot.superadmin), joinedload(AppointmentSlot.bookings))
              .all())
@@ -1545,9 +1545,9 @@ def admin_appointments_slot_action(slot_id: int):
         slot.is_active = False
         if booking and booking.is_active():
             booking.status = 'cancelled'
-            booking.cancelled_at = datetime.utcnow()
+            booking.cancelled_at = datetime.now(timezone.utc)
             _cancel_reminder(booking.id)
-            if slot.start_at > datetime.utcnow():
+            if slot.start_at > datetime.now(timezone.utc):
                 slot.is_active = False
             db.session.commit()
             subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
@@ -1579,9 +1579,9 @@ def admin_appointments_booking_action():
             flash('Booking already cancelled.', 'info')
         else:
             booking.status = 'cancelled'
-            booking.cancelled_at = datetime.utcnow()
+            booking.cancelled_at = datetime.now(timezone.utc)
             slot = booking.slot
-            if slot and slot.start_at > datetime.utcnow():
+            if slot and slot.start_at > datetime.now(timezone.utc):
                 slot.is_active = True
             _cancel_reminder(booking.id)
             db.session.commit()
@@ -1641,7 +1641,7 @@ def booking_index():
             cancel_url = booking.cancel_url
             subj, html = build_appointment_email(booking, slot, slot.superadmin, language=lang, mode='confirmation', cancel_url=cancel_url)
             _send_email_safe(booking.email, subj, html, log_prefix='Appointment confirmation')
-            booking.confirmation_sent_at = datetime.utcnow()
+            booking.confirmation_sent_at = datetime.now(timezone.utc)
 
             admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='confirmation')
             _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin confirmation')
@@ -1693,8 +1693,8 @@ def booking_cancel(token: str):
     if request.method == 'POST':
         if booking.is_active():
             booking.status = 'cancelled'
-            booking.cancelled_at = datetime.utcnow()
-            if slot and slot.start_at > datetime.utcnow():
+            booking.cancelled_at = datetime.now(timezone.utc)
+            if slot and slot.start_at > datetime.now(timezone.utc):
                 slot.is_active = True
             _cancel_reminder(booking.id)
             db.session.commit()
@@ -3230,6 +3230,48 @@ def companies_index():
                            unpaid_total=unpaid_total, paid_total=paid_total,
                            latest_invoice_date=latest_invoice_date, company_stats=company_stats)
 
+@app.route('/companies/<int:company_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_invoices')
+def company_delete(company_id):
+    company = Company.query.get_or_404(company_id)
+    # Safety: optionally prevent delete if invoices exist
+    inv_exists = Invoice.query.filter_by(company_id=company.id).first()
+    if inv_exists:
+        flash('Cannot delete company with existing invoices.', 'warning')
+        return redirect(url_for('companies_index'))
+    db.session.delete(company)
+    db.session.commit()
+    flash('Company deleted', 'success')
+    return redirect(url_for('companies_index'))
+
+@app.route('/companies/<int:company_id>/json', methods=['GET'])
+@login_required
+@permission_required('manage_invoices')
+def company_json(company_id):
+    """Return a JSON representation of a company for the inline edit modal.
+
+    The invoices/companies.html Alpine component fetches this endpoint to
+    populate the edit form. Keep the field names in sync with the front-end
+    formData keys.
+    """
+    company = Company.query.get_or_404(company_id)
+    payload = {
+        'id': company.id,
+        'name': company.name or '',
+        'invoice_prefix': company.invoice_prefix or '',
+        'next_invoice_seq': company.next_invoice_seq or 1,
+        'payment_footer': company.payment_footer or '',
+        'tagline': company.tagline or '',
+        'ofsted_reg_no': company.ofsted_reg_no or '',
+        'address': company.address or '',
+        'phone': company.phone or '',
+        'email': company.email or '',
+        'website': company.website or '',
+        'logo_path': company.logo_path or '',
+    }
+    return jsonify(payload)
+
 def _save_company_logo(file, company_name):
     if not file or not file.filename:
         return None
@@ -3680,7 +3722,129 @@ def server_error(e):  # noqa: D401
         db.session.rollback()
     except Exception:
         pass
+    # Cache traceback info in session for optional reporting
+    import sys as _sys
+    import traceback as _tb
+    exc_type, exc_value, exc_tb = _sys.exc_info()
+    trace_text = ''.join(_tb.format_exception(exc_type, exc_value, exc_tb)) if exc_type else None
+    # Truncate extremely large tracebacks to 20k chars to avoid oversized session blobs
+    if trace_text and len(trace_text) > 20000:
+        trace_text = trace_text[:20000] + '\n... [truncated]'  # safe truncation marker
+    if session is not None:
+        session['__last_error__'] = {
+            'type': getattr(exc_type, '__name__', None) if exc_type else None,
+            'message': str(exc_value) if exc_value else None,
+            'traceback': trace_text,
+            'path': request.path,
+            'method': request.method,
+            'agent': request.headers.get('User-Agent','')[:380],
+        }
     return render_template("errors/500.html"), 500
+
+# ---------------- Error Reporting ----------------
+def _save_error_screenshot(file_storage):
+    if not file_storage or not file_storage.filename:
+        return None
+    ext = os.path.splitext(file_storage.filename)[1].lower()
+    if ext not in {'.png','.jpg','.jpeg'}:
+        return None
+    fname = f"error_{uuid4().hex}{ext}"
+    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+    path = os.path.join(upload_dir, fname)
+    file_storage.save(path)
+    return f"uploads/{fname}"
+
+@app.route('/errors/report', methods=['POST'])
+@login_required
+def error_report_create():
+    title = (request.form.get('title') or 'Application Error').strip()
+    comment = (request.form.get('comment') or '').strip() or None
+    # Pull cached traceback info if user clicked from 500 page
+    cached = session.pop('__last_error__', None)
+    screenshot_rel = _save_error_screenshot(request.files.get('screenshot'))
+    # Derive fingerprint for de-duplication (type + message + first line of traceback)
+    import hashlib
+    fp_source_parts = []
+    if cached:
+        if cached.get('type'): fp_source_parts.append(cached.get('type'))
+        if cached.get('message'): fp_source_parts.append(cached.get('message'))
+        if cached.get('traceback'):
+            first_line = cached.get('traceback').splitlines()[0][:300]
+            fp_source_parts.append(first_line)
+    fp_source = '||'.join(fp_source_parts) if fp_source_parts else None
+    fingerprint = hashlib.sha256(fp_source.encode('utf-8')).hexdigest() if fp_source else None
+    # If fingerprint exists, check for existing recent open report (same fingerprint) to soft-dedupe
+    existing = None
+    if fingerprint:
+        existing = (ErrorReport.query
+                    .filter(ErrorReport.fingerprint==fingerprint)
+                    .order_by(ErrorReport.created_at.desc())
+                    .first())
+    if existing and not existing.is_resolved():
+        flash(f'A similar error (#{existing.id}) already exists and is {existing.status}. Added your comment.', 'warning')
+        if comment:
+            # Append comment (simple newline join)
+            existing.reporter_comment = (existing.reporter_comment or '') + (('\n---\n'+comment) if existing.reporter_comment else comment)
+            existing.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+        return redirect(url_for('error_report_detail', rid=existing.id))
+    er = ErrorReport(
+        title=title[:255] or 'Application Error',
+        reporter_id=current_user.id,
+        reporter_comment=comment,
+        error_type=(cached or {}).get('type'),
+        error_message=(cached or {}).get('message'),
+        traceback=(cached or {}).get('traceback'),
+        request_path=(cached or {}).get('path'),
+        request_method=(cached or {}).get('method'),
+        user_agent=(cached or {}).get('agent'),
+        screenshot_path=screenshot_rel,
+        fingerprint=fingerprint,
+    )
+    db.session.add(er)
+    db.session.commit()
+    flash('Error report submitted','success')
+    return redirect(url_for('error_reports_index'))
+
+@app.route('/error-reports')
+@login_required
+@permission_required('manage_issues', any=True)
+def error_reports_index():
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 25, type=int), 100)
+    q = ErrorReport.query.order_by(ErrorReport.created_at.desc())
+    pagination = q.paginate(page=page, per_page=per_page, error_out=False)
+    return render_template('errors/reports_index.html', reports=pagination.items, pagination=pagination)
+
+@app.route('/error-reports/<int:rid>')
+@login_required
+@permission_required('manage_issues', any=True)
+def error_report_detail(rid):
+    rep = ErrorReport.query.get_or_404(rid)
+    return render_template('errors/report_detail.html', report=rep)
+
+@app.route('/error-reports/<int:rid>/status', methods=['POST'])
+@login_required
+@permission_required('manage_issues', any=True)
+def error_report_status(rid):
+    rep = ErrorReport.query.get_or_404(rid)
+    new_status = (request.form.get('status') or '').strip() or rep.status
+    rep.status = new_status
+    if rep.is_resolved() and not rep.resolved_at:
+        rep.resolved_at = datetime.now(timezone.utc)
+        rep.resolved_by_id = current_user.id
+        # Notify reporter via email if available
+        try:
+            if rep.reporter and rep.reporter.email:
+                subj = f"Error Report #{rep.id} Resolved"
+                html = f"<p>Your reported issue '<strong>{rep.title}</strong>' has been marked as resolved.</p>"
+                send_email(rep.reporter.email, subj, html)
+        except Exception as _exc:  # pragma: no cover
+            print(f"[WARN] Error notification failed: {_exc}")
+    db.session.commit()
+    flash('Status updated','success')
+    return redirect(url_for('error_report_detail', rid=rep.id))
 
 if __name__ == "__main__":
     # Centralised static configuration (edit config.py to change)

@@ -1,14 +1,60 @@
 {% extends 'base.html' %} {% block page_title %}Server Error{% endblock %} {%
 block content %}
-<div class="soft-card p-8 max-w-xl mx-auto text-center">
+<div class="soft-card p-8 max-w-xl mx-auto text-center" x-data="{show:false}">
   <div class="text-5xl mb-4">💥</div>
   <h1 class="text-xl font-semibold mb-2">Something went wrong (500)</h1>
   <p class="text-slate-600 mb-6">
     An unexpected error occurred. The incident may have been logged. Please try
     again or contact support.
   </p>
-  <a href="{{ url_for('index') }}" class="soft-btn soft-btn-primary"
-    >Back to Dashboard</a
-  >
+  <div class="flex flex-col gap-3 items-center">
+    <a href="{{ url_for('index') }}" class="soft-btn soft-btn-primary"
+      >Back to Dashboard</a
+    >
+    {% if current_user.is_authenticated %}
+    <button class="soft-btn" @click="show=true">Report this error</button>
+    <template x-if="show">
+      <form
+        method="post"
+        action="{{ url_for('error_report_create') }}"
+        enctype="multipart/form-data"
+        class="mt-4 w-full text-left space-y-3 p-4 border rounded-lg bg-slate-50"
+      >
+        <div class="text-sm font-semibold">Submit Error Report</div>
+        <input
+          type="hidden"
+          name="title"
+          value="Server Error {{ request.path }}"
+        />
+        <label class="block text-xs font-semibold mb-1"
+          >Comment (optional)</label
+        >
+        <textarea
+          name="comment"
+          rows="3"
+          class="soft-input w-full text-sm"
+        ></textarea>
+        <label class="block text-xs font-semibold mb-1"
+          >Screenshot (optional)</label
+        >
+        <input
+          type="file"
+          name="screenshot"
+          accept="image/png,image/jpeg"
+          class="soft-input w-full text-xs"
+        />
+        <div class="flex gap-2 pt-2">
+          <button class="soft-btn">Send Report</button>
+          <button type="button" class="soft-btn" @click="show=false">
+            Cancel
+          </button>
+        </div>
+        <p class="text-[10px] text-slate-500">
+          Stack trace & request metadata will be attached automatically.
+        </p>
+      </form>
+    </template>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

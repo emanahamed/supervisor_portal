@@ -1,5 +1,45 @@
 # Version History
 
+## 0.9.7 - 2025-10-06
+
+Error Reporting System, Traceback Hygiene, Fingerprinting & UX Improvements:
+
+- Introduced full in-app error reporting workflow:
+  - 500 error page now offers a "Report this error" inline form that auto-attaches traceback, request path, method, and user agent (metadata cached server-side on exception).
+  - Global top‑nav "Report Issue" button (modal) allows any authenticated user to submit a manual system issue (without traceback unless from 500 page).
+  - Added `ErrorReport` model capturing diagnostic fields (error_type, error_message, traceback, fingerprint, request metadata, optional screenshot) plus status workflow (Open / In Progress / Resolved) and resolution audit (resolved_by, resolved_at).
+  - Screenshot upload support with drag/drop style (png/jpg/jpeg) stored under `static/uploads/`.
+  - Superadmin navigation now includes "Error Reports" section with listing & detail pages; status updates trigger email notification to original reporter when marked Resolved.
+- Implemented SHA-256 fingerprint generation (error_type + message + first traceback line) to de‑duplicate recurring errors; new submissions append reporter comment onto existing open report instead of creating duplicates.
+- Added pagination to Error Reports index (page & per_page params; default 25, capped 100) with compact navigation controls.
+- Traceback sanitation: truncate oversized tracebacks (>20k chars) at capture; detail view shows a collapsed 2k-char preview with expand/collapse toggle to preserve UI performance.
+- Converted key naive `datetime.utcnow()` usages in runtime logic to timezone-aware `datetime.now(timezone.utc)` to silence deprecation warnings and prep future TZ features.
+- Added reporter comment consolidation (appends with separator when merging into existing fingerprinted report).
+
+Attendance Fix Upload UX Refresh:
+
+- Replaced basic file input with accessible drag & drop zone (dashed border, hover & focus ring, dynamic overlay, iconography) for `.xls` / `.xlsx` at `/attendance/fix`.
+- File name + size now displayed post-selection; invalid type rejection with inline message; prevents submit without a chosen file.
+- Minor responsive layout correction (upload area alignment in grid third column) improving spacing consistency.
+
+Misc / Internal:
+
+- Added error report templates: `errors/reports_index.html`, `errors/report_detail.html` with badge styling, status select, and screenshot preview.
+- Updated navigation & base layout to integrate reporting modal & admin link.
+- Added fingerprint column usage for error grouping (foundation for future analytics / suppression logic).
+
+Follow-Ups (Not in 0.9.7):
+
+- Migrate all remaining model default timestamps to timezone-aware factories.
+- Add automated tests for error reporting (fingerprint de-dupe, status change notification, pagination) & drag/drop file upload (feature detection / progressive enhancement).
+- Implement search & filtering (status, reporter, date range) for error reports beyond simple pagination.
+- Optional rate limiting / spam throttling for manual report submissions.
+- Bulk resolve / tag classification for error triage.
+
+Upgrade Note:
+
+No destructive migrations required; `ErrorReport` table will auto-create on first request (SQLite pragmas). Existing deployments simply pick up new navigation & modal. Consider backfilling historical 500 logs via manual insert if legacy data is desired.
+
 ## 0.9.6 - 2025-10-06
 
 Extended Observation Checklist Reliability & PDF Polishing:
