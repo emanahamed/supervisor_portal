@@ -1,0 +1,69 @@
+<form
+  method="POST"
+  action="{{ url_for('issue_new') if not issue else url_for('issue_edit', iid=issue.id) }}"
+  class="soft-card p-6 space-y-6"
+  data-form-mode="{{ 'edit' if issue else 'create' }}"
+>
+  {{ form.hidden_tag() }}
+  <div>
+    <label class="soft-label">Title</label>
+    {{ form.title(class='soft-input') }} {% for e in form.title.errors %}
+    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+    {% endfor %}
+  </div>
+  <div>
+    <label class="soft-label">Details</label>
+    {{ form.details(class='soft-input min-h-[140px]') }} {% for e in
+    form.details.errors %}
+    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+    {% endfor %}
+  </div>
+  <div>
+    <label class="soft-label">Action Taken (Optional)</label>
+    {{ form.action_taken(class='soft-input min-h-[120px]') }}
+    <div class="text-[11px] text-slate-400 mt-1">
+      Describe remediation steps or decisions. Leave blank if none yet.
+    </div>
+    {% for e in form.action_taken.errors %}
+    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+    {% endfor %}
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="soft-label">Status</label>
+      {{ form.status(class='soft-input') }}
+    </div>
+    <div>
+      <label class="soft-label">Criticality</label>
+      {{ form.criticality(class='soft-input') }}
+    </div>
+    <div>
+      <label class="soft-label">Urgency</label>
+      {{ form.urgency(class='soft-input') }}
+    </div>
+    <div>
+      <label class="soft-label">Branch</label>
+      {{ form.branch(class='soft-input') }}
+    </div>
+  </div>
+  <div class="flex items-center gap-3 pt-2">
+    <button class="soft-btn soft-btn-primary" type="submit">Save</button>
+    {% if issue %}
+    <a
+      href="{{ url_for('issue_delete', iid=issue.id) }}"
+      class="soft-btn bg-rose-100 text-rose-700"
+      onclick="return confirm('Delete issue?')"
+      >Delete</a
+    >
+    {% endif %} {% if request.headers.get('X-Requested-With') ==
+    'XMLHttpRequest' %}
+    <button type="button" class="soft-btn bg-slate-100" data-close-modal>
+      Close
+    </button>
+    {% else %}
+    <a href="{{ url_for('issues_index') }}" class="soft-btn bg-slate-100"
+      >Cancel</a
+    >
+    {% endif %}
+  </div>
+</form>

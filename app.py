@@ -1393,17 +1393,40 @@ def _render_admin_appointments(slot_form: AppointmentSlotForm | None = None,
         return slot.start_at
 
     filtered.sort(key=sort_value, reverse=(direction == 'desc'))
+    # Ensure consistent timezone awareness for comparisons (some legacy rows may be naive)
+    def _coerce_aware(dt: datetime):
+        if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
 
-    upcoming = [s for s in filtered if s.end_at >= now]
-    past = [s for s in filtered if s.end_at < now]
+    upcoming = []
+    past = []
+    for s in filtered:
+        end_at = _coerce_aware(s.end_at)
+        if end_at >= now:
+            upcoming.append(s)
+        else:
+            past.append(s)
     booked_upcoming = [s for s in upcoming if _active_booking(s)]
     available_upcoming = [s for s in upcoming if s.is_active and not _active_booking(s)]
 
+    # Stats over all slots (not just filtered) for consistency with existing UI
+    total_upcoming = 0
+    total_available = 0
+    total_booked = 0
+    for s in slots:
+        end_at = _coerce_aware(s.end_at)
+        if end_at >= now:
+            total_upcoming += 1
+            if _active_booking(s):
+                total_booked += 1
+            elif s.is_active:
+                total_available += 1
     stats = {
         'total': len(slots),
-        'upcoming': len([s for s in slots if s.end_at >= now]),
-        'available': len([s for s in slots if s.end_at >= now and s.is_active and not _active_booking(s)]),
-        'booked': len([s for s in slots if s.end_at >= now and _active_booking(s)]),
+        'upcoming': total_upcoming,
+        'available': total_available,
+        'booked': total_booked,
     }
 
     filters = {
@@ -2424,6 +2447,8 @@ def issue_new():
         )
         db.session.add(issue)
         db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'id': issue.id})
         flash('Issue created','success')
         return redirect(url_for('issues_index'))
     # Preselect defaults
@@ -2431,6 +2456,8 @@ def issue_new():
         form.status.data = 'Pending'
         form.criticality.data = 'Minor'
         form.urgency.data = 'Medium'
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render_template('issues/partials/_form_inner.html', form=form, issue=None)
     return render_template('issues/form.html', form=form, issue=None)
 
 
@@ -2456,8 +2483,12 @@ def issue_edit(iid):
                 ch = IssueChange(issue_id=issue.id, field=field, old_value=old, new_value=new, changed_by_id=current_user.id)
                 db.session.add(ch)
         db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'id': issue.id})
         flash('Issue updated','success')
         return redirect(url_for('issues_index'))
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return render_template('issues/partials/_form_inner.html', form=form, issue=issue)
     return render_template('issues/form.html', form=form, issue=issue)
 
 
