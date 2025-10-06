@@ -1,5 +1,33 @@
 # Version History
 
+## 0.9.6 - 2025-10-06
+
+Extended Observation Checklist Reliability & PDF Polishing:
+
+- Unified checklist value normalization across form, email, and PDF via new `checklist_utils.py` (single source for label canonicalization, variant generation, and Jinja helpers `checklist_value_for`).
+- Refactored `ObservationDetail.get_checklist` to delegate to centralized normalization eliminating drift between storage, form rendering, and report outputs.
+- Updated extended observation form (`extended_form.html`) and PDF (`report_pdf.html`) to remove legacy ad‑hoc checkbox logic and rely exclusively on the helper, fixing prior issue where met criteria appeared crossed.
+- Added pytest `test_checklist_render.py` covering mixed historical key variants (bare, prefixed, multi‑prefixed) ensuring they render as checked; guards against future regressions.
+- Introduced debug endpoint `/observations/<id>/debug_checklist` (temporary) exposing normalized true keys per group for data verification post-migration.
+- Implemented migration script `migrate_checklists.py` to canonicalize historical checklist JSON (produced timestamped backup file) removing noisy multi‑prefixed keys while preserving logical truth states.
+- PDF adjustments: added Timeslot to header metadata block; removed observer profile picture from "Prepared By" section to align with updated privacy/style requirement.
+- Consolidated PDF checkbox logic (removed custom macro) ensuring parity with email rendering.
+
+Internal / Maintenance:
+
+- Central helper exposes `normalize_label`, `generate_variants`, `normalize_mapping`, and `value_for` (registered as Jinja globals) enabling consistent future additions.
+- Simplified templates & reduced conditional proliferation; improved maintainability of observation reporting pipeline.
+
+Follow-Ups (Not in 0.9.6):
+
+- Remove debug endpoint after confirming no further data anomalies.
+- Expand test coverage to additional checklist groups (homework, classwork, org_mgmt) with seeded truth scenarios.
+- Enforce canonical key write-path to prevent reintroduction of multi‑prefixed variants (already mitigated by normalization, further hardening optional).
+
+Migration Note:
+
+All existing observation detail records processed; backup stored as `backup_checklists_<epoch>.json` in project root for rollback/audit.
+
 ## 0.9.5 - 2025-10-05
 
 Appointment Scheduling (Public & Admin) + Access Control:

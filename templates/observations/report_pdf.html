@@ -1,414 +1,403 @@
-{% set data = data or detail.serialize_all() %}
+{% set data = detail.serialize_all() %}
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <title>Tutor Observation Report (PDF)</title>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Observation PDF</title>
     <style>
-      /* Form-aligned layout (xhtml2pdf safe) */
       body {
-        font-family: "TW Cen MT", Arial, Helvetica, sans-serif;
-        font-size: 11.5px;
-        color: #1a1f29;
+        font-family: "Roboto", Arial, sans-serif;
+        font-size: 14px;
+      }
+      table {
+        width: 100%;
+        margin: 0 auto;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      h1,
+      h2 {
         margin: 0;
-        padding: 22px 26px 30px;
       }
-      .header {
-        border-bottom: 4px solid #363f99;
-        margin-bottom: 14px;
+      h2 {
+        font-size: 16px;
+        color: #333;
       }
-      .header-table {
-        width: 100%;
-      }
-      .logo {
-        height: 52px;
-        width: auto;
-      }
-      h1 {
-        margin: 0 0 2px;
-        font-size: 22px;
-        color: #363f99;
-        letter-spacing: 0.5px;
-      }
-      .sub {
-        font-size: 10px;
-        letter-spacing: 1.8px;
-        color: #f47421;
-        font-weight: bold;
-      }
-      .card {
-        border: 1px solid #d0d7e3;
-        background: #ffffff;
-        margin: 0 0 16px;
-      }
-      .card-head {
-        background: #f5f7fa;
-        padding: 6px 10px;
-        font-weight: bold;
-        font-size: 13px;
-        color: #363f99;
-        border-bottom: 1px solid #d0d7e3;
-      }
-      .card-head .no {
-        background: #363f99;
-        color: #fff;
-        padding: 1px 7px;
-        border-radius: 10px;
-        font-size: 11px;
-        margin-right: 6px;
-      }
-      .card-body {
-        padding: 10px 12px 12px;
-      }
-      table.simple {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      table.simple th,
-      table.simple td {
-        text-align: left;
-        font-size: 11px;
-        padding: 5px 6px;
-        border: 1px solid #d0d7e3;
-      }
-      table.simple th {
-        background: #507cb9;
-        color: #fff;
-      }
-      .two-col-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 4px;
-      }
-      .two-col-table td {
-        width: 50%;
-        vertical-align: top;
-        padding: 4px 6px;
-      }
-      .crit-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 4px 0 6px;
-      }
-      .crit-table th {
-        background: #363f99;
-        color: #fff;
-        font-size: 10px;
-        padding: 4px 5px;
-        text-align: left;
-      }
-      .crit-table td {
-        border: 1px solid #d0d7e3;
-        padding: 4px 5px;
-        font-size: 10.5px;
-      }
-      .crit-status {
-        width: 34px;
+      .center {
         text-align: center;
-        font-weight: bold;
       }
-      .ok {
-        color: #2e9b47;
+      .small-text {
+        font-size: 12px;
       }
-      .bad {
-        color: #f47421;
+      .checkbox {
+        display: block;
+        position: relative;
+        padding-left: 30px;
+        margin: 4px 0 8px;
+        font-size: 12px;
       }
-      .row-bad td {
-        background: #fff4ed;
+      .checkbox input {
+        position: absolute;
+        opacity: 0;
+        cursor: pointer;
+        height: 0;
+        width: 0;
       }
-      .comment-box {
-        border: 1px solid #d0d7e3;
-        background: #ffffff;
-        padding: 6px 8px;
-        font-size: 11px;
-        margin-top: 4px;
+      .checkmark {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 20px;
+        width: 20px;
+        background: #eee8ded7;
+        border-radius: 2px;
       }
-      .comment-box.empty {
-        font-style: italic;
-        color: #6b7280;
-        background: #f5f7fa;
+      .checkbox input:checked ~ .checkmark {
+        background: #eee8ded7;
       }
-      /* pills removed (positives now numbered list) */
-      .muted {
-        color: #6b7280;
-        font-style: italic;
+      .checkmark:after {
+        content: "";
+        position: absolute;
+        display: none;
       }
-      .unmet-box {
-        border: 1px solid #f8cba7;
-        background: #fff6ef;
-        padding: 8px 10px;
-        font-size: 10.5px;
-      }
-      .all-met {
-        color: #2e9b47;
-        font-weight: bold;
-        font-size: 11px;
-      }
-      .targets-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 6px;
-      }
-      .targets-table th {
-        text-align: left;
-        width: 25%;
-        font-size: 11px;
-        padding: 4px 6px;
-        background: #507cb9;
-        color: #fff;
-      }
-      .targets-table td {
-        font-size: 11px;
-        padding: 6px 8px;
-        border: 1px solid #d0d7e3;
-      }
-      /* Simple 3-column criteria table to emulate email layout (xhtml2pdf safe) */
-      table.criteria {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      table.criteria td {
-        width: 33%;
-        vertical-align: top;
-        padding: 4px 6px;
-      }
-      .crit-box {
-        border: 1px solid #d0d7e3;
-        background: #f8fafc;
-        border-radius: 6px;
-        padding: 6px 8px 6px 6px;
-        font-size: 11px;
-      }
-      .crit-box.bad {
-        background: #fff5ef;
-      }
-      .crit-flag {
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        line-height: 14px;
-        text-align: center;
-        font-size: 11px;
-        font-weight: bold;
-        border: 2px solid #2e9b47;
-        border-radius: 4px;
-        margin-right: 6px;
-      }
-      .crit-box.bad .crit-flag {
-        border-color: #f47421;
-        color: #f47421;
-      }
-      .crit-title {
-        font-weight: bold;
+      .checkbox input:checked ~ .checkmark:after {
         display: block;
       }
-      .footer {
-        margin-top: 26px;
-        font-size: 11px;
+      .checkbox .checkmark:after {
+        left: 6px;
+        top: 2px;
+        width: 5px;
+        height: 10px;
+        border: solid #535353;
+        border-width: 0 3px 3px 0;
+        transform: rotate(45deg);
+      }
+      .checkmark:before {
+        content: "x";
+        position: absolute;
+        left: 5px;
+        top: -4px;
+        color: #535353;
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .checkbox input:checked ~ .checkmark:before {
+        display: none;
+      }
+      .section-title {
+        font-weight: bold;
+        padding: 8px 0;
+      }
+      .score-circle {
+        width: 25px;
+        height: 25px;
+        padding: 3px;
+        border-radius: 50%;
+        display: inline-block;
+        line-height: 20px;
         text-align: center;
-        color: #555;
-        border-top: 2px solid #363f99;
-        padding-top: 6px;
+        font-weight: bold;
+        font-size: 12px;
+        margin: 0 5px;
+        background: #eee8ded7;
+      }
+      .score-circle.checked {
+        background: #4caf50;
+        color: #fff;
+      }
+      .score-circle.orange {
+        background: #ffc107;
+        color: #000;
+      }
+      .checkbox-row td {
+        width: 25%;
+      }
+      p {
+        margin: 8px 0 0;
       }
     </style>
   </head>
   <body>
-    {% set data = data or detail.serialize_all() %}
-    <div class="header">
-      <table class="header-table">
-        <tr>
-          <td style="width: 60px">
-            {% if logo_data_uri %}<img
-              class="logo"
-              src="{{ logo_data_uri }}"
-            />{% endif %}
-          </td>
-          <td>
-            <h1>Tutor Observation Report</h1>
-            <div class="sub">EXCEL TUTORS QUALITY & DEVELOPMENT</div>
-          </td>
-          <td style="text-align: right; font-size: 10px">
-            <strong>Score:</strong> {{ '%.1f'|format(obs.score) }}<br />
-            <strong>Timeslot:</strong> {{ detail.timeslot or '—' }}<br />
-            {% if detail.next_review_date %}<strong>Next Review:</strong> {{
-            detail.next_review_date }}{% endif %}
-          </td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- 1. Core Details -->
-    <div class="card">
-      <div class="card-head"><span class="no">1</span>Core Details</div>
-      <div class="card-body">
-        <table class="simple">
-          <tr>
-            <th style="width: 18%">Tutor</th>
-            <td style="width: 32%">{{ obs.staff.name }}</td>
-            <th style="width: 18%">Observer</th>
-            <td style="width: 32%">{{ obs.observer.name }}</td>
-          </tr>
-          <tr>
-            <th>Date</th>
-            <td>{{ obs.date }}</td>
-            <th>Department</th>
-            <td>{{ obs.staff.department or '—' }}</td>
-          </tr>
-          <tr>
-            <th>Cycle</th>
-            <td>{{ obs.cycle.title if obs.cycle else '—' }}</td>
-            <th>Generated</th>
-            <td>
-              {{ generated_at.strftime('%d-%m-%Y %H:%M UTC') if generated_at
-              else '' }}
-            </td>
-          </tr>
-        </table>
-      </div>
-    </div>
-
-    {% macro criteria_block(num, title, mapping, comment, items) %}
-    <div class="card">
-      <div class="card-head"><span class="no">{{ num }}</span>{{ title }}</div>
-      <div class="card-body">
-        {% set unmet = 0 %}{% set total = 0 %}
-        <table class="criteria">
-          <tr>
-            {% for label in items %} {% set key = label.replace(' ','_')|lower()
-            %} {% set val = mapping.get(key) if mapping else False %} {% set
-            total = total + 1 %}{% if not val %}{% set unmet = unmet + 1 %}{%
-            endif %}
-            <td>
-              <div class="crit-box {{ '' if val else 'bad' }}">
-                <span class="crit-flag">{{ '✓' if val else '✗' }}</span>
-                <span class="crit-title">{{ label }}</span>
-                <span
-                  style="font-size:10px; font-weight:bold; color:{{ '#2e9b47' if val else '#f47421' }};"
-                  >{{ 'Met' if val else 'Not Met' }}</span
-                >
-              </div>
-            </td>
-            {% if loop.index % 3 == 0 %}
-          </tr>
-          <tr>
-            {% endif %} {% endfor %} {% if (items|length) % 3 != 0 %}{% for i in
-            range(3 - ((items|length) % 3)) %}
-            <td></td>
-            {% endfor %}{% endif %}
-          </tr>
-        </table>
-        <div class="comment-box {{ '' if comment else 'empty' }}">
-          <strong style="display: block; margin-bottom: 4px"
-            >Comment Regarding {{ title }}</strong
-          >{{ comment or 'No additional comment.' }}
-        </div>
-      </div>
-    </div>
-    {% endmacro %} {% set weekly_items = ['Weekly Test Was of Appropriate
-    Format','Suitable Difficulty Level','Labelled Correctly','Marked on Time']
-    %} {% set hw_items = ['Enough Homework Set','Revision Task Set','Marked the
-    Homework','Appropriate Feedback Given'] %} {% set cw_items = ['Enough
-    Classwork Done','On Track with Classwork Marking','Appropriate Feedback
-    Given'] %} {% set org_items = ['Class was Distraction Free','No Off-Topic
-    Conversation','Students were Engaged with Work','Tutor Planner Up to
-    Date','Tutor Paper Register Up to Date','Tutor Planner is Filled in with
+    {# Checklist items arrays #} {% set weekly_items = ['Weekly Test Was of
+    Appropriate Format','Suitable Difficulty Level','Labelled Correctly','Marked
+    on Time'] %} {% set hw_items = ['Enough Homework Set','Revision Task
+    Set','Marked the Homework','Appropriate Feedback Given'] %} {% set cw_items
+    = ['Enough Classwork Done','On Track with Classwork Marking','Appropriate
+    Feedback Given'] %} {% set org_items = ['Class was Distraction Free','No
+    Off-Topic Conversation','Students were Engaged with Work','Tutor Planner Up
+    to Date','Tutor Paper Register Up to Date','Tutor Planner is Filled in with
     Enough Details','Good Time Management','Good Use of Online System','Student
-    Planner is Filled in with Enough Details'] %} {{ criteria_block(2,'Weekly
-    Test', data.weekly_test, detail.weekly_test_comment, weekly_items) }} {{
-    criteria_block(3,'Homework', data.homework, detail.homework_comment,
-    hw_items) }} {{ criteria_block(4,'Classwork', data.classwork,
-    detail.classwork_comment, cw_items) }} {{ criteria_block(5,'Organisation and
-    Class Management', data.org_mgmt, detail.org_mgmt_comment, org_items) }} {#
-    Conditional page break before Section 6 if content is likely long #} {% set
-    break_metric = ((data.positives or [])|length + (data.improvements or
-    [])|length) %} {% if break_metric > 6 or (detail.notes and
-    detail.notes|length > 400) %}
-    <div style="page-break-before: always"></div>
-    {% endif %}
+    Planner is Filled in with Enough Details'] %}
 
-    <!-- 6. Positive Aspects (numbered list) -->
-    <div class="card">
-      <div class="card-head">
-        <span class="no">6</span>Positive Aspects of the Lesson
-      </div>
-      <div class="card-body">
-        {% if data.positives %}
-        <ol style="margin: 4px 0 0 20px; padding: 0">
-          {% for p in data.positives %}
-          <li style="margin: 4px 0">{{ p }}</li>
-          {% endfor %}
-        </ol>
-        {% else %}<span class="muted">None listed</span>{% endif %}
-      </div>
-    </div>
+    <table>
+      <tr style="vertical-align: middle; text-align: center">
+        <td style="text-align: right; border: none">
+          {% if logo_data_uri %}<img
+            src="{{ logo_data_uri }}"
+            style="width: 120px"
+            alt="Logo"
+          />{% endif %}
+        </td>
+        <td style="text-align: left; border: none; vertical-align: middle">
+          <h2 style="text-align: left; margin: 0">Tutor Observation Form</h2>
+        </td>
+      </tr>
+    </table>
 
-    <!-- 7. Areas of Improvement (numbered list) -->
-    <div class="card">
-      <div class="card-head"><span class="no">7</span>Areas of Improvement</div>
-      <div class="card-body">
-        {% if data.improvements %}
-        <ol style="margin: 4px 0 0 20px; padding: 0">
-          {% for p in data.improvements %}
-          <li style="margin: 4px 0">{{ p }}</li>
-          {% endfor %}
-        </ol>
-        {% else %}<span class="muted">None listed</span>{% endif %}
-      </div>
-    </div>
-
-    <!-- 8-11. Targets & Notes (Targets numbered) -->
-    <div class="card">
-      <div class="card-head"><span class="no">8-11</span>Targets & Notes</div>
-      <div class="card-body">
-        {% set ns = namespace(targets=[], actions=[]) %} {% for line in
-        (detail.target_set or '').split('\n') %}{% set l=line.strip() %}{% if l
-        %}{% set _ = ns.targets.append(l) %}{% endif %}{% endfor %} {% for line
-        in (detail.actions_taken or '').split('\n') %}{% set l=line.strip() %}{%
-        if l %}{% set _ = ns.actions.append(l) %}{% endif %}{% endfor %}
-        <table class="targets-table">
-          <tr>
-            <th>Target Set</th>
-            <td>
-              {% if ns.targets %}
-              <ol style="margin: 4px 0 0 18px; padding: 0">
-                {% for t in ns.targets %}
-                <li style="margin: 4px 0">{{ t }}</li>
+    <table>
+      <tr style="vertical-align: top">
+        <td style="width: 50%">
+          <table>
+            <tr>
+              <td><strong>Tutor:</strong> {{ obs.staff.name }}</td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Date:</strong> {{ obs.date.strftime('%d/%m/%y') if
+                obs.date else '' }}
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Observation Number:</strong> {{ obs.id }}</td>
+            </tr>
+            <tr>
+              <td><strong>Timeslot:</strong> {{ detail.timeslot or '—' }}</td>
+            </tr>
+            <tr>
+              <td style="padding-top: 10px">
+                {% set wd = obs.date.strftime('%A') if obs.date else '' %} {%
+                set days =
+                ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+                %} {% set labels = ['Mo','Tu','We','Th','Fr','Sa','Su'] %} {%
+                for i in range(days|length) %} {% set d = days[i] %}{% set l =
+                labels[i] %}
+                <span class="score-circle {{ 'orange' if d==wd else '' }}"
+                  >{{ l }}</span
+                >
                 {% endfor %}
-              </ol>
-              {% else %}<span class="muted">None</span>{% endif %}
-            </td>
-          </tr>
-          <tr>
-            <th>Actions Taken</th>
-            <td>
-              {% if ns.actions %}
-              <ul style="margin: 4px 0 0 18px; padding: 0">
-                {% for a in ns.actions %}
-                <li style="margin: 4px 0">{{ a }}</li>
-                {% endfor %}
-              </ul>
-              {% else %}<span class="muted">None</span>{% endif %}
-            </td>
-          </tr>
-          <tr>
-            <th>Notes</th>
-            <td>
-              {{ detail.notes or '<span class="muted">No additional notes</span
-              >'|safe }}
-            </td>
-          </tr>
-          <tr>
-            <th>Next Review Date</th>
-            <td>{{ detail.next_review_date or '—' }}</td>
-          </tr>
-        </table>
-      </div>
-    </div>
-    {# Unmet Criteria Summary removed per request #}
+              </td>
+            </tr>
+          </table>
+        </td>
+        <td style="width: 50%">
+          <table>
+            <tr>
+              <td><strong>Overall Observation Score:</strong></td>
+            </tr>
+            <tr>
+              <td>
+                {% set score_int = (obs.score|round(0, 'floor'))|int if
+                obs.score is not none else 0 %} {% for n in range(1,11) %}
+                <span
+                  class="score-circle {{ 'checked' if score_int == n else '' }}"
+                  >{{ n }}</span
+                >{% if n==5 %}<br /><br />{% endif %} {% endfor %}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
 
-    <div class="footer">
-      Excel Tutors • Generated {{ generated_at.strftime('%d-%m-%Y %H:%M UTC') if
-      generated_at else '' }}
-    </div>
+      <tr class="section-title">
+        <td colspan="2">Weekly Test</td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <table>
+            <tr class="checkbox-row">
+              {% for label in weekly_items %}
+              <td>
+                <label class="checkbox"
+                  >{{ label }} <input type="checkbox" {% if
+                  checklist_value_for('weekly_test', data.weekly_test, label)
+                  %}checked{% endif %} />
+                  <span class="checkmark"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <strong>Comment:</strong>
+          <p>{{ detail.weekly_test_comment or '' }}</p>
+        </td>
+      </tr>
+
+      <tr class="section-title">
+        <td colspan="2">Homework</td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <table>
+            <tr class="checkbox-row">
+              {% for label in hw_items %}
+              <td>
+                <label class="checkbox"
+                  >{{ label }} <input type="checkbox" {% if
+                  checklist_value_for('homework', data.homework, label)
+                  %}checked{% endif %} />
+                  <span class="checkmark"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <strong>Comment:</strong>
+          <p>{{ detail.homework_comment or '' }}</p>
+        </td>
+      </tr>
+
+      <tr class="section-title">
+        <td colspan="2">Classwork</td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <table>
+            <tr class="checkbox-row">
+              {% for label in cw_items %}
+              <td>
+                <label class="checkbox"
+                  >{{ label }} <input type="checkbox" {% if
+                  checklist_value_for('classwork', data.classwork, label)
+                  %}checked{% endif %} />
+                  <span class="checkmark"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <strong>Comment:</strong>
+          <p>{{ detail.classwork_comment or '' }}</p>
+        </td>
+      </tr>
+
+      <tr class="section-title">
+        <td colspan="2">Organisation and Class Management</td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <table>
+            <tr class="checkbox-row">
+              {% for label in org_items[0:3] %}
+              <td>
+                <label class="checkbox"
+                  >{{ label }} <input type="checkbox" {% if
+                  checklist_value_for('org_mgmt', data.org_mgmt, label)
+                  %}checked{% endif %} />
+                  <span class="checkmark"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+            <tr class="checkbox-row">
+              {% for label in org_items[3:6] %}
+              <td>
+                <label class="checkbox"
+                  >{{ label }} <input type="checkbox" {% if
+                  checklist_value_for('org_mgmt', data.org_mgmt, label)
+                  %}checked{% endif %} />
+                  <span class="checkmark"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+            <tr class="checkbox-row">
+              {% for label in org_items[6:9] %}
+              <td>
+                <label class="checkbox"
+                  >{{ label }} <input type="checkbox" {% if
+                  checklist_value_for('org_mgmt', data.org_mgmt, label)
+                  %}checked{% endif %} />
+                  <span class="checkmark"></span>
+                </label>
+              </td>
+              {% endfor %}
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <strong>Comment:</strong>
+          <p>{{ detail.org_mgmt_comment or '' }}</p>
+        </td>
+      </tr>
+
+      <tr style="vertical-align: top">
+        <td style="padding-top: 10px">
+          <strong>3 Positive Aspects of the Lesson:</strong>
+          {% set positives = (data.positives or []) %}
+          <ul style="list-style-type: decimal; padding-left: 20px">
+            {% for p in positives %}
+            <li><p style="margin: 0">{{ p }}</p></li>
+            {% endfor %} {% if not positives %}
+            <li><p style="margin: 0">None listed</p></li>
+            {% endif %}
+          </ul>
+        </td>
+        <td style="padding-top: 10px">
+          <strong>3 Areas to Improve:</strong>
+          {% set improvements = (data.improvements or []) %}
+          <ul style="list-style-type: decimal; padding-left: 20px">
+            {% for p in improvements %}
+            <li><p style="margin: 0">{{ p }}</p></li>
+            {% endfor %} {% if not improvements %}
+            <li><p style="margin: 0">None listed</p></li>
+            {% endif %}
+          </ul>
+        </td>
+      </tr>
+
+      <tr style="vertical-align: top">
+        <td>
+          <strong>Target Set:</strong>
+          <p style="text-align: justify">
+            {{ (detail.target_set or '').replace('\n','\n') }}
+          </p>
+        </td>
+        <td>
+          <strong>Actions Taken:</strong>
+          <p style="text-align: justify">
+            {{ (detail.actions_taken or '').replace('\n','\n') }}
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <strong>Notes:</strong>
+          <p style="text-align: justify">
+            {{ (detail.notes or '').replace('\n','\n') }}
+          </p>
+        </td>
+      </tr>
+      <tr style="vertical-align: top">
+        <td>
+          <strong>Next Review Date:</strong> {{
+          detail.next_review_date.strftime('%d/%m/%y') if
+          detail.next_review_date else '—' }}
+        </td>
+        <td style="text-align: center">
+          <strong>Prepared By:</strong> {{ obs.observer.name }}
+        </td>
+      </tr>
+    </table>
   </body>
 </html>

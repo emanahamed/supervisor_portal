@@ -49,9 +49,17 @@
       <h2 class="text-lg font-semibold text-slate-700">{{ num }}. {{ title }}</h2>
       <div class="grid md:grid-cols-2 gap-2">
         {% for item in items %}
-        {% set key = item|replace(' ','_')|lower() %}
+        {% set key_full = item|replace(' ','_')|lower() %}
+        {# Stored JSON removed duplicate group prefix; allow both variants #}
+        {% if key_full.startswith(prefix + '_') %}
+          {% set key_bare = key_full[(prefix|length + 1):] %}
+        {% else %}
+          {% set key_bare = key_full %}
+        {% endif %}
+        {# Some earlier records may have kept prefix; treat both as truthy #}
+  {% set is_checked = (checklist_value_for(prefix, data, item) if data else False) %}
         <label class="flex items-center gap-2 text-sm bg-slate-50 rounded px-3 py-2">
-          <input type="checkbox" name="{{ prefix }}_{{ key }}" value="1" class="w-4 h-4 text-indigo-600" {% if data and data.get(key) %}checked{% endif %}>
+          <input type="checkbox" name="{{ prefix }}_{{ key_full }}" value="1" class="w-4 h-4 text-indigo-600" {% if is_checked %}checked{% endif %}>
           <span class="text-slate-700">{{ item }}</span>
         </label>
         {% endfor %}

@@ -83,13 +83,13 @@ PUBLIC_BOOKING_COPY = {
     'bn': {
         'page_title': 'অ্যাপয়েন্টমেন্ট বুক করুন',
         'headline': 'ম্যানেজমেন্ট দলের একজন সদস্যের সাথে দেখা করুন',
-        'subheadline': 'ম্যানেজমেন্ট দলের একজন সদস্যের উপলব্ধ সময় থেকে নির্বাচন করুন। সব ঘর পূরণ করা বাধ্যতামূলক।',
+        'subheadline': 'ম্যানেজমেন্ট দলের একজন সদস্যের সময় থেকে নির্বাচন করুন। সব ঘর পূরণ করা বাধ্যতামূলক।',
         'name': 'আপনার নাম',
         'student_ref': 'শিক্ষার্থীর নাম / আইডি',
         'reason': 'অ্যাপয়েন্টমেন্টের কারণ',
         'email': 'ইমেইল',
         'phone': 'ফোন',
-        'slot_label': 'উপলব্ধ সময়',
+        'slot_label': 'সময়',
         'submit': 'অ্যাপয়েন্টমেন্ট বুক করুন',
         'no_slots': 'এই মুহূর্তে কোনো সময় পাওয়া যাচ্ছে না। পরে আবার চেষ্টা করুন।',
         'slot_taken': 'এই সময়টি ইতিমধ্যে বুক হয়ে গেছে। অনুগ্রহ করে অন্য সময় নির্বাচন করুন।',
@@ -168,7 +168,8 @@ def _slot_label(slot: AppointmentSlot) -> str:
 
 
 def _available_slots_query():
-    now = datetime.utcnow()
+    # Use timezone-aware UTC datetime to avoid deprecation warnings.
+    now = datetime.now(timezone.utc)
     slots = (
         AppointmentSlot.query
         .options(joinedload(AppointmentSlot.superadmin), joinedload(AppointmentSlot.bookings))
@@ -181,7 +182,7 @@ def _available_slots_query():
 
 
 def _upcoming_slots_query(limit: int | None = None):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     query = (
         AppointmentSlot.query
         .options(joinedload(AppointmentSlot.superadmin), joinedload(AppointmentSlot.bookings))
@@ -234,14 +235,14 @@ def _send_reminder_job(booking_id: int) -> None:
         if not booking or not booking.is_active():
             return
         slot = booking.slot
-        if not slot or slot.start_at <= datetime.utcnow():
+        if not slot or slot.start_at <= datetime.now(timezone.utc):
             return
         cancel_url = booking.cancel_url or url_for('booking_cancel', token=booking.cancel_token, _external=True)
         subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='reminder', cancel_url=cancel_url)
         _send_email_safe(booking.email, subj, html, log_prefix='Appointment reminder')
         admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='reminder')
         _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment reminder admin')
-        booking.reminder_sent_at = datetime.utcnow()
+        booking.reminder_sent_at = datetime.now(timezone.utc)
         db.session.commit()
 
 
@@ -255,7 +256,7 @@ def _schedule_reminder(booking: AppointmentBooking) -> None:
     if not slot:
         return
     run_at = slot.start_at - timedelta(hours=12)
-    if run_at <= datetime.utcnow():
+    if run_at <= datetime.now(timezone.utc):
         return
     job_id = f"booking-reminder-{booking.id}"
     try:
@@ -280,7 +281,7 @@ def _prime_existing_reminders() -> None:
     _ensure_scheduler_started()
     if scheduler is None:
         return
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     upcoming = (
         AppointmentBooking.query
         .join(AppointmentSlot)
@@ -305,6 +306,13 @@ app.config.update(
     UPLOAD_EXTENSIONS=[".xlsx", ".xls", ".csv"],
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,
 )
+
+# Register Jinja checklist normalization helpers
+try:
+    from checklist_utils import register_checklist_jinja
+    register_checklist_jinja(app.jinja_env)
+except Exception as _e:  # non-fatal
+    print(f"[WARN] Failed to register checklist helpers: {_e}")
 
 db.init_app(app)
 login_manager = LoginManager(app)
@@ -413,6 +421,31 @@ def api_version():
         'changelog_full': full
     })
 
+# ---------------- DEBUG (Temporary) ---------------- #
+@app.route('/debug/observation/<int:oid>/checklists')
+@login_required
+def debug_observation_checklists(oid: int):
+    obs = Observation.query.get_or_404(oid)
+    if not obs.detail:
+        return jsonify({'observation_id': oid, 'detail': None})
+    d = obs.detail
+    payload = {}
+    for grp in ['weekly_test','homework','classwork','org_mgmt']:
+        raw = getattr(d, grp)
+        try:
+            import json
+            parsed_raw = json.loads(raw) if raw else {}
+        except Exception:
+            parsed_raw = {}
+        norm = d.get_checklist(grp)
+        payload[grp] = {
+            'raw': parsed_raw,
+            'normalized_keys': sorted(norm.keys()),
+            'true_keys': sorted([k for k,v in norm.items() if v]),
+            'false_keys': sorted([k for k,v in norm.items() if not v]),
+        }
+    return jsonify(payload)
+
 # ---------------- Attendance Fix Page ---------------- #
 @app.route('/attendance/fix')
 @login_required
@@ -457,6 +490,14 @@ def create_tables_and_superadmin():
     try:
         with db.engine.connect() as conn:
             cols = {row[1] for row in conn.execute(text("PRAGMA table_info(user)"))}
+            # Backfill user.is_active column EARLY (before any ORM query referencing it)
+            if 'is_active' not in cols:
+                try:
+                    conn.execute(text("ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1"))
+                    # Refresh cols set so later logic doesn't attempt again
+                    cols.add('is_active')
+                except Exception:
+                    pass
             if 'role' not in cols:
                 conn.execute(text("ALTER TABLE user ADD COLUMN role VARCHAR(80)"))
             if 'picture' not in cols:
@@ -491,6 +532,7 @@ def create_tables_and_superadmin():
             changed = True
         if changed:
             db.session.commit()
+    # (Moved is_active backfill earlier; legacy block retained intentionally removed)
     # Simple backfill for any existing users missing new columns (SQLite tolerant)
     try:
         users_no_role = User.query.filter(User.role.is_(None)).all()
@@ -891,6 +933,9 @@ def login():
         if user and check_password_hash(user.password_hash, form.password.data):
             if not user.is_approved:
                 return render_template("auth/pending.html")
+            if hasattr(user, 'is_active') and not user.is_active:
+                flash('Account is deactivated. Contact a superadmin.', 'danger')
+                return render_template("auth/login.html", form=form)
             try:
                 login_user(user, remember=bool(form.remember.data))
             except TypeError:
@@ -1090,6 +1135,23 @@ def delete_user(uid):
     except Exception as exc:
         db.session.rollback()
         flash(f'Failed to delete user: {exc}', 'danger')
+    return redirect(url_for('approve_users'))
+
+@app.route('/approve/<int:uid>/toggle_active', methods=['POST'])
+@login_required
+def toggle_user_active(uid):
+    if not current_user.is_superadmin:
+        abort(403)
+    u = User.query.get_or_404(uid)
+    if u.id == current_user.id and u.is_active is False:
+        # allow re-activating self, but not deactivating self (avoid lockout)
+        pass
+    elif u.id == current_user.id and u.is_active is True:
+        flash('You cannot deactivate your own account.', 'warning')
+        return redirect(url_for('approve_users'))
+    u.is_active = not bool(u.is_active)
+    db.session.commit()
+    flash(f"{'Activated' if u.is_active else 'Deactivated'} {u.email}", 'success')
     return redirect(url_for('approve_users'))
 
 @app.route('/approve/<int:uid>/picture', methods=['POST'])
@@ -2786,9 +2848,13 @@ def _deserialize_checklist(prefix, form):
     data = {}
     plen = len(prefix) + 1
     for k in form.keys():
-        if k.startswith(prefix + '_') and not k.endswith('_comment'):
-            key = k[plen:]
-            data[key] = form.get(k) == '1'
+        if not k.startswith(prefix + '_') or k.endswith('_comment'):
+            continue
+        key = k[plen:]
+        # Normalise any accidental duplicated prefix (e.g. weekly_test_weekly_test_marked_on_time)
+        if key.startswith(prefix + '_'):
+            key = key[len(prefix) + 1:]
+        data[key] = form.get(k) == '1'
     return data
 
 @app.route('/observations/extended/new', methods=['GET','POST'])
@@ -2838,6 +2904,12 @@ def observation_extended_new():
             homework_data = _deserialize_checklist('homework', request.form)
             classwork_data = _deserialize_checklist('classwork', request.form)
             org_mgmt_data = _deserialize_checklist('org_mgmt', request.form)
+            # These are raw; convert to normalized mapping for template consistency
+            from checklist_utils import normalize_mapping as _norm_map
+            weekly_test_data = _norm_map('weekly_test', weekly_test_data)
+            homework_data = _norm_map('homework', homework_data)
+            classwork_data = _norm_map('classwork', classwork_data)
+            org_mgmt_data = _norm_map('org_mgmt', org_mgmt_data)
             # Build a lightweight stub for detail-like attributes accessed in template
             from types import SimpleNamespace
             detail_stub = SimpleNamespace(
@@ -2990,17 +3062,21 @@ def observation_extended_edit(oid):
             db.session.commit()
             flash('Observation updated','success')
             return redirect(url_for('observation_extended_edit', oid=obs.id))
-    def load_json(text):
-        try: return json.loads(text) if text else {}
-        except Exception: return {}
+    def load_json(text, attr):
+        try:
+            raw = json.loads(text) if text else {}
+        except Exception:
+            raw = {}
+        from checklist_utils import normalize_mapping as _norm_map
+        return _norm_map(attr, raw)
     def load_list(text):
         try: return json.loads(text) if text else []
         except Exception: return []
     cycles = ObservationCycle.query.order_by(ObservationCycle.start_date.desc().nullslast()).all()
     staff = Staff.query.order_by(Staff.name.asc()).all()
     return render_template('observations/extended_form.html', obs=obs, detail=detail, staff=staff, cycles=cycles,
-                           today=date.today(), weekly_test_data=load_json(detail.weekly_test), homework_data=load_json(detail.homework),
-                           classwork_data=load_json(detail.classwork), org_mgmt_data=load_json(detail.org_mgmt),
+                           today=date.today(), weekly_test_data=load_json(detail.weekly_test,'weekly_test'), homework_data=load_json(detail.homework,'homework'),
+                           classwork_data=load_json(detail.classwork,'classwork'), org_mgmt_data=load_json(detail.org_mgmt,'org_mgmt'),
                            positives_json=load_list(detail.positives), improvements_json=load_list(detail.improvements))
 
 @app.route('/observations/<int:oid>/report')
@@ -3019,7 +3095,7 @@ def observation_report(oid):
             logo_data_uri = f"data:image/png;base64,{b64}"
     except Exception:
         pass
-    # Use a PDF-friendly simplified template
+    # Render freshly rebuilt PDF template
     html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.now(timezone.utc))
     try:
         from io import BytesIO
@@ -3028,7 +3104,7 @@ def observation_report(oid):
         pdf_io = BytesIO(); pisa.CreatePDF(html, dest=pdf_io); pdf_io.seek(0)
         return send_file(pdf_io, mimetype='application/pdf', as_attachment=True, download_name=f'observation_{oid}.pdf')
     except Exception:
-        return html
+        # Fallback: return raw HTML if PDF generation fails
         return html
 
 @app.route('/observations/<int:oid>/email')
@@ -3093,6 +3169,23 @@ def observation_email(oid):
             return jsonify({'status':'error','message': err_msg}), 500
         flash(err_msg,'danger')
     return redirect(url_for('observation_extended_edit', oid=obs.id))
+
+@app.route('/observations/<int:oid>/debug_checklist')
+@login_required
+def observation_debug_checklist(oid):
+    obs = Observation.query.get_or_404(oid)
+    if not obs.detail:
+        return jsonify({'error':'no detail'}), 404
+    data = obs.detail.serialize_all()
+    # Show counts of true flags per group
+    def true_keys(mapping):
+        return sorted([k for k,v in (mapping or {}).items() if v])
+    return jsonify({
+        'weekly_test_true': true_keys(data.get('weekly_test')),
+        'homework_true': true_keys(data.get('homework')),
+        'classwork_true': true_keys(data.get('classwork')),
+        'org_mgmt_true': true_keys(data.get('org_mgmt')),
+    })
 
 # ---------------- Invoicing ---------------- #
 from sqlalchemy.exc import IntegrityError

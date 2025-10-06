@@ -1,0 +1,658 @@
+[
+  {
+    "id": 1,
+    "weekly_test": {
+      "suitable_difficulty_level": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 2,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {},
+    "classwork": {
+      "enough_classwork_done": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "tutor_planner_is_filled_in_with_enough_details": true,
+      "good_time_management": true,
+      "good_use_of_online_system": true
+    }
+  },
+  {
+    "id": 3,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true
+    },
+    "homework": {
+      "revision_task_set": true,
+      "marked_the_homework": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "no_off-topic_conversation": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 4,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true
+    },
+    "homework": {
+      "revision_task_set": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "class_was_distraction_free": true
+    }
+  },
+  {
+    "id": 5,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "revision_task_set": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true
+    }
+  },
+  {
+    "id": 6,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true
+    }
+  },
+  {
+    "id": 8,
+    "weekly_test": {
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true
+    }
+  },
+  {
+    "id": 9,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "tutor_planner_is_filled_in_with_enough_details": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 10,
+    "weekly_test": {
+      "marked_on_time": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 11,
+    "weekly_test": {
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 12,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "good_use_of_online_system": true
+    }
+  },
+  {
+    "id": 13,
+    "weekly_test": {},
+    "homework": {
+      "revision_task_set": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 14,
+    "weekly_test": {
+      "marked_on_time": true
+    },
+    "homework": {
+      "marked_the_homework": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {
+      "enough_classwork_done": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true
+    }
+  },
+  {
+    "id": 15,
+    "weekly_test": {
+      "marked_on_time": true
+    },
+    "homework": {
+      "revision_task_set": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 16,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true
+    },
+    "classwork": {
+      "enough_classwork_done": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "good_time_management": true
+    }
+  },
+  {
+    "id": 17,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 18,
+    "weekly_test": {
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "revision_task_set": true,
+      "marked_the_homework": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 19,
+    "weekly_test": {},
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true
+    }
+  },
+  {
+    "id": 20,
+    "weekly_test": {},
+    "homework": {
+      "marked_the_homework": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "good_time_management": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 21,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true
+    },
+    "classwork": {
+      "enough_classwork_done": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_paper_register_up_to_date": true
+    }
+  },
+  {
+    "id": 22,
+    "weekly_test": {
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true
+    },
+    "classwork": {
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 23,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true
+    }
+  },
+  {
+    "id": 24,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "revision_task_set": true,
+      "marked_the_homework": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "tutor_planner_is_filled_in_with_enough_details": true,
+      "good_time_management": true,
+      "good_use_of_online_system": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 25,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "good_time_management": true
+    }
+  },
+  {
+    "id": 26,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "marked_the_homework": true
+    },
+    "classwork": {},
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "students_were_engaged_with_work": true,
+      "tutor_paper_register_up_to_date": true,
+      "good_use_of_online_system": true
+    }
+  },
+  {
+    "id": 27,
+    "weekly_test": {
+      "weekly_test_was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true
+    }
+  },
+  {
+    "id": 28,
+    "weekly_test": {
+      "was_of_appropriate_format": true,
+      "suitable_difficulty_level": true,
+      "labelled_correctly": true,
+      "marked_on_time": true
+    },
+    "homework": {
+      "enough_homework_set": true,
+      "revision_task_set": true,
+      "marked_the_homework": true,
+      "appropriate_feedback_given": true
+    },
+    "classwork": {
+      "enough_classwork_done": true,
+      "on_track_with_classwork_marking": true,
+      "appropriate_feedback_given": true
+    },
+    "org_mgmt": {
+      "class_was_distraction_free": true,
+      "no_off-topic_conversation": true,
+      "students_were_engaged_with_work": true,
+      "tutor_planner_up_to_date": true,
+      "tutor_paper_register_up_to_date": true,
+      "tutor_planner_is_filled_in_with_enough_details": true,
+      "good_time_management": true,
+      "good_use_of_online_system": true,
+      "student_planner_is_filled_in_with_enough_details": true
+    }
+  },
+  {
+    "id": 31,
+    "weekly_test": {
+      "weekly_test_marked_on_time": true,
+      "weekly_test_weekly_test_labelled_correctly": true,
+      "suitable_difficulty_level": true,
+      "weekly_test_weekly_test_weekly_test_was_of_appropriate_format": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {}
+  },
+  {
+    "id": 32,
+    "weekly_test": {
+      "weekly_test_marked_on_time": true,
+      "weekly_test_weekly_test_labelled_correctly": true,
+      "suitable_difficulty_level": true,
+      "weekly_test_weekly_test_weekly_test_was_of_appropriate_format": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {}
+  },
+  {
+    "id": 33,
+    "weekly_test": {
+      "weekly_test_weekly_test_weekly_test_was_of_appropriate_format": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {}
+  },
+  {
+    "id": 34,
+    "weekly_test": {
+      "weekly_test_marked_on_time": true,
+      "weekly_test_weekly_test_labelled_correctly": true,
+      "suitable_difficulty_level": true,
+      "weekly_test_weekly_test_weekly_test_was_of_appropriate_format": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {}
+  },
+  {
+    "id": 35,
+    "weekly_test": {
+      "weekly_test_weekly_test_weekly_test_was_of_appropriate_format": true,
+      "weekly_test_marked_on_time": true,
+      "suitable_difficulty_level": true,
+      "weekly_test_weekly_test_labelled_correctly": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {}
+  },
+  {
+    "id": 36,
+    "weekly_test": {
+      "weekly_test_marked_on_time": true,
+      "weekly_test_weekly_test_labelled_correctly": true,
+      "suitable_difficulty_level": true,
+      "weekly_test_weekly_test_weekly_test_was_of_appropriate_format": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {}
+  },
+  {
+    "id": 37,
+    "weekly_test": {
+      "weekly_test_marked_on_time": true,
+      "weekly_test_weekly_test_labelled_correctly": true,
+      "suitable_difficulty_level": true,
+      "weekly_test_weekly_test_weekly_test_was_of_appropriate_format": true
+    },
+    "homework": {},
+    "classwork": {},
+    "org_mgmt": {}
+  }
+]

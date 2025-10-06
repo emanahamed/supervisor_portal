@@ -103,6 +103,13 @@
             </form>
             <form
               method="post"
+              action="{{ url_for('toggle_user_active', uid=u.id) }}"
+              class="inline"
+            >
+              <button class="soft-btn bg-amber-100">{{ 'Deactivate' if u.is_active else 'Activate' }}</button>
+            </form>
+            <form
+              method="post"
               action="{{ url_for('delete_user', uid=u.id) }}"
               class="inline"
               onsubmit="return confirm('Delete this user? This cannot be undone.');"

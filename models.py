@@ -14,6 +14,7 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(255), nullable=False)
     is_superadmin = db.Column(db.Boolean, default=False)
     is_approved = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True, index=True)  # soft activation flag (login blocked if False)
     role = db.Column(db.String(80), default='staff')  # logical application role (e.g. staff, lead, observer)
     picture = db.Column(db.String(255))  # path to profile picture relative to /static/uploads or external URL
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -128,7 +129,19 @@ class ObservationDetail(db.Model):
             return default
 
     def get_checklist(self, attr):
-        return self._parse(getattr(self, attr), {})
+        from checklist_utils import normalize_mapping
+        raw = self._parse(getattr(self, attr), {})
+        if not isinstance(raw, dict):
+            return {}
+        # Coerce string boolean forms before passing
+        coerced = {}
+        for rk, rv in raw.items():
+            if isinstance(rv, str):
+                lv = rv.lower()
+                if lv in ('true','yes','1','y','t'): rv = True
+                elif lv in ('false','no','0','n','f',''): rv = False
+            coerced[rk] = rv
+        return normalize_mapping(attr, coerced)
 
     def set_checklist(self, attr, mapping: dict):
         setattr(self, attr, self._json.dumps(mapping or {}))
