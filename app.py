@@ -3122,7 +3122,8 @@ def observation_email(oid):
             logo_data_uri = f"data:image/png;base64,{b64}"
     except Exception:
         pass
-    # Use dedicated email template (richer styling) and PDF template for attachment
+    # Render PDF template (for attachment) and an email-friendly template (static check symbols instead of form inputs)
+    pdf_html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.now(timezone.utc))
     email_html = render_template('observations/report_email.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.now(timezone.utc))
     tutor_email = obs.staff.email
     ajax = request.args.get('ajax') or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept','')
@@ -3138,12 +3139,12 @@ def observation_email(oid):
 
         from xhtml2pdf import pisa
 
-        # Render PDF-friendly template separately for attachment
-        pdf_html = render_template('observations/report_pdf.html', obs=obs, detail=detail, data=detail.serialize_all(), logo_data_uri=logo_data_uri, generated_at=datetime.now(timezone.utc))
+        # Generate PDF from the same HTML we are embedding in the email body
         pdf_io = BytesIO(); pisa.CreatePDF(pdf_html, dest=pdf_io); pdf_io.seek(0); pdf_bytes = pdf_io.read()
     except Exception:
         pdf_bytes = None
-    body = f"<p>Dear {obs.staff.name},</p><p>Please find your observation summary below:</p>" + email_html + "<p>Best regards,<br>Excel Tutors</p>"
+    # Email body = standalone HTML (already includes styling & summary)
+    body = email_html
     try:
         if pdf_bytes:
             import smtplib
@@ -3152,7 +3153,7 @@ def observation_email(oid):
             from email_utils import (FROM_EMAIL, FROM_NAME, SMTP_HOST,
                                      SMTP_PASSWORD, SMTP_PORT, SMTP_USERNAME)
             msg = EmailMessage(); msg['Subject'] = f"Observation Report - {obs.staff.name} ({obs.date})"; msg['From'] = f"{FROM_NAME} <{FROM_EMAIL}>"; msg['To'] = tutor_email
-            msg.set_content('HTML observation report attached.')
+            msg.set_content('Observation report attached (HTML + PDF).')
             msg.add_alternative(body, subtype='html')
             msg.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename=f'observation_{oid}.pdf')
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:

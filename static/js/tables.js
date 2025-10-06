@@ -32,6 +32,17 @@ function makeTablesSortable() {
       if(!th.textContent.trim()) { th.classList.add('no-sort'); return; }
       th.classList.add('sortable-col');
       th.addEventListener('click', () => sortTable(table, idx, th));
+      // Initialize indicator if preset sort direction provided (e.g., server default ordering)
+      const preset = th.getAttribute('data-sort-dir');
+      if(preset === 'asc' || preset === 'desc') {
+        let indicator = th.querySelector('.sort-indicator');
+        if(!indicator) {
+          indicator = document.createElement('span');
+          indicator.className = 'sort-indicator ml-1 text-[10px] text-slate-400';
+          th.appendChild(indicator);
+        }
+        indicator.textContent = preset === 'asc' ? '▲' : '▼';
+      }
     });
   });
 }
