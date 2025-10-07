@@ -17,6 +17,7 @@ class User(db.Model, UserMixin):
     is_active = db.Column(db.Boolean, default=True, index=True)  # soft activation flag (login blocked if False)
     role = db.Column(db.String(80), default='staff')  # logical application role (e.g. staff, lead, observer)
     picture = db.Column(db.String(255))  # path to profile picture relative to /static/uploads or external URL
+    theme_preference = db.Column(db.String(20), default='system')  # 'light' | 'dark' | 'system' (since 0.9.8)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

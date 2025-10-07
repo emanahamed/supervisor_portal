@@ -1,5 +1,32 @@
 # Version History
 
+## 0.9.8 - 2025-10-07
+
+Theme Preference Persistence, System Detection & SVG Toggle:
+
+- Added persistent per-user theme preference (`User.theme_preference`) supporting values: `light`, `dark`, `system`.
+- New profile page select allows users to save their preference server-side; falls back to system when set to `system`.
+- Global theme dropdown (replaces prior single button) with SVG sun/moon icons and smooth color transitions (`transition-colors`).
+- System preference detection via `matchMedia('(prefers-color-scheme: dark)')` with live listener when in `system` mode.
+- Lightweight AJAX endpoint path (`POST /profile` with `_theme_update=1`) allows instant toggle without full form submission.
+- Introduced centralized theme utility script (`static/js/theme.js`) encapsulating detection, application, and listener logic (reduces inline JS duplication).
+- Added graceful initialization order: explicit localStorage choice → saved server preference → system → default light.
+- Ensured dark mode classes applied prior to paint to minimize flash; transitions handled after initial load.
+
+Migration Note:
+
+SQLite auto-migration adds `theme_preference` column to `user` table on first request if missing (default `system`). No manual migration required. For production deployments using another RDBMS, apply an `ALTER TABLE user ADD COLUMN theme_preference VARCHAR(20) DEFAULT 'system';` before deploying if automatic DDL is disabled.
+
+Testing:
+
+- Added pytest covering quick theme preference update path (`_theme_update=1`).
+
+Follow-Ups (Not in 0.9.8):
+
+- Persist resolved explicit vs system choice as separate key (currently reuses `portalTheme`); optional enhancement to track original user intent more explicitly.
+- Add visual indicator (checkmark) in theme dropdown reflecting active mode.
+- Consolidate remaining inline theme-related JS into utility for version modal / legacy auth pages.
+
 ## 0.9.7 - 2025-10-06
 
 Error Reporting System, Traceback Hygiene, Fingerprinting & UX Improvements:

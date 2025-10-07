@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" x-data="{dark:false}" >
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,7 +8,17 @@
     </title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      tailwind.config = { theme: { extend: {} } };
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              slate: tailwind.colors.slate,
+              indigo: tailwind.colors.indigo,
+            },
+          },
+        },
+      };
     </script>
     <style>
       .soft-card {
@@ -16,6 +26,10 @@
         border: 1px solid #e2e8f0;
         border-radius: 0.75rem;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .dark .soft-card {
+        background: #1e293b;
+        border-color: #334155;
       }
       .soft-btn {
         display: inline-flex;
@@ -31,6 +45,13 @@
       .soft-btn:hover {
         background: #e2e8f0;
       }
+      .dark .soft-btn {
+        background: #334155;
+        color: #e2e8f0;
+      }
+      .dark .soft-btn:hover {
+        background: #475569;
+      }
       .soft-badge {
         background: #f1f5f9;
         color: #334155;
@@ -39,6 +60,10 @@
         font-size: 0.65rem;
         font-weight: 600;
         letter-spacing: 0.5px;
+      }
+      .dark .soft-badge {
+        background: #334155;
+        color: #cbd5e1;
       }
       .soft-input {
         border: 1px solid #cbd5e1;
@@ -50,6 +75,14 @@
         outline: 2px solid #6366f1;
         outline-offset: 1px;
       }
+      .dark .soft-input {
+        background: #1e293b;
+        border-color: #475569;
+        color: #e2e8f0;
+      }
+      .dark .soft-input:focus {
+        outline-color: #818cf8;
+      }
       .brand-logo-img {
         height: 34px;
         width: auto;
@@ -58,10 +91,12 @@
       [x-cloak] {
         display: none !important;
       }
+      .dark body { background: #0f172a; }
+      .theme-icon { width:16px; height:16px; display:block; }
     </style>
   </head>
   <body
-    class="h-screen flex overflow-hidden bg-slate-50"
+    class="h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-300"
     x-data="{sidebarOpen:false}"
     x-cloak
   >
@@ -146,7 +181,9 @@
 
     <!-- Main content area -->
     <div class="flex flex-col flex-1 md:pl-60">
-      <header class="sticky top-0 z-30 backdrop-blur bg-white/80 border-b">
+      <header
+        class="sticky top-0 z-30 backdrop-blur bg-white/80 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700"
+      >
         <div class="px-4 h-14 flex items-center gap-4">
           <div class="flex items-center gap-3">
             <button class="md:hidden soft-btn" @click="sidebarOpen=true">
@@ -158,6 +195,28 @@
             {% block page_subtitle %}{% endblock %}
           </div>
           <div class="flex items-center gap-4 ml-auto">
+            <button
+              type="button"
+              class="soft-btn text-xs"
+              @click="document.documentElement.classList.toggle('dark'); const d=document.documentElement.classList.contains('dark'); localStorage.setItem('portalTheme', d?'dark':'light');"
+              title="Toggle dark mode"
+            >
+              <span
+                class="hidden sm:inline"
+                x-show="!document.documentElement.classList.contains('dark')"
+                >🌙</span
+              >
+              <span
+                class="hidden sm:inline"
+                x-show="document.documentElement.classList.contains('dark')"
+                >☀️</span
+              >
+              <span class="sr-only">Toggle theme</span>
+              <span
+                x-text="document.documentElement.classList.contains('dark') ? 'Light' : 'Dark'"
+                class="text-xs"
+              ></span>
+            </button>
             {% block page_actions %}{% endblock %} {% if
             current_user.is_authenticated %}
             <button
@@ -202,35 +261,43 @@
           </div>
         </div>
       </header>
-      <main class="flex-1 overflow-y-auto px-4 py-6">
+      <main
+        class="flex-1 overflow-y-auto px-4 py-6 bg-slate-50 dark:bg-slate-900 transition-colors duration-300"
+      >
         {% with messages = get_flashed_messages(with_categories=true) %} {% if
         messages %}
         <div class="space-y-2 mb-4">
           {% for category, message in messages %}
           <div
-            class="soft-card p-3 border-l-4 {% if category=='success' %}border-green-500{% elif category=='warning' %}border-yellow-500{% elif category=='danger' %}border-red-500{% else %}border-indigo-500{% endif %}"
-          >
-            <div class="text-sm">{{ message|safe }}</div>
-          </div>
-          {% endfor %}
-        </div>
-        {% endif %} {% endwith %} {% block content %}{% endblock %}
-      </main>
-    </div>
-
-    <!-- Global Report Issue Modal -->
-    <div
-      x-data="{show:false}"
-      @open-report-modal.window="show=true"
-      x-cloak
-      x-show="show"
-      class="fixed inset-0 z-50 flex items-start md:items-center justify-center p-4"
-    >
-      <div class="absolute inset-0 bg-slate-900/60" @click="show=false"></div>
-      <div
-        class="relative bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4"
-      >
-        <div class="flex items-center justify-between">
+            class="soft-card p-3 border-l-4 dark:border-l-4 {% if category=='success' %}border-green-500{% elif category=='warning' %}border-yellow-500{% elif category=='danger' %}border-red-500{% else %}border-indigo-500{% endif %}"
+            <div class="relative" x-data="{open:false}">
+              <button
+                type="button"
+                class="soft-btn text-xs"
+                @click="open=!open"
+                title="Theme settings"
+              >
+                <span x-show="!document.documentElement.classList.contains('dark')" aria-hidden="true">
+                  <!-- Moon Icon -->
+                  <svg class="theme-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 0 1 11.21 3 7 7 0 1 0 21 12.79z"/></svg>
+                </span>
+                <span x-show="document.documentElement.classList.contains('dark')" aria-hidden="true">
+                  <!-- Sun Icon -->
+                  <svg class="theme-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                </span>
+                <span class="sr-only">Toggle theme menu</span>
+              </button>
+              <div
+                x-show="open"
+                @click.outside="open=false"
+                x-transition
+                class="absolute right-0 mt-2 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 z-50 text-xs space-y-1"
+              >
+                <button type="button" class="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700" @click="ThemeUtil.set('light'); open=false; fetch('{{ url_for('profile') }}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'theme_pref=light&_theme_update=1'})">Light</button>
+                <button type="button" class="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700" @click="ThemeUtil.set('dark'); open=false; fetch('{{ url_for('profile') }}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'theme_pref=dark&_theme_update=1'})">Dark</button>
+                <button type="button" class="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700" @click="ThemeUtil.set('system'); open=false; fetch('{{ url_for('profile') }}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'theme_pref=system&_theme_update=1'})">System</button>
+              </div>
+            </div>
           <h2 class="text-sm font-semibold">Report a System Issue</h2>
           <button class="text-slate-500" @click="show=false">✕</button>
         </div>
@@ -380,6 +447,8 @@
       src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
       defer
     ></script>
+    <script>window.__SERVER_THEME_PREF__='{{ user_theme_preference }}';</script>
+    <script src="{{ url_for('static', filename='js/theme.js') }}" defer></script>
     <script>
       (function(){
         const $=s=>document.querySelector(s); const modal=$('#versionModal'); const body=$('#versionBody');

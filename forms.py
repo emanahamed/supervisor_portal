@@ -65,6 +65,7 @@ class UserProfileForm(FlaskForm):
     )
     is_approved = BooleanField("Approved")
     is_superadmin = BooleanField("Superadmin")
+    theme_preference = SelectField("Theme Preference", choices=[('system','System'),('light','Light'),('dark','Dark')])
     password = PasswordField("New Password", validators=[Optional(), Length(min=6)])
     submit = SubmitField("Update Profile")
 

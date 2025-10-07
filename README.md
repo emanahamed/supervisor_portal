@@ -1,114 +1,241 @@
-# Excel Tutors — Observation Tracker (Flask + Tailwind Soft UI)
+# Excel Tutors Platform — Supervisor / Operations Portal
 
-A modern, responsive webapp to manage authentication (with superadmin approval), staff CRUD with import/export, observation cycles, and observation records grouped by cycle.
+Comprehensive Flask-based operations portal for tutoring centres: observations & reporting, staff & availability management, issues & tasks, appointments, invoicing, permissions, and internal error reporting — all wrapped in a modern Tailwind Soft UI skin.
 
-## Quickstart
+---
+
+## 1. Quickstart
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python app.py
+python app.py  # or: FLASK_APP=app.py flask run
 ```
 
-Open http://127.0.0.1:5000/
+Open: http://127.0.0.1:5000/
 
-**Superadmin (auto-created on first run):**
+Default superadmin (auto-seeded if no users exist):
 
-- Email: `@exceltutors.org.uksuperadmin`
+- Email: `superadmin@exceltutors.org.uk`
 - Password: `superadmin123`
 
-## Features
+> Change this immediately in production (Profile → Update password) and set a secure `SECRET_KEY`.
 
-- User registration; superadmin must approve accounts
-- Password reset via email (uses constants in `email_utils.py`)
-- Staff table with search/filter, CSV export, and guided import
-- Observation cycles and per-cycle observation CRUD
-- Per-tutor observation counts within a cycle to check "0/1/2/3 or more" quickly
-- Tutor Availability module (real-time synced, multi-filter, custom pagination)
-- Issue Tracking module (status, criticality, urgency, branch, metrics dashboard)
-- Meetings module (agenda scheduling + analytics, modal create/edit)
-- Tailwind (CDN) + Soft UI styling
-- Public appointment booking portal with bilingual (English/Bangla) copy, email confirmations, and 12-hour reminders (`/booking`)
+---
 
-### Tutor Availability Module (since 0.3.0)
+## 2. High-Level Feature Matrix
 
-### Issue Tracking Module (since 0.4.0)
+| Domain                        | Key Capabilities                                                                                                     | Notable Details                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Authentication & Users        | Registration + approval, profile pictures, password reset, per-user theme (light/dark/system)                        | Superadmin approval gate, caps-lock + visibility toggle UX, system theme auto-detect |
+| Permissions & Roles           | Fine-grained permission table, role grants, per-user allow/deny overrides, audit log                                 | Superadmin bypass; audit via `PermissionAudit`; role taxonomy upgrades (0.9.x)       |
+| Staff Management              | CRUD, CSV import (guided), CSV export, filtering/search                                                              | Import normalization (see `utils.py`), soft activation flag                          |
+| Observation Cycles & Reports  | Cycles, extended observation detail with structured checklists, PDF & Email reporting                                | Normalized checklist keys, JSON storage, Timeslot metadata (0.9.6)                   |
+| Availability                  | Remote sync + multi-filter (departments, branches, subjects, days), instant filtering, client pagination             | Canonical branch injection; debounced filter application                             |
+| Issues (Tracker)              | CRUD, multi-select filters (status/criticality/urgency/branch), change log audit, modal create/edit                  | Recent change inline expansion, badge theming, AJAX modal (0.9.7 UI refresh)         |
+| Tasks (To‑Dos)                | Assignee-focused dashboard metrics, filtering, modal create/edit, inline status update                               | Ordering heuristic (status → criticality → urgency → due date → recency)             |
+| Meetings                      | Participant scheduling, analytics (today/week/user), modal CRUD                                                      | Auto backfill of schema; partial reuse for forms                                     |
+| Appointments (Public + Admin) | Public bilingual booking, email confirmation + reminder, admin slot CRUD (single & bulk), cancellation flows         | APScheduler background reminder jobs; permission-gated admin UI                      |
+| Invoicing                     | Invoice creation, print-friendly HTML → browser PDF, email invoice action, company aggregates                        | Inline print CSS, per-company stats, email reuse of HTML template                    |
+| Error Reporting               | User/system issue capture, automatic 500 traceback reporting, screenshot upload, status workflow, dedupe fingerprint | Pagination, traceback truncation + expand, reporter notification on resolve (0.9.7)  |
+| Email Utilities               | Task assignment, appointment confirmation/reminder, invoice dispatch                                                 | Plain HTML with consistent button + typography styling                               |
+| Drag & Drop Enhancements      | Attendance fix upload, error screenshot                                                                              | Accessible, validation & preview feedback                                            |
 
-### Meetings Module (since 0.5.0)
+---
 
-Route: `/meetings`
+## 3. Detailed Module Descriptions
 
-Key capabilities:
+### 3.1 Authentication & Account Lifecycle
 
-- CRUD for meetings with fields: Participant (another user), Agenda/Reason, Date, Time, optional Student Name, Parent Name, Outcome, and implicit Booked By (current user).
-- Analytics cards summarising: Today (All), Week (All), Today (You), Week (You), Total.
-- Filters: Participant, Booked By, Date Range (start/end), text search (agenda substring).
-- Modal-based create/edit (AJAX). Full-page fallback retained for accessibility or direct navigation.
-- Backfill-safe SQLite schema tweaks for newly added columns (student_name, parent_name, outcome) without external migrations.
-- Shared lightweight table sorter & pagination (page-size + sorting) via `static/js/tables.js`.
-- Clean separation of form partial (`meetings/partials/_form_inner.html`) enabling reuse in modal and full page.
+- Registration produces unapproved user (`is_approved=False`).
+- Superadmin dashboard surfaces pending approvals.
+- Password reset: token signing via `itsdangerous`; forms in `templates/auth/*`.
+- Theme modes: Light / Dark / System. Quick dropdown updates persist instantly (AJAX) while profile form stores preference server-side; `system` tracks OS setting live.
 
-Route: `/issues`
+### 3.2 Permissions & Audit (since 0.9.0+)
 
-Key capabilities:
+- Data model: `Permission`, `RolePermission`, `UserPermission`, `PermissionAudit`.
+- Hierarchy: superadmin → user override (deny > allow) → role grant → implicit deny.
+- User overrides UI + Role matrix in Admin section.
+- Audit records allow/deny/inherit changes & role add/remove.
 
-- CRUD for issues with fields: Title, Details, Status (Pending / In Progress / Resolved), Criticality (Minor / Significant / Medium / Critical), Urgency (Low / Medium / High), Branch, Creator metadata.
-- Multi-select real-time filters (status, criticality, urgency, branches) + debounced text search.
-- Metrics cards: Total, Open, Resolved, Critical Open, High Urgency Open.
-- Soft UI + shared table sorter/paginator.
-- Badge colour accents for status (Resolved = green, In Progress = amber).
+### 3.3 Staff & Import/Export
 
-Route: `/availability`
+- Import pipeline (attendance/availability style): Pandas ingest + normalization (`normalize_staff_dataframe`).
+- CSV export retains stable column order for re-import diffing.
 
-Key capabilities:
+### 3.4 Observation & Extended Reports (0.7.0+; refined 0.9.6)
 
-- Real-time remote JSON fetch every page view with safe upsert (name + department key) and graceful fallback if remote fails.
-- Multi-select dropdown filters: Departments, Branches, Subjects, Days + debounced text search.
-- Instant (auto) filter application – no Apply button – minimal reload churn.
-- Custom client-side pagination & sorting (shared utility in `static/js/tables.js`) with page-size selector (10/25/50/100/250/All) persisted via `localStorage`.
-- Canonical branch normalization (Whitechapel, East Ham, Stratford, Docklands) appended if absent in data so UI options stay consistent.
-- Clean Soft UI dropdown pattern reused from Staff page for reliability.
+- `ObservationDetail` holds structured JSON checklists & narrative fields.
+- Normalization centralised (`checklist_utils.py`) eliminating variant key drift.
+- Report outputs: unified email & PDF (xhtml2pdf) with consistent tick/cross visuals; Timeslot added (0.9.6).
+- Migration script `migrate_checklists.py` canonicalises historical data with backup.
 
-### Versioning
+### 3.5 Availability Module
 
-### Tasks Module (since 0.6.0)
+- Multi-select filters with debounced apply; custom pagination & sort.
+- Automatic remote sync each view (idempotent upsert) + graceful error messaging.
 
-Route: `/todos`
+### 3.6 Issues Tracker (0.4.x → 0.9.7 modal refresh)
 
-Key capabilities:
+- Fields: Title, Details, Status, Criticality, Urgency, Branch, Action Taken.
+- Inline recent change log (last 5 edits) via `IssueChange` rows.
+- Responsive modal-based create/edit (AJAX) with accessible lifecycle (focus return, ESC close) added in 0.9.7.
 
-- CRUD for tasks with fields: Description, Notes, Actions Taken, Criticality (Minor / Significant / Medium / Critical), Urgency (Low / Medium / High), Status (Pending / Done), Due Date, Created By, Assigned To.
-- Metrics cards (scoped to current/selected assignee): Open, Done, Overdue, Due in 3 Days, Total.
-- Filtering: Assigned To (superadmin can change; others locked to self), single dropdowns for Status, Criticality, Urgency, plus text search.
-- Sorting prioritises: Pending first, then higher criticality & urgency, then earliest due date, then newest created.
-- Inline AJAX status update (select) + full modal create/edit (AJAX) with graceful full-page fallback.
-- Overdue highlighting (row tint) and due soon calculation (<=3 days left).
-- Access control: Only creator, assignee, or superadmin can edit/delete; visibility limited for non-superadmin users to their own assignments.
+### 3.7 Tasks / To‑Dos (0.6.0)
 
-Current version (0.6.0) lives in `version_info.py` (`VERSION` constant) and changelog entries in `VERSION.md` are displayed in-app via the version modal.
+- Dashboard metrics highlight workload distribution & urgency.
+- Inline status select fires small POST for immediate feedback.
 
-To bump version:
+### 3.8 Meetings (0.5.0)
 
-1. Update `VERSION` in `version_info.py`.
-2. Add a new heading & bullet list to `VERSION.md`.
-3. (Optional) Reference the new changes in README if it adds user-facing features.
+- Combines participant & booked_by roles for accountability.
+- Partial form reuse ensures consistent modal/full-page flows.
 
-### Tech Notes
+### 3.9 Appointments (0.9.5)
 
-- Database: SQLite (development). Migrate to Postgres/MySQL for production workloads.
-- ORM: SQLAlchemy (classic) with simple session usage—no Alembic migrations yet.
-- Auth: `flask-login`; approval gate for new accounts (`is_approved`).
-- Styling: Tailwind CDN + light custom Soft UI utility classes (see `base.html`).
-- Tables: Lightweight custom sorter + paginator (`static/js/tables.js`).
-- Remote Sync (Availability): HTTP GET to external endpoint, 12s timeout, error captured and surfaced non-fatally.
+- Public booking localized to English/Bangla; reminder 12h pre-start via APScheduler.
+- Admin: slot grid (upcoming vs past), bulk generation (duration slicing), overlap detection.
 
-### Roadmap Ideas
+### 3.10 Invoicing (0.9.4)
 
-- Add server-side pagination for very large availability datasets.
-- Introduce caching or ETag-based conditional remote sync.
-- Subject taxonomy normalization & tagging UI.
-- Export (CSV) for availability data.
-- Role-based visibility rules for availability notes.
+- Print mode triggered by `?print=1` prompts browser PDF workflow.
+- Company aggregates computed in-memory for filtered subset.
 
-> For production, change `SECRET_KEY`, consider a real mail provider, and move to a managed DB.
+### 3.11 Error Reporting (0.9.7)
+
+- Automatic capture for 500 errors (traceback + request context cached server-side).
+- Manual user reports via global modal.
+- SHA-256 fingerprint groups duplicates; reporter comment appended.
+- Traceback truncated & expandable to preserve UI performance.
+
+### 3.12 Attendance Fix Upload UX (0.9.7)
+
+- Replaces basic file input with drag & drop + validation; blocks submit until valid file selected.
+
+### 3.13 Theming & UI
+
+- Tailwind CDN, soft cards, badge semantics for statuses & priorities.
+- Centralized theme utility (`static/js/theme.js`) applies user/server/system preference with live OS change listener and smooth color transitions.
+- Lightweight table sorter/paginator (no heavy DataTables dependency).
+
+### 3.14 Time & Timezone Handling
+
+- Transition underway to `datetime.now(timezone.utc)` for awareness; coercion added to appointment comparisons to avoid naive/aware errors (post 0.9.7 patch).
+
+---
+
+## 4. Release Notes (Latest Highlights)
+
+The full changelog lives in `VERSION.md` and is rendered inside the app (Profile → View Changelog). Key recent releases:
+
+### 0.9.7 – Error Reporting & UX Polishing
+
+- Error reporting system (model, routes, modal, screenshot upload, fingerprint dedupe, pagination, truncated traceback display).
+- Global “Report Issue” modal + integrated 500 page auto-report path.
+- Attendance drag & drop upload redesign.
+- Issue creation/edit modal + improved accessibility.
+- Timezone-aware runtime adjustments in core flows.
+
+### 0.9.6 – Observation Checklist Reliability
+
+- Unified normalization & migration script with backup.
+- PDF/email parity improvements; Timeslot metadata.
+
+### 0.9.5 – Appointments & Bilingual Booking
+
+- Public booking portal (EN/BN), admin slot management, automated reminders.
+
+### 0.9.4 – Invoicing Overhaul
+
+- Print-friendly invoice & email sending; per-company aggregate metrics.
+
+### 0.9.0–0.9.3 – Permissions & Role Taxonomy
+
+- Fine-grained permission model, audit logging, role upgrades (Supervisor / Centre Manager / Admin / Super Admin).
+
+### 0.8.0 – Auth Experience Upgrade
+
+- Modernized login/register screens, dark mode, caps lock indicator.
+
+### 0.7.0 – Extended Observation Module
+
+- Structured extended reporting & unified PDF/email.
+
+Earlier versions: see `VERSION.md` for full history.
+
+---
+
+## 5. Versioning & Bumping
+
+1. Edit `VERSION` in `version_info.py`.
+2. Append a new section to `VERSION.md` (reverse chron order).
+3. (Optional) Summarize major user-facing pieces here in README.
+
+---
+
+## 6. Tech Stack & Architecture Notes
+
+- Flask 3.x app; SQLite default (swap to Postgres for production) – no Alembic yet (runtime auto-migration patterns for new tables/columns).
+- ORM: SQLAlchemy 2.x patterns embedded gradually (use of `Session.get` via Flask-SQLAlchemy).
+- Background jobs: APScheduler (optional import fallback) for appointment reminders.
+- Email: SMTP helper in `email_utils.py` (central composition functions per feature domain).
+- Assets: Minimal custom JS (table utilities, modals, drag & drop) for low bundle size.
+- Deployment: Provide `SECRET_KEY` and environment email creds; consider WSGI (gunicorn / waitress) + reverse proxy (nginx) and persistent DB.
+
+---
+
+## 7. Testing
+
+- Pytest suite (initial coverage: checklist normalization, company JSON endpoint) — extend with:
+  - Error reporting dedupe & status change notifications
+  - Appointment overlap & reminder scheduling
+  - Issue & task modal AJAX flows
+
+Run tests:
+
+```bash
+pytest -q
+```
+
+---
+
+## 8. Operational Hardening Checklist (Recommended)
+
+- [ ] Replace default superadmin credentials
+- [ ] Set secure `SECRET_KEY` via environment variable / config
+- [ ] Migrate DB to Postgres & add backups
+- [ ] Configure real SMTP + bounce monitoring
+- [ ] Add HTTPS termination (reverse proxy / load balancer)
+- [ ] Implement rate limiting (Flask-Limiter) on auth & reporting forms
+- [ ] Expand test coverage & add CI pipeline
+- [ ] Containerize (Dockerfile + multi-stage build) if targeting cloud deploy
+
+---
+
+## 9. Roadmap (Near-Term)
+
+- Error report filtering & search (status, reporter, date range)
+- Task & issue tagging / labels; bulk operations
+- Full timezone localization (user preference + zoneinfo)
+- Invoice aging buckets & CSV export
+- Appointment ICS attachments & rebooking links
+- Observation analytics dashboards (cross-cycle trends)
+
+---
+
+## 10. License / Usage
+
+Internal operational tool for Excel Tutors; license not explicitly specified. Add a LICENSE file before external distribution.
+
+---
+
+## 11. Support / Contribution
+
+- Open an Issue (if internal Git hosting) or extend test coverage with focused PRs.
+- Keep feature PRs small: include tests + changelog bump if user-facing.
+
+---
+
+Happy supervising! 🚀

@@ -374,6 +374,7 @@ def inject_version():
         'booking_language': lang,
         'supported_languages': SUPPORTED_LANGUAGES,  # lower-case for standard use
         'SUPPORTED_LANGUAGES': SUPPORTED_LANGUAGES,  # expose uppercase name used in some templates
+        'user_theme_preference': getattr(current_user, 'theme_preference', 'system') if current_user.is_authenticated else 'system',
     }
 
 # --------- Common Template Filters (dates, money) ---------- #
@@ -502,6 +503,11 @@ def create_tables_and_superadmin():
                 conn.execute(text("ALTER TABLE user ADD COLUMN role VARCHAR(80)"))
             if 'picture' not in cols:
                 conn.execute(text("ALTER TABLE user ADD COLUMN picture VARCHAR(255)"))
+            if 'theme_preference' not in cols:
+                try:
+                    conn.execute(text("ALTER TABLE user ADD COLUMN theme_preference VARCHAR(20) DEFAULT 'system'"))
+                except Exception:
+                    pass
     except Exception:
         # Silent fail; if this is not SQLite or table absent yet, it will be handled later
         pass
@@ -1776,12 +1782,24 @@ def booking_cancel(token: str):
 def profile():
     form = UserProfileForm()
     user = current_user
+    # Lightweight async theme update path (sent from base.html dropdown)
+    if request.method == 'POST' and request.form.get('_theme_update') == '1':
+        pref = (request.form.get('theme_pref') or 'system').lower()
+        if pref not in {'light','dark','system'}:
+            pref = 'system'
+        try:
+            user.theme_preference = pref
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return ('', 204)
     if request.method == 'GET':
         form.name.data = user.name
         form.email.data = user.email
         form.role.data = user.role or 'staff'
         form.is_approved.data = user.is_approved
         form.is_superadmin.data = user.is_superadmin
+        form.theme_preference.data = user.theme_preference or 'system'
     if form.validate_on_submit():
         # Email change: ensure not taken by another
         new_email = form.email.data.strip().lower()
@@ -1796,6 +1814,8 @@ def profile():
             user.role = form.role.data
             user.is_approved = form.is_approved.data
             user.is_superadmin = form.is_superadmin.data
+        # Theme preference (any user can change their own)
+        user.theme_preference = form.theme_preference.data or 'system'
         # Password update if provided
         if form.password.data:
             user.password_hash = generate_password_hash(form.password.data)

@@ -1,12 +1,13 @@
 {% extends 'auth/_auth_base.html' %} {% block title %}Create account{% endblock
 %} {% block auth_content %}
-<h1 class="text-2xl font-semibold tracking-tight text-white mb-2">
+<h1 class="text-3xl font-bold tracking-tight text-white mb-2">
   Create your account
 </h1>
 <p class="text-sm text-white/70 mb-6">
-  Fill in your details to request access.
+  Fill in your details to request access. A superadmin will approve your
+  account.
 </p>
-<form method="post" class="space-y-5">
+<form method="post" class="space-y-6" novalidate>
   {{ form.hidden_tag() }}
   <div class="space-y-1">
     <label
@@ -116,8 +117,11 @@
         </svg>
       </button>
     </div>
+    <div class="mt-2" id="regPwStrength" aria-live="polite"></div>
   </div>
-  <button class="primary-btn flex items-center justify-center gap-2 group">
+  <button
+    class="primary-btn flex items-center justify-center gap-2 group !mt-2"
+  >
     <svg
       class="w-4 h-4 opacity-90 group-hover:translate-x-0.5 transition-transform"
       fill="none"
@@ -133,12 +137,67 @@
     </svg>
     <span>Create account</span>
   </button>
-  <p class="text-[11px] text-white/70 leading-relaxed">
-    A superadmin must approve your account before you can log in.
-  </p>
-  <div class="text-xs text-white/70">
-    Already have an account?
+  <div class="flex items-center gap-3 my-4 text-white/40 text-[11px]">
+    <div class="h-px flex-1 bg-white/30"></div>
+    <span>next</span>
+    <div class="h-px flex-1 bg-white/30"></div>
+  </div>
+  <div
+    class="text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-white/70"
+  >
+    <div>Already have an account?</div>
     <a href="{{ url_for('login') }}" class="link">Sign in →</a>
   </div>
 </form>
+{% endblock %} {% block page_scripts %}
+<script>
+  // Registration password strength (same heuristic as login, kept separate for clarity)
+  (function () {
+    const pw = document.getElementById("reg_password");
+    const box = document.getElementById("regPwStrength");
+    if (!pw || !box) return;
+    function score(v) {
+      let s = 0;
+      if (!v) return 0;
+      if (v.length >= 8) s++;
+      if (v.length >= 12) s++;
+      if (/[A-Z]/.test(v)) s++;
+      if (/[a-z]/.test(v)) s++;
+      if (/[0-9]/.test(v)) s++;
+      if (/[^A-Za-z0-9]/.test(v)) s++;
+      return s;
+    }
+    function render() {
+      const v = pw.value;
+      const s = score(v);
+      const levels = [
+        "Weak",
+        "Fair",
+        "OK",
+        "Good",
+        "Strong",
+        "Robust",
+        "Elite",
+      ];
+      const pct = Math.min(100, (s / 6) * 100);
+      const label = levels[Math.min(levels.length - 1, s)];
+      box.innerHTML =
+        '<div class="w-full bg-white/20 rounded-full h-1.5 overflow-hidden"><div class="h-full transition-all" style="width:' +
+        pct +
+        '%;background:linear-gradient(90deg,#f87171,#fbbf24,#34d399,#6366f1)"></div></div>' +
+        '<div class="mt-1 text-[10px] tracking-wide uppercase font-medium ' +
+        (s <= 2
+          ? "text-rose-200"
+          : s <= 3
+          ? "text-amber-200"
+          : s <= 4
+          ? "text-emerald-200"
+          : "text-indigo-200") +
+        '">' +
+        (v ? "Strength: " + label : "") +
+        "</div>";
+    }
+    ["input", "change"].forEach((evt) => pw.addEventListener(evt, render));
+  })();
+</script>
 {% endblock %}

@@ -87,6 +87,16 @@ block content %}
         {% endif %}
         <div>
           <label class="block text-xs font-semibold text-slate-600 mb-1"
+            >Theme</label
+          >
+          {{ form.theme_preference(class='soft-input text-sm') }}
+          <p class="mt-1 text-[10px] text-slate-400">
+            Choose light, dark, or follow your system setting. Saved
+            server-side.
+          </p>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1"
             >New Password (leave blank to keep current)</label
           >
           {{ form.password(class='soft-input text-sm') }}
