@@ -264,49 +264,20 @@
       <main
         class="flex-1 overflow-y-auto px-4 py-6 bg-slate-50 dark:bg-slate-900 transition-colors duration-300"
       >
-        {% with messages = get_flashed_messages(with_categories=true) %} {% if
-        messages %}
-        <div class="space-y-2 mb-4">
-          {% for category, message in messages %}
-          <div
-            class="soft-card p-3 border-l-4 dark:border-l-4 {% if category=='success' %}border-green-500{% elif category=='warning' %}border-yellow-500{% elif category=='danger' %}border-red-500{% else %}border-indigo-500{% endif %}"
-            <div class="relative" x-data="{open:false}">
-              <button
-                type="button"
-                class="soft-btn text-xs"
-                @click="open=!open"
-                title="Theme settings"
-              >
-                <span x-show="!document.documentElement.classList.contains('dark')" aria-hidden="true">
-                  <!-- Moon Icon -->
-                  <svg class="theme-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 0 1 11.21 3 7 7 0 1 0 21 12.79z"/></svg>
-                </span>
-                <span x-show="document.documentElement.classList.contains('dark')" aria-hidden="true">
-                  <!-- Sun Icon -->
-                  <svg class="theme-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                </span>
-                <span class="sr-only">Toggle theme menu</span>
-              </button>
-              <div
-                x-show="open"
-                @click.outside="open=false"
-                x-transition
-                class="absolute right-0 mt-2 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 z-50 text-xs space-y-1"
-              >
-                <button type="button" class="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700" @click="ThemeUtil.set('light'); open=false; fetch('{{ url_for('profile') }}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'theme_pref=light&_theme_update=1'})">Light</button>
-                <button type="button" class="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700" @click="ThemeUtil.set('dark'); open=false; fetch('{{ url_for('profile') }}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'theme_pref=dark&_theme_update=1'})">Dark</button>
-                <button type="button" class="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700" @click="ThemeUtil.set('system'); open=false; fetch('{{ url_for('profile') }}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'theme_pref=system&_theme_update=1'})">System</button>
-              </div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="space-y-2 mb-4">
+              {% for category, message in messages %}
+                <div class="soft-card p-3 text-sm border-l-4 {% if category=='success' %}border-green-500{% elif category=='warning' %}border-yellow-500{% elif category=='danger' %}border-red-500{% else %}border-indigo-500{% endif %}">
+                  {{ message }}
+                </div>
+              {% endfor %}
             </div>
-          <h2 class="text-sm font-semibold">Report a System Issue</h2>
-          <button class="text-slate-500" @click="show=false">✕</button>
-        </div>
-        <form
-          method="post"
-          action="{{ url_for('error_report_create') }}"
-          enctype="multipart/form-data"
-          class="space-y-4"
-        >
+          {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+  {% block report_form %}
+  <form method="post" action="{{ url_for('error_report_create') }}" enctype="multipart/form-data" class="space-y-4">
           <div>
             <label class="text-xs font-semibold">Title</label>
             <input
@@ -344,7 +315,8 @@
             Diagnostic metadata is only attached if reporting from an error
             page.
           </p>
-        </form>
+  </form>
+  {% endblock %}
       </div>
     </div>
 

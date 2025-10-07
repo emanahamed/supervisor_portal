@@ -366,6 +366,44 @@ class Todo(db.Model):
         return (self.status or '').lower() == 'done'
 
 
+class Student(db.Model):
+    """Student record (since 0.9.9 tentative for Students module).
+
+    Tracks imported or manually created students. Import routine upserts on
+    student_id uniqueness. Preferred contact column is parsed to extract email
+    and phone heuristically; raw field retained for audit.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    type = db.Column(db.String(120))
+    year = db.Column(db.String(20), index=True)
+    preferred_contact_raw = db.Column(db.Text)
+    email = db.Column(db.String(255), index=True)
+    phone = db.Column(db.String(64), index=True)
+    address = db.Column(db.Text)
+    academic = db.Column(db.Text)
+    status = db.Column(db.String(120), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def label(self):  # Convenience
+        return f"{self.student_id} – {self.name}" if self.student_id else self.name
+
+class StudentChange(db.Model):
+    """Audit log for Student field changes (since 0.9.9)."""
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), index=True, nullable=False)
+    field = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
+    changed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    student = db.relationship('Student', lazy=True)
+    changed_by = db.relationship('User', lazy=True)
+
+
 # ---------------- Invoicing (Company & Invoice) ---------------- #
 class Company(db.Model):
     id = db.Column(db.Integer, primary_key=True)

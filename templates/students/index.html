@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+{% block page_title %}Students{% endblock %}
+{% block content %}
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">Student Directory</h2>
+    <span class="text-xs text-slate-400">{{ students|length }} shown{% if total is defined %} / {{ total }} total{% endif %}</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <button id="openStudentModal" class="soft-btn soft-btn-primary">Add Student</button>
+    <form action="{{ url_for('students_import') }}" method="post" enctype="multipart/form-data" class="flex items-center gap-2 text-xs">
+      <label class="soft-btn bg-slate-100 cursor-pointer">Import
+        <input type="file" name="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="this.form.submit()" />
+      </label>
+    </form>
+    <a href="{{ url_for('students_export') }}" class="soft-btn bg-slate-100">Export</a>
+  </div>
+</div>
+
+<div class="soft-card p-4 mb-6">
+  <form class="grid gap-4 md:grid-cols-5" method="get">
+    <div class="md:col-span-2 flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Search</label>
+      <input name="q" value="{{ q }}" class="soft-input" placeholder="Search students..." />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Year</label>
+      <select name="year" class="soft-input">
+        <option value="">All Years</option>
+        {% for y in years %}<option value="{{ y }}" {% if year_filter==y %}selected{% endif %}>{{ y }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Status</label>
+      <select name="status" class="soft-input">
+        <option value="">All Statuses</option>
+        {% for s in statuses %}<option value="{{ s }}" {% if status_filter==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end gap-2">
+      <button class="soft-btn bg-slate-100 w-full">Apply</button>
+      <a href="{{ url_for('students_index') }}" class="soft-btn bg-slate-100" title="Clear filters">Clear</a>
+    </div>
+  </form>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm" id="studentsTable" data-sortable data-paginate data-page-size="25">
+      <thead class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase">
+        <tr class="border-b border-slate-200">
+          {% macro sort_link(label, field) %}
+            {%- set is_current = (sort == field) -%}
+            {%- set next_dir = 'desc' if is_current and direction == 'asc' else 'asc' -%}
+            <a href="{{ url_for('students_index', sort=field, direction=next_dir, page=1, per_page=per_page, q=q, year=year_filter, status=status_filter) }}" class="inline-flex items-center gap-1 group">
+              <span>{{ label }}</span>
+              <span class="text-[9px] opacity-40 group-hover:opacity-80 transition">{%- if is_current -%}{{ '▲' if direction=='asc' else '▼' }}{%- else -%}◇{%- endif -%}</span>
+            </a>
+          {% endmacro %}
+          <th class="py-2 px-3 text-left w-8 no-sort">
+            <input type="checkbox" id="selectAllStudents" class="align-middle">
+          </th>
+          <th class="py-2 px-3 text-left">{{ sort_link('ID','id') }}</th>
+          <th class="py-2 px-3 text-left">{{ sort_link('Name','name') }}</th>
+            <th class="py-2 px-3 text-left">{{ sort_link('Year','year') }}</th>
+          <th class="py-2 px-3 text-left">{{ sort_link('Status','status') }}</th>
+          <th class="py-2 px-3 text-left">Email</th>
+          <th class="py-2 px-3 text-left">Phone</th>
+          <th class="py-2 px-3 text-left">Address</th>
+          <th class="py-2 px-3 text-left w-32 no-sort"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for s in students %}
+        <tr class="hover:bg-slate-50">
+          <td class="py-2 px-3"><input type="checkbox" name="ids" value="{{ s.id }}" form="bulkForm" class="student-select"></td>
+          <td class="py-2 px-3 font-mono whitespace-nowrap">{{ s.student_id }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ s.name }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ s.year or '' }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">
+            {% if s.status %}
+              {% set badge_map = {
+                'Active':'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+                'Inactive':'bg-slate-100 text-slate-600 ring-1 ring-slate-200',
+                'Pending':'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
+                'Withdrawn':'bg-rose-100 text-rose-700 ring-1 ring-rose-200'
+              } %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium {{ badge_map.get(s.status, 'bg-slate-100 text-slate-600 ring-1 ring-slate-200') }}">{{ s.status }}</span>
+            {% endif %}
+          </td>
+          <td class="py-2 px-3">{{ s.email or '' }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ s.phone or '' }}</td>
+          <td class="py-2 px-3 max-w-xs truncate" title="{{ s.address }}">{{ s.address or '' }}</td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            <a class="text-indigo-600" href="{{ url_for('students_detail', sid=s.id) }}">View</a>
+            <span class="text-slate-400">·</span>
+            <a class="text-sky-600" href="{{ url_for('students_detail', sid=s.id) }}#edit">Edit</a>
+            <span class="text-slate-400">·</span>
+            <form action="{{ url_for('students_delete', sid=s.id) }}" method="post" class="inline" style="display:inline" onsubmit="return confirm('Delete student?')">
+              {{ form.csrf_token }}
+              <button class="text-rose-600 hover:underline" style="background:none;padding:0;border:none" type="submit">Del</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Bulk Actions & Pagination -->
+<div class="mt-4 flex flex-col gap-4">
+  <div class="flex items-center gap-3 flex-wrap">
+    <form id="bulkForm" method="post" action="{{ url_for('students_bulk') }}" class="flex items-center gap-2">
+      {{ form.csrf_token }}
+      <input type="hidden" name="action" id="bulkActionInput">
+      <button type="button" data-action="activate" class="soft-btn bg-emerald-100 text-emerald-700 disabled:opacity-40" disabled>Activate</button>
+      <button type="button" data-action="inactivate" class="soft-btn bg-amber-100 text-amber-700 disabled:opacity-40" disabled>Inactivate</button>
+      <span class="text-xs text-slate-400" id="bulkCount">0 selected</span>
+    </form>
+  </div>
+  <div class="flex items-center justify-between flex-wrap gap-4 text-xs">
+    <div>
+      Page {{ page }} of {{ total_pages }} ({{ total }} total)
+    </div>
+    <div class="flex items-center gap-2">
+      {% if page > 1 %}
+        <a class="soft-btn bg-slate-100" href="{{ url_for('students_index', page=1, per_page=per_page, q=q, year=year_filter, status=status_filter) }}">First</a>
+        <a class="soft-btn bg-slate-100" href="{{ url_for('students_index', page=page-1, per_page=per_page, q=q, year=year_filter, status=status_filter) }}">Prev</a>
+      {% else %}
+        <span class="soft-btn bg-slate-50 text-slate-300 cursor-not-allowed">First</span>
+        <span class="soft-btn bg-slate-50 text-slate-300 cursor-not-allowed">Prev</span>
+      {% endif %}
+      {% if page < total_pages %}
+        <a class="soft-btn bg-slate-100" href="{{ url_for('students_index', page=page+1, per_page=per_page, q=q, year=year_filter, status=status_filter) }}">Next</a>
+        <a class="soft-btn bg-slate-100" href="{{ url_for('students_index', page=total_pages, per_page=per_page, q=q, year=year_filter, status=status_filter) }}">Last</a>
+      {% else %}
+        <span class="soft-btn bg-slate-50 text-slate-300 cursor-not-allowed">Next</span>
+        <span class="soft-btn bg-slate-50 text-slate-300 cursor-not-allowed">Last</span>
+      {% endif %}
+      <form method="get" class="inline-flex items-center gap-1">
+        <input type="hidden" name="q" value="{{ q }}">
+        <input type="hidden" name="year" value="{{ year_filter }}">
+        <input type="hidden" name="status" value="{{ status_filter }}">
+        <select name="per_page" class="soft-input text-xs" onchange="this.form.submit()">
+          {% for size in [25,50,100,250,500] %}
+            <option value="{{ size }}" {% if per_page==size %}selected{% endif %}>{{ size }}/page</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+  </div>
+</div>
+  <!-- Modal (kept within content block) -->
+<div id="studentModal" class="fixed inset-0 hidden items-center justify-center z-50">
+  <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" data-close-modal></div>
+  <div class="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-700">
+      <h3 class="text-sm font-semibold">New Student</h3>
+      <button class="text-slate-400 hover:text-slate-600 text-xl leading-none" data-close-modal>&times;</button>
+    </div>
+    <div class="overflow-auto p-5 text-xs" id="studentModalBody">
+      <form action="{{ url_for('students_create') }}" method="post" class="space-y-3" id="studentForm">
+        {{ form.hidden_tag() }}
+        <div>
+          <label class="block text-[11px] font-semibold mb-1">Student ID</label>
+          {{ form.student_id(class='soft-input w-full text-xs') }}
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold mb-1">Name</label>
+          {{ form.name(class='soft-input w-full text-xs') }}
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold mb-1">Type</label>
+            {{ form.type(class='soft-input w-full text-xs') }}
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold mb-1">Year</label>
+            {{ form.year(class='soft-input w-full text-xs') }}
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold mb-1">Status</label>
+            {{ form.status(class='soft-input w-full text-xs') }}
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold mb-1">Email</label>
+            {{ form.email(class='soft-input w-full text-xs') }}
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold mb-1">Phone</label>
+            {{ form.phone(class='soft-input w-full text-xs') }}
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold mb-1">Address</label>
+          {{ form.address(class='soft-input w-full text-xs') }}
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold mb-1">Academic</label>
+          {{ form.academic(class='soft-input w-full text-xs') }}
+        </div>
+        <div class="pt-2 flex gap-2">
+          <button class="soft-btn text-xs">Save</button>
+          <button type="button" class="soft-btn text-xs" data-close-modal>Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{# Suppress global error report form on this page #}
+{% block report_form %}{% endblock %}
+{% block page_scripts %}
+<script>
+  // Edit link anchor support
+  if (window.location.hash === '#edit') {
+    const editCard = document.querySelector('[data-edit-card]');
+    if (editCard) editCard.scrollIntoView({behavior:'smooth'});
+  }
+
+  // Bulk selection logic
+  const selectAll = document.getElementById('selectAllStudents');
+  const checkboxes = () => Array.from(document.querySelectorAll('.student-select'));
+  const bulkButtons = Array.from(document.querySelectorAll('#bulkForm button[data-action]'));
+  const bulkCount = document.getElementById('bulkCount');
+  const bulkActionInput = document.getElementById('bulkActionInput');
+  const bulkForm = document.getElementById('bulkForm');
+  function updateBulk(){
+    const selected = checkboxes().filter(c=>c.checked);
+    bulkCount.textContent = `${selected.length} selected`;
+    bulkButtons.forEach(b=>b.disabled = selected.length===0);
+  }
+  selectAll && selectAll.addEventListener('change', e=>{ checkboxes().forEach(c=> c.checked = e.target.checked); updateBulk(); });
+  document.addEventListener('change', e=>{ if(e.target.classList && e.target.classList.contains('student-select')) updateBulk(); });
+  bulkButtons.forEach(btn=> btn.addEventListener('click', ()=>{ bulkActionInput.value = btn.dataset.action; bulkForm.submit(); }));
+  updateBulk();
+  const modal = document.getElementById('studentModal');
+  const openBtn = document.getElementById('openStudentModal');
+  function openModal(){ modal.classList.remove('hidden'); modal.classList.add('flex'); }
+  function closeModal(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
+  openBtn && openBtn.addEventListener('click', openModal);
+  modal && modal.addEventListener('click', e=>{ if(e.target.hasAttribute('data-close-modal')) closeModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !modal.classList.contains('hidden')) closeModal(); });
+</script>
+{% endblock %}

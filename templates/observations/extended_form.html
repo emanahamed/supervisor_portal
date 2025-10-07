@@ -57,7 +57,7 @@
           {% set key_bare = key_full %}
         {% endif %}
         {# Some earlier records may have kept prefix; treat both as truthy #}
-  {% set is_checked = (checklist_value_for(prefix, data, item) if data else False) %}
+  {% set is_checked = (data.get(key_full) or data.get(prefix + '_' + key_full)) %}
         <label class="flex items-center gap-2 text-sm bg-slate-50 rounded px-3 py-2">
           <input type="checkbox" name="{{ prefix }}_{{ key_full }}" value="1" class="w-4 h-4 text-indigo-600" {% if is_checked %}checked{% endif %}>
           <span class="text-slate-700">{{ item }}</span>

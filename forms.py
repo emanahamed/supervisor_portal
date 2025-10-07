@@ -189,3 +189,16 @@ class InvoiceForm(FlaskForm):
     status = SelectField("Status", choices=[('PAID','PAID'),('UNPAID','UNPAID')], validators=[DataRequired()])
     notes = TextAreaField("Notes", validators=[Optional(), Length(max=2000)])
     submit = SubmitField("Save Invoice")
+
+
+class StudentForm(FlaskForm):
+    student_id = StringField("Student ID", validators=[DataRequired(), Length(max=64)])
+    name = StringField("Name", validators=[DataRequired(), Length(max=255)])
+    type = StringField("Type", validators=[Optional(), Length(max=120)])
+    year = StringField("Year", validators=[Optional(), Length(max=20)])
+    email = StringField("Email", validators=[Optional(), Email(), Length(max=255)])
+    phone = StringField("Phone", validators=[Optional(), Length(max=64)])
+    address = TextAreaField("Address", validators=[Optional(), Length(max=2000)])
+    academic = TextAreaField("Academic", validators=[Optional(), Length(max=5000)])
+    status = StringField("Status", validators=[Optional(), Length(max=120)])
+    submit = SubmitField("Save Student")

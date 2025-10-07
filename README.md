@@ -130,6 +130,16 @@ Default superadmin (auto-seeded if no users exist):
 
 The full changelog lives in `VERSION.md` and is rendered inside the app (Profile → View Changelog). Key recent releases:
 
+### 0.9.9 – Students Module & List UX
+
+- New Students module (CRUD + import/export) with field-level audit log (`StudentChange`).
+- Bulk activate / inactivate, pagination, server-side multi-key sorting (Active first → primary → ID).
+- Tailwind restyle of list & detail pages; status badges + last-change summary.
+- Clickable sortable headers (ID / Name / Year / Status) with direction indicators.
+- Colored status badges (Active / Inactive / Pending / Withdrawn) and condensed detail header change snippet.
+- Error report form suppressed on student pages via overridable block.
+- Audit test added (`test_students_audit.py`).
+
 ### 0.9.7 – Error Reporting & UX Polishing
 
 - Error reporting system (model, routes, modal, screenshot upload, fingerprint dedupe, pagination, truncated traceback display).
@@ -169,9 +179,11 @@ Earlier versions: see `VERSION.md` for full history.
 
 ## 5. Versioning & Bumping
 
-1. Edit `VERSION` in `version_info.py`.
-2. Append a new section to `VERSION.md` (reverse chron order).
-3. (Optional) Summarize major user-facing pieces here in README.
+1. Edit `VERSION` in `version_info.py` (semantic-ish minor bump for new modules / notable features).
+2. Append a new section to `VERSION.md` (reverse chronological order) with: headline, bullet list of features, follow-ups, migration notes.
+3. Summarize major user-facing pieces (top 1–2) in README Release Notes if impactful (keep concise, point deeper details to `VERSION.md`).
+4. Add/adjust tests for new behaviors (e.g., audit, sorting, bulk ops) before bump if possible.
+5. Git tag recommended: `git tag vX.Y.Z && git push --tags` (not yet automated).
 
 ---
 

@@ -16,7 +16,7 @@ from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import and_, or_, text
+from sqlalchemy import and_, case, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -36,13 +36,15 @@ from forms import (AppointmentBookingActionForm, AppointmentBookingForm,
                    AppointmentSlotActionForm, AppointmentSlotBulkForm,
                    AppointmentSlotForm, AvailabilityForm, CompanyForm,
                    CycleForm, InvoiceForm, IssueForm, LoginForm, MeetingForm,
-                   ObservationForm, RegisterForm, StaffForm, TodoForm,
-                   UserProfileForm)
+                   ObservationForm, RegisterForm, StaffForm, StudentForm,
+                   TodoForm, UserProfileForm)
 from models import (AppointmentBooking, AppointmentSlot, Availability, Company,
                     ErrorReport, Invoice, Issue, IssueChange, Meeting,
                     Observation, ObservationCycle, Permission, PermissionAudit,
-                    RolePermission, Staff, Todo, User, UserPermission, db)
-from utils import BRANCH_CHOICES, allowed_file, normalize_staff_dataframe
+                    RolePermission, Staff, Student, StudentChange, Todo, User,
+                    UserPermission, db)
+from utils import (BRANCH_CHOICES, allowed_file, normalize_staff_dataframe,
+                   parse_preferred_contact)
 from version_info import VERSION, get_changelog
 
 SUPPORTED_LANGUAGES = {'en': 'English', 'bn': 'বাংলা'}
@@ -319,6 +321,20 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
 ts = URLSafeTimedSerializer(SECRET_KEY)
+
+# Import-time minimal schema patch (ensures test harness db.create_all covers new columns)
+with app.app_context():  # pragma: no cover - simple safety patch
+    try:
+        from sqlalchemy import text as _text
+        with db.engine.connect() as _conn:
+            cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(user)"))}
+            if 'theme_preference' not in cols and 'user' in {t[0] for t in _conn.execute(_text("SELECT name FROM sqlite_master WHERE type='table'"))}:
+                try:
+                    _conn.execute(_text("ALTER TABLE user ADD COLUMN theme_preference VARCHAR(20) DEFAULT 'system'"))
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 # --------------- Permission Helpers (server-side) --------------- #
 
@@ -625,6 +641,36 @@ def create_tables_and_superadmin():
                     conn.execute(text("ALTER TABLE company ADD COLUMN ofsted_reg_no VARCHAR(64)"))
             except Exception:
                 pass
+            # Students table (since 0.9.9) - simple schema; preferred_contact_raw retained
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS student (
+                id INTEGER PRIMARY KEY,
+                student_id VARCHAR(64) NOT NULL UNIQUE,
+                name VARCHAR(255) NOT NULL,
+                type VARCHAR(120),
+                year VARCHAR(20),
+                preferred_contact_raw TEXT,
+                email VARCHAR(255),
+                phone VARCHAR(64),
+                address TEXT,
+                academic TEXT,
+                status VARCHAR(120),
+                created_at DATETIME,
+                updated_at DATETIME
+            )"""))
+            # Student change audit table (since 0.9.9)
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS student_change (
+                id INTEGER PRIMARY KEY,
+                student_id INTEGER NOT NULL,
+                field VARCHAR(120) NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                changed_by_id INTEGER NOT NULL,
+                changed_at DATETIME,
+                FOREIGN KEY(student_id) REFERENCES student(id),
+                FOREIGN KEY(changed_by_id) REFERENCES user(id)
+            )"""))
     except Exception:
         pass
     # Seed permissions & default role mappings if empty (idempotent)
@@ -643,6 +689,7 @@ def create_tables_and_superadmin():
             ('view_reports','View / generate reports'),
             ('manage_invoices','Invoice & company management'),
             ('manage_appointments','Manage appointment slots & bookings'),
+            ('manage_students','Manage student records'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -660,6 +707,10 @@ def create_tables_and_superadmin():
             'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports'},
             'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments'},
         }
+        # Admin should also manage students (append if not present for backward runs)
+        role_defaults['admin'].add('manage_students')
+        role_defaults['centre_manager'].add('manage_students')
+        role_defaults['supervisor'].add('manage_students')  # allow view/manage if desired
         for role, perms in role_defaults.items():
             has_any = RolePermission.query.filter_by(role=role).first()
             if not has_any:
@@ -2008,6 +2059,278 @@ def staff_toggle_active(sid):
     flash(f"{'Activated' if s.active else 'Deactivated'} {s.name}", 'success')
     # Preserve filters (except pagination) by redirecting back
     return redirect(request.referrer or url_for('staff_index'))
+
+# ---------------- Students Module ---------------- #
+
+@app.route('/students')
+@login_required
+@permission_required('manage_students')
+def students_index():
+    # Filters
+    q = (request.args.get('q') or '').lower().strip()
+    year_filter = (request.args.get('year') or '').strip()
+    status_filter = (request.args.get('status') or '').strip()
+    query = Student.query
+    # Sorting
+    sort = request.args.get('sort') or 'id'
+    direction = request.args.get('direction') or 'asc'
+    # Provide deterministic multi-key default: id asc, status Active first
+    # We treat "active" concept as status == 'Active'; emulate by ordering on a boolean expression
+    active_first = case((Student.status == 'Active', 0), else_=1)
+    if sort == 'name':
+        primary = Student.name.asc() if direction == 'asc' else Student.name.desc()
+    elif sort == 'student_id':
+        primary = Student.student_id.asc() if direction == 'asc' else Student.student_id.desc()
+    elif sort == 'year':
+        primary = Student.year.asc() if direction == 'asc' else Student.year.desc()
+    elif sort == 'status':
+        primary = Student.status.asc() if direction == 'asc' else Student.status.desc()
+    else:
+        sort = 'id'
+        primary = Student.id.asc() if direction == 'asc' else Student.id.desc()
+    # Default ordering always layers active_first then the chosen primary key then id tie-breaker
+    query = query.order_by(active_first, primary, Student.id.asc())
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Student.name.ilike(like), Student.student_id.ilike(like), Student.address.ilike(like)))
+    if year_filter:
+        query = query.filter(Student.year == year_filter)
+    if status_filter:
+        query = query.filter(Student.status == status_filter)
+    # Pagination (server-side) if dataset large
+    try:
+        page = max(int(request.args.get('page', 1)), 1)
+        per_page = min(max(int(request.args.get('per_page', 100)), 1), 500)
+    except ValueError:
+        page, per_page = 1, 100
+    total = query.count()
+    students = (query.offset((page-1)*per_page)
+                     .limit(per_page)
+                     .all())
+    # Distinct years & statuses for filter selects
+    years = [r[0] for r in db.session.query(Student.year).distinct().filter(Student.year.isnot(None)).order_by(Student.year.asc()).all()]
+    statuses = [r[0] for r in db.session.query(Student.status).distinct().filter(Student.status.isnot(None)).order_by(Student.status.asc()).all()]
+    form = StudentForm()
+    total_pages = (total // per_page) + (1 if total % per_page else 0)
+    return render_template('students/index.html', students=students, form=form, years=years, statuses=statuses, year_filter=year_filter, status_filter=status_filter, q=q, total=total, page=page, per_page=per_page, total_pages=total_pages, sort=sort, direction=direction)
+
+@app.route('/students/create', methods=['POST'])
+@login_required
+@permission_required('manage_students')
+def students_create():
+    form = StudentForm()
+    if form.validate_on_submit():
+        existing = Student.query.filter_by(student_id=form.student_id.data.strip()).first()
+        if existing:
+            flash('Student ID already exists', 'warning')
+        else:
+            s = Student(
+                student_id=form.student_id.data.strip(),
+                name=form.name.data.strip(),
+                type=form.type.data.strip() if form.type.data else None,
+                year=form.year.data.strip() if form.year.data else None,
+                email=form.email.data.strip() if form.email.data else None,
+                phone=form.phone.data.strip() if form.phone.data else None,
+                address=form.address.data.strip() if form.address.data else None,
+                academic=form.academic.data.strip() if form.academic.data else None,
+                status=form.status.data.strip() if form.status.data else None,
+            )
+            db.session.add(s); db.session.commit()
+            flash('Student created','success')
+    else:
+        flash('Please correct errors','danger')
+    return redirect(url_for('students_index'))
+
+def _log_student_changes(student, changed_by, before: dict, after: dict):
+    for field, old_val in before.items():
+        new_val = after.get(field)
+        if old_val != new_val:
+            db.session.add(StudentChange(student_id=student.id, field=field, old_value=str(old_val) if old_val is not None else None, new_value=str(new_val) if new_val is not None else None, changed_by_id=changed_by.id))
+
+@app.route('/students/<int:sid>')
+@login_required
+@permission_required('manage_students')
+def students_detail(sid):
+    student = Student.query.get_or_404(sid)
+    changes = StudentChange.query.filter_by(student_id=student.id).order_by(StudentChange.changed_at.desc()).limit(200).all()
+    form = StudentForm(obj=student)
+    return render_template('students/detail.html', student=student, changes=changes, form=form)
+
+@app.route('/students/<int:sid>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_students')
+def students_edit(sid):
+    student = Student.query.get_or_404(sid)
+    if request.method == 'GET':
+        return redirect(url_for('students_detail', sid=student.id))
+    form = StudentForm()
+    if form.validate_on_submit():
+        # Uniqueness check if student_id changed
+        new_sid = form.student_id.data.strip()
+        if new_sid != student.student_id and Student.query.filter_by(student_id=new_sid).first():
+            flash('Student ID already exists','warning')
+            return redirect(url_for('students_detail', sid=student.id))
+        before = {
+            'student_id': student.student_id,
+            'name': student.name,
+            'type': student.type,
+            'year': student.year,
+            'email': student.email,
+            'phone': student.phone,
+            'address': student.address,
+            'academic': student.academic,
+            'status': student.status,
+        }
+        student.student_id = new_sid
+        student.name = form.name.data.strip()
+        student.type = form.type.data.strip() if form.type.data else None
+        student.year = form.year.data.strip() if form.year.data else None
+        student.email = form.email.data.strip() if form.email.data else None
+        student.phone = form.phone.data.strip() if form.phone.data else None
+        student.address = form.address.data.strip() if form.address.data else None
+        student.academic = form.academic.data.strip() if form.academic.data else None
+        student.status = form.status.data.strip() if form.status.data else None
+        after = {
+            'student_id': student.student_id,
+            'name': student.name,
+            'type': student.type,
+            'year': student.year,
+            'email': student.email,
+            'phone': student.phone,
+            'address': student.address,
+            'academic': student.academic,
+            'status': student.status,
+        }
+        _log_student_changes(student, current_user, before, after)
+        db.session.commit()
+        flash('Student updated','success')
+    else:
+        flash('Please correct errors','danger')
+    return redirect(url_for('students_detail', sid=student.id))
+
+@app.route('/students/<int:sid>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_students')
+def students_delete(sid):
+    student = Student.query.get_or_404(sid)
+    db.session.delete(student)
+    db.session.commit()
+    flash('Student deleted','info')
+    return redirect(url_for('students_index'))
+
+@app.route('/students/bulk', methods=['POST'])
+@login_required
+@permission_required('manage_students')
+def students_bulk():
+    action = request.form.get('action')
+    ids = request.form.getlist('ids')
+    if not action or not ids:
+        flash('No bulk action performed','warning')
+        return redirect(request.referrer or url_for('students_index'))
+    q = Student.query.filter(Student.id.in_(ids))
+    count = 0
+    if action == 'activate':
+        for s in q:
+            if s.status != 'Active':
+                s.status = 'Active'; count += 1
+    elif action == 'inactivate':
+        for s in q:
+            if s.status != 'Inactive':
+                s.status = 'Inactive'; count += 1
+    else:
+        flash('Unknown action','danger')
+        return redirect(request.referrer or url_for('students_index'))
+    db.session.commit()
+    flash(f'Bulk update applied to {count} students','success')
+    return redirect(request.referrer or url_for('students_index'))
+
+@app.route('/students/import', methods=['POST'])
+@login_required
+@permission_required('manage_students')
+def students_import():
+    file = request.files.get('file')
+    if not file or not file.filename:
+        flash('No file provided','warning'); return redirect(url_for('students_index'))
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in {'.xlsx','.xls','.csv'}:
+        flash('Unsupported file type','danger'); return redirect(url_for('students_index'))
+    try:
+        file.seek(0)
+        if ext == '.csv':
+            import pandas as pd
+            df = pd.read_csv(file)
+        else:
+            import pandas as pd
+            df = pd.read_excel(file)
+    except Exception as e:
+        flash(f'Failed to read file: {e}','danger'); return redirect(url_for('students_index'))
+    # Normalize columns
+    col_map = {c.lower().strip(): c for c in df.columns}
+    wanted = ['student id','name','type','year','preferred contact','address','academic','status']
+    processed = 0; updated = 0; created = 0
+    for idx, row in df.iterrows():
+        def val(key):
+            lk = key.lower()
+            if lk in col_map:
+                return row[col_map[lk]] if not (isinstance(row[col_map[lk]], float) and pd.isna(row[col_map[lk]])) else None
+            return None
+        sid = str(val('student id') or '').strip()
+        name = str(val('name') or '').strip()
+        if not sid or not name:
+            continue
+        preferred_raw = val('preferred contact')
+        email, phone = parse_preferred_contact(str(preferred_raw) if preferred_raw is not None else None)
+        student = Student.query.filter_by(student_id=sid).first()
+        if not student:
+            student = Student(student_id=sid, name=name)
+            db.session.add(student)
+            created += 1
+        else:
+            updated += 1
+        # Update fields (do not blank out if missing; only overwrite if provided)
+        student.name = name or student.name
+        year_val = val('year'); student.year = str(year_val).strip() if year_val else student.year
+        address_val = val('address'); student.address = str(address_val).strip() if address_val else student.address
+        status_val = val('status'); student.status = str(status_val).strip() if status_val else student.status
+        type_val = val('type'); student.type = str(type_val).strip() if type_val else student.type
+        acad_val = val('academic'); student.academic = str(acad_val).strip() if acad_val else student.academic
+        student.preferred_contact_raw = preferred_raw if preferred_raw is not None else student.preferred_contact_raw
+        if email: student.email = email
+        if phone: student.phone = phone
+        processed += 1
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback(); flash(f'Import failed: {e}','danger'); return redirect(url_for('students_index'))
+    flash(f'Import complete: {processed} rows processed, {created} created, {updated} updated.','success')
+    return redirect(url_for('students_index'))
+
+@app.route('/students/export')
+@login_required
+@permission_required('manage_students')
+def students_export():
+    import pandas as pd
+    rows = Student.query.order_by(Student.student_id.asc()).all()
+    data = []
+    for s in rows:
+        data.append({
+            'Student ID': s.student_id,
+            'Name': s.name,
+            'Type': s.type,
+            'Year': s.year,
+            'Preferred Contact': s.preferred_contact_raw or (s.email or '') + (' ' + s.phone if s.phone else ''),
+            'Address': s.address,
+            'Academic': s.academic,
+            'Status': s.status,
+            'Email Parsed': s.email,
+            'Phone Parsed': s.phone,
+        })
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Students')
+    out.seek(0)
+    return send_file(out, as_attachment=True, download_name='students_export.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route("/staff/import", methods=["GET","POST"])
 @login_required

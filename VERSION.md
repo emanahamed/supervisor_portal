@@ -1,5 +1,43 @@
 # Version History
 
+## 0.9.9 - 2025-10-07
+
+Students Module (CRUD, Import/Export, Audit) + UI Consistency & Sorting:
+
+- Introduced full Students module with create (modal), detail (edit + audit log), delete, CSV/XLSX import (idempotent upsert) & Excel export.
+- Added `Student` model (id, student_id unique, name, type, year, email, phone, address, academic, status, timestamps) and `StudentChange` audit model for field-level edit tracking (old/new + actor + timestamp).
+- Import pipeline parses preferred contact column (email/phone extraction) and updates existing rows without blanking missing fields; export includes both parsed and raw contact forms.
+- Added bulk Activate / Inactivate actions with multi-select + select-all UI.
+- Implemented server-side pagination (page & per_page) with navigation controls and per-page selector.
+- Added server-side sorting (default: Active status first then ID asc) with clickable column headers toggling asc/desc for ID, Name, Year, Status.
+- Unified Students list & detail styling to Tailwind Soft UI (replacing legacy Bootstrap remnants) with status badges & condensed last change summary.
+- Removed global error reporting form from Students pages via new `report_form` overridable block and per-template suppression.
+- Added audit-focused pytest (`test_students_audit.py`) verifying edit generates `StudentChange` rows for changed fields (name & status scenario).
+- Enhanced index actions column: View / Edit anchor (scroll to form) / Delete (POST with CSRF).
+- Added colored status badges (Active / Inactive / Pending / Withdrawn) reused across list & detail.
+
+Changelog & Versioning Enhancements:
+
+- Bumped `VERSION` to 0.9.9; updated README release summary guidelines.
+- Established consistent multi-key default ordering pattern (status priority + primary sort + id).
+
+Follow-Ups (Not in 0.9.9):
+
+- Add filtering quick pills for Active / Inactive.
+- Extend audit test coverage (import upsert scenarios, bulk status changes) and pagination edge tests.
+- Add inline duplicate ID real-time validation (AJAX) in modal before submission.
+- Optional student merge & archival workflow.
+
+Upgrade / Migration Notes:
+
+`Student` and `StudentChange` tables auto-create on first request if missing (runtime DDL for SQLite). For production RDBMS without permissive DDL, apply equivalent CREATE TABLE statements or integrate Alembic migration before deployment.
+
+Security / UX Considerations:
+
+- Bulk operations restricted to `manage_students` permission.
+- Delete action converted to POST form (CSRF-protected) instead of GET link.
+- Error report form suppression ensures focused UI on student workflows.
+
 ## 0.9.8 - 2025-10-07
 
 Theme Preference Persistence, System Detection & SVG Toggle:
