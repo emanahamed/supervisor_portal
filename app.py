@@ -2738,7 +2738,7 @@ def pricing_config():
                 flash(f'Invalid stationery JSON: {exc}', 'danger')
         flash('Pricing configuration updated','success')
         return redirect(url_for('pricing_config'))
-    return render_template('tools/pricing.html', form=form, matrix=matrix)
+    return render_template('tools/pricing.html', form=form, matrix=matrix, registration_fee=get_setting('registration_fee', 25))
 
 @app.route('/tools/enroll')
 @login_required

@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
-VERSION = "0.9.9"
+VERSION = "2.0.1"
 
 _VERSION_FILE_NAME = 'VERSION.md'
 

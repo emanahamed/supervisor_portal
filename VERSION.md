@@ -1,6 +1,41 @@
 # Version History
 
-## 0.9.9 - 2025-10-07
+## 2.0.1 - 2025-10-08
+
+Sidebar Icon Consistency & Layout Spacing Polish:
+
+- Added compact SVG icons to every nested (leaf) item inside collapsible sidebar groups (Admin, Books, Invoice, Meetings, Staff Management, Student Management, Tools, Tutor Observations) for faster visual scanning and consistent affordance hierarchy.
+- Adjusted nav leaf styling (line-height tweak) to vertically align new 14px icon set with text baseline and avoid jitter between active/hover states.
+- Increased horizontal padding between the sidebar and main content (header & main containers now use `pl-8`) improving readability of page titles and reducing visual crowding next to the navigation edge.
+- Minor a11y/UX improvement: text still readable in reduced motion environments (no animation changes required); icons inherit current color for dark/light parity.
+- No database or API changes; purely presentational. Safe patch release.
+
+Follow-Ups (Not in 2.0.1):
+
+- Optional subtle vertical divider shadow between sidebar/content for additional depth.
+- Keyboard focus outline refinement for newly iconised leaf links.
+- Extract repeating SVG attributes into a macro for DRYness if icon set expands further.
+
+## 2.0.0 - 2025-10-08
+
+Navigation Redesign, Branding Alignment & Modern Auth Layout:
+
+- Rebuilt left sidebar navigation with grouped, collapsible sections (persisted open state in `localStorage` under `navStateV2`) and fine-grained permission gating (`can()` + superadmin safeguards). Groups alphabetically ordered inside domains (Admin, Books, Invoices, Issues, Meetings, Staff, Students, Tasks, Tools, Tutor Observations) for faster scan.
+- Removed legacy scattered conditional logic and fragile `globals()` fallbacks in nav partial; fixed 500 error triggered by undefined `globals` usage on certain tool routes by referencing concrete endpoint names (`book_orders_index`, `companies_index`).
+- Replaced placeholder Tailwind mark with official Excel Tutors logo across sidebar & auth pages; added subtle blend overlay on hero image side of auth views.
+- Fully replaced legacy glassmorphism auth templates with a modern split layout (`_auth_base.html`): left form panel, right responsive hero image, dark‑mode ready, simplified markup, accessible form labels, and consistent flash message styling across state categories.
+- Updated login (`auth/login.html`) and registration (`auth/register.html`) pages to new design system: semantic headings, improved validation message styling, password strength meter (registration), consistent button styles, and improved dark mode color tokens.
+- Consolidated theme initialization for auth views (localStorage `authTheme` respected) and retained Caps Lock detection script; removed redundant gradient/background decorative DOM nodes from old layout.
+- Changelog entry & version bump to 2.0.0 (no DB schema changes required).
+
+Follow-Ups (Not in 2.0.0):
+
+- Add dedicated dark/light mode toggle affordance on auth screen (currently honors stored preference only).
+- Unify password strength component between login (optional) & registration for consistency.
+- Add social / SSO placeholder region (commented) for future identity provider integrations.
+- Integrate rate limiting feedback & generic auth error code mapping (lockout, disabled account) for clearer user messaging.
+
+## 1.9.9 - 2025-10-07
 
 Students Module (CRUD, Import/Export, Audit) + UI Consistency & Sorting:
 
@@ -18,10 +53,10 @@ Students Module (CRUD, Import/Export, Audit) + UI Consistency & Sorting:
 
 Changelog & Versioning Enhancements:
 
-- Bumped `VERSION` to 0.9.9; updated README release summary guidelines.
+- Bumped `VERSION` to 1.9.9; updated README release summary guidelines.
 - Established consistent multi-key default ordering pattern (status priority + primary sort + id).
 
-Follow-Ups (Not in 0.9.9):
+Follow-Ups (Not in 1.9.9):
 
 - Add filtering quick pills for Active / Inactive.
 - Extend audit test coverage (import upsert scenarios, bulk status changes) and pagination edge tests.
@@ -38,7 +73,7 @@ Security / UX Considerations:
 - Delete action converted to POST form (CSRF-protected) instead of GET link.
 - Error report form suppression ensures focused UI on student workflows.
 
-## 0.9.8 - 2025-10-07
+## 1.9.8 - 2025-10-07
 
 Theme Preference Persistence, System Detection & SVG Toggle:
 
@@ -59,13 +94,13 @@ Testing:
 
 - Added pytest covering quick theme preference update path (`_theme_update=1`).
 
-Follow-Ups (Not in 0.9.8):
+Follow-Ups (Not in 1.9.8):
 
 - Persist resolved explicit vs system choice as separate key (currently reuses `portalTheme`); optional enhancement to track original user intent more explicitly.
 - Add visual indicator (checkmark) in theme dropdown reflecting active mode.
 - Consolidate remaining inline theme-related JS into utility for version modal / legacy auth pages.
 
-## 0.9.7 - 2025-10-06
+## 1.9.7 - 2025-10-06
 
 Error Reporting System, Traceback Hygiene, Fingerprinting & UX Improvements:
 
@@ -93,7 +128,7 @@ Misc / Internal:
 - Updated navigation & base layout to integrate reporting modal & admin link.
 - Added fingerprint column usage for error grouping (foundation for future analytics / suppression logic).
 
-Follow-Ups (Not in 0.9.7):
+Follow-Ups (Not in 1.9.7):
 
 - Migrate all remaining model default timestamps to timezone-aware factories.
 - Add automated tests for error reporting (fingerprint de-dupe, status change notification, pagination) & drag/drop file upload (feature detection / progressive enhancement).
@@ -105,7 +140,7 @@ Upgrade Note:
 
 No destructive migrations required; `ErrorReport` table will auto-create on first request (SQLite pragmas). Existing deployments simply pick up new navigation & modal. Consider backfilling historical 500 logs via manual insert if legacy data is desired.
 
-## 0.9.6 - 2025-10-06
+## 1.9.6 - 2025-10-06
 
 Extended Observation Checklist Reliability & PDF Polishing:
 
@@ -123,7 +158,7 @@ Internal / Maintenance:
 - Central helper exposes `normalize_label`, `generate_variants`, `normalize_mapping`, and `value_for` (registered as Jinja globals) enabling consistent future additions.
 - Simplified templates & reduced conditional proliferation; improved maintainability of observation reporting pipeline.
 
-Follow-Ups (Not in 0.9.6):
+Follow-Ups (Not in 1.9.6):
 
 - Remove debug endpoint after confirming no further data anomalies.
 - Expand test coverage to additional checklist groups (homework, classwork, org_mgmt) with seeded truth scenarios.
@@ -133,7 +168,7 @@ Migration Note:
 
 All existing observation detail records processed; backup stored as `backup_checklists_<epoch>.json` in project root for rollback/audit.
 
-## 0.9.5 - 2025-10-05
+## 1.9.5 - 2025-10-05
 
 Appointment Scheduling (Public & Admin) + Access Control:
 
@@ -165,7 +200,7 @@ Technical Notes:
 - Reminder jobs skip past-due windows and reschedule only future booked, non-cancelled appointments on first request (lazy priming pattern replacing deprecated Flask hook).
 - Filtering and sorting operate in-memory over fetched slot list (sufficient for current scale; future optimization could push filtering into SQL with dynamic query composition).
 
-Follow-Ups (Not in 0.9.5):
+Follow-Ups (Not in 1.9.5):
 
 - Pagination & batched loading for large slot histories.
 - ICS calendar attachment in confirmation/reminder emails.
@@ -173,7 +208,7 @@ Follow-Ups (Not in 0.9.5):
 - Audit logging for slot/booking state transitions (PermissionAudit analogue).
 - Rate limiting / captcha for public booking to mitigate automated abuse.
 
-## 0.9.4 - 2025-10-01
+## 1.9.4 - 2025-10-01
 
 Invoice Communication & Analytics Enhancements:
 
@@ -193,7 +228,7 @@ Technical Notes:
 - Email content reuses print invoice template for single source of truth (avoids duplication & drift).
 - Security: SMTP credentials currently in application code; recommend environment variable extraction + secrets management in a subsequent release.
 
-Follow-Ups (Not in 0.9.4):
+Follow-Ups (Not in 1.9.4):
 
 - Track `emailed_at` & `email_fail_count` fields per invoice for audit / resend logic.
 - Optional PDF attachment using headless Chromium (WeasyPrint / Playwright) for clients requiring attached artifact.
@@ -201,7 +236,7 @@ Follow-Ups (Not in 0.9.4):
 - Pagination + CSV export for large invoice sets & company stats.
 - Rate limiting / debounce on rapid repeated email sends.
 
-## 0.9.2 - 2025-09-30
+## 1.9.2 - 2025-09-30
 
 Permission Visibility & Audit:
 
@@ -216,11 +251,11 @@ Internal:
 
 - Lightweight auto-migration creates `permission_audit` table if missing.
 - Seed logic untouched (still idempotent); audit intentionally ignores initial seed operations.
-- Version bumped to 0.9.2.
+- Version bumped to 1.9.2.
 
-Next (Not in 0.9.2): route-level enforcement decorator (server-side guard), export/import of permission configuration, grouping permissions by domain in UI, pagination/search for large audit history, diff view for role matrices.
+Next (Not in 1.9.2): route-level enforcement decorator (server-side guard), export/import of permission configuration, grouping permissions by domain in UI, pagination/search for large audit history, diff view for role matrices.
 
-## 0.9.3 - 2025-09-30
+## 1.9.3 - 2025-09-30
 
 Role Taxonomy Alignment & Navigation Consistency:
 
@@ -230,20 +265,20 @@ Role Taxonomy Alignment & Navigation Consistency:
 - Updated profile role select choices with user-friendly labels.
 - Updated Role Permissions matrix to surface new roles; legacy roles no longer shown unless still present in DB pre-migration.
 - Accepts legacy role names in role change POST for backwards compatibility (auto-maps to new names).
-- Version bumped to 0.9.3.
+- Version bumped to 1.9.3.
 
-Follow-ups (Not in 0.9.3): remove residual legacy references in data exports, add route decorators tying each endpoint to permission keys, UI help tooltip clarifying each role's scope.
+Follow-ups (Not in 1.9.3): remove residual legacy references in data exports, add route decorators tying each endpoint to permission keys, UI help tooltip clarifying each role's scope.
 
-## 0.9.1 - 2025-09-30
+## 1.9.1 - 2025-09-30
 
 Role Taxonomy Expansion:
 
 - Added new roles (centre_manager, supervisor, admin) with default permission seeds.
 - Updated Role Permissions matrix to display human-readable role labels.
 - Extended profile role choices and seeding logic for newly introduced roles.
-- Version bumped to 0.9.1.
+- Version bumped to 1.9.1.
 
-## 0.8.0 - 2025-09-30
+## 1.8.0 - 2025-09-30
 
 Auth & UX Enhancements:
 
@@ -257,11 +292,11 @@ Internal:
 
 - Enabled Tailwind darkMode config in auth base template.
 - Added minimal JS bundle for theme + caps lock (no external dependency).
-- Version bumped to 0.8.0.
+- Version bumped to 1.8.1.
 
-Future (Not in 0.8.0): password strength meter, security rate-limit UI feedback, keyboard-focus outline refinement, progressive enhancement for no-JS environments.
+Future (Not in 1.8.0): password strength meter, security rate-limit UI feedback, keyboard-focus outline refinement, progressive enhancement for no-JS environments.
 
-## 0.9.0 - 2025-09-30
+## 1.9.0 - 2025-09-30
 
 Fine-Grained Permission System:
 
@@ -281,9 +316,9 @@ Notes:
 - Removing a role permission immediately affects all users of that role unless an explicit user override exists.
 - Deny override takes precedence over role grants; removing an override returns to role inheritance.
 
-Potential Follow-ups (not in 0.9.0): integrate permission checks for each route decorator, UI hiding of unauthorized nav links using `can()`, audit logging of permission changes, export/import of permission configuration, grouping permissions by domain.
+Potential Follow-ups (not in 1.9.0): integrate permission checks for each route decorator, UI hiding of unauthorized nav links using `can()`, audit logging of permission changes, export/import of permission configuration, grouping permissions by domain.
 
-## 0.7.0 - 2025-09-30
+## 1.7.0 - 2025-09-30
 
 Observation Module (Extended Tutor Observation & Reporting) Completion:
 
@@ -308,9 +343,9 @@ Internal / Refactor:
 - Safeguards against missing detail rows (lazy creation in edit route).
 - Clean removal of deprecated unmet-summary logic.
 
-Next Potential Enhancements (not implemented in 0.7.0): font embedding for TW Cen MT in PDF, audit trail for cycle changes, date-in-cycle validation, global unmet criteria roll-up.
+Next Potential Enhancements (not implemented in 1.7.0): font embedding for TW Cen MT in PDF, audit trail for cycle changes, date-in-cycle validation, global unmet criteria roll-up.
 
-## 0.6.0 - 2025-09-29
+## 1.6.0 - 2025-09-29
 
 - Added Tasks (To-Do) module with model fields: Description, Notes, Actions Taken, Criticality, Urgency, Status (Pending/Done), Due Date, Created By, Assigned To, timestamps.
 - Dashboard metrics: Open, Done, Overdue, Due in 3 Days, Total (scoped to selected assignee / current user by default).
@@ -322,7 +357,7 @@ Next Potential Enhancements (not implemented in 0.7.0): font embedding for TW Ce
 - Visual overdue highlighting for tasks past due date (row tint) and due-soon metric (<=3 days remaining).
 - Internal refactor: extracted reusable form partial `todos/partials/_form_inner.html` mirroring meetings pattern.
 
-## 0.5.0 - 2025-09-29
+## 1.5.0 - 2025-09-29
 
 - Added Meetings module: scheduling between users with fields (Participant, Agenda, Date, Time, optional Student, Parent, Outcome, Booked By metadata).
 - Meetings analytics: counts for Today (all/you) and Week (all/you) plus total meetings summary.
@@ -332,16 +367,16 @@ Next Potential Enhancements (not implemented in 0.7.0): font embedding for TW Ce
 - Automatic lightweight schema backfill (adds new meeting columns if missing) without Alembic.
 - Extended global user loader to use SQLAlchemy 2.x `Session.get` pattern (removed legacy warning).
 
-## 0.4.0 - 2025-09-29
+## 1.4.0 - 2025-09-29
 
 - Added Issue Tracking module: CRUD, filtering (status, criticality, urgency, branch, text search) and dashboard metrics (total, open, resolved, critical open, high urgency open).
 - Real-time (debounced) auto-apply multi-select filters mirroring Availability UX.
 - Soft UI tables integrated with existing lightweight sorter/paginator.
-- Navigation updated with Issues link; version bumped to 0.4.0.
+- Navigation updated with Issues link; version bumped to 1.4.1.
 
-## 0.3.0 - 2025-09-29
+## 1.3.0 - 2025-09-29
 
-## 0.4.1 - 2025-09-29
+## 1.4.1 - 2025-09-29
 
 - Added per-issue change log (IssueChange audit trail) recording field-level edits with old/new values and timestamps.
 - Added optional "Action Taken" narrative field to Issues (not required on create).
@@ -356,15 +391,15 @@ Next Potential Enhancements (not implemented in 0.7.0): font embedding for TW Ce
 - Table actions: inline edit/delete; improved badge styling for branch display.
 - Internal refactor removing dependency on simple-datatables for this view (now using shared lightweight sorter/paginator logic).
 
-## 0.2.0 - 2025-09-29
+## 1.2.0 - 2025-09-29
 
 - Added cycle-based dashboard filtering and section grouping.
 - Introduced version footer with modal changelog display.
 
-## 0.1.1 - 2025-09-28
+## 1.1.1 - 2025-09-28
 
 - Added user roles & avatar uploads, observer calibration, variance analytics.
 
-## 0.1.0 - 2025-09-27
+## 1.1.0 - 2025-09-27
 
 - Initial dashboard release: core KPIs, leaderboards, distributions, trends.

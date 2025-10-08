@@ -1,157 +1,92 @@
-{% extends 'auth/_auth_base.html' %} {% block title %}Create account{% endblock
-%} {% block auth_content %}
-<h1 class="text-3xl font-bold tracking-tight text-white mb-2">
+{% extends 'auth/_auth_base.html' %} {% block title %}Create account — Excel
+Tutors{% endblock %} {% block auth_heading %}
+<h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
   Create your account
 </h1>
-<p class="text-sm text-white/70 mb-6">
-  Fill in your details to request access. A superadmin will approve your
-  account.
+<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+  Already registered?
+  <a
+    href="{{ url_for('auth.login') }}"
+    class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+    >Sign in</a
+  >
 </p>
-<form method="post" class="space-y-6" novalidate>
+{% endblock %} {% block auth_content %}
+<form method="POST" class="space-y-6" novalidate>
   {{ form.hidden_tag() }}
-  <div class="space-y-1">
+  <div>
     <label
-      class="block text-[11px] font-semibold tracking-wide text-white/70 uppercase"
-      >Name</label
+      for="name"
+      class="block text-sm font-medium leading-6 text-gray-900 dark:text-gray-200"
+      >Full name</label
     >
-    <div class="relative">
-      <span
-        class="absolute inset-y-0 left-0 flex items-center pl-3 text-indigo-400"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zM19 4h-3m0 0V1m0 3a2 2 0 11-4 0 2 2 0 014 0z"
-          />
-        </svg>
-      </span>
-      {{ form.name(class_='soft-input pl-10') }}
+    <div class="mt-2">
+      {{ form.name(class_='block w-full rounded-md border-0 py-1.5 text-gray-900
+      dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300
+      dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset
+      focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6',
+      placeholder='Jane Doe', autocomplete='name') }}
     </div>
+    {% if form.name.errors %}
+    <p class="mt-1 text-xs text-red-600 dark:text-red-400">
+      {{ form.name.errors[0] }}
+    </p>
+    {% endif %}
   </div>
-  <div class="space-y-1">
+  <div>
     <label
-      class="block text-[11px] font-semibold tracking-wide text-white/70 uppercase"
-      >Email</label
+      for="email"
+      class="block text-sm font-medium leading-6 text-gray-900 dark:text-gray-200"
+      >Email address</label
     >
-    <div class="relative">
-      <span
-        class="absolute inset-y-0 left-0 flex items-center pl-3 text-indigo-400"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M4 6h16M4 6l8 7 8-7M4 6v12h16V6"
-          />
-        </svg>
-      </span>
-      {{ form.email(class_='soft-input pl-10') }}
+    <div class="mt-2">
+      {{ form.email(class_='block w-full rounded-md border-0 py-1.5
+      text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300
+      dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset
+      focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6',
+      placeholder='you@example.com', autocomplete='email') }}
     </div>
+    {% if form.email.errors %}
+    <p class="mt-1 text-xs text-red-600 dark:text-red-400">
+      {{ form.email.errors[0] }}
+    </p>
+    {% endif %}
   </div>
-  <div class="space-y-1">
+  <div>
     <label
-      class="block text-[11px] font-semibold tracking-wide text-white/70 uppercase"
+      for="password"
+      class="block text-sm font-medium leading-6 text-gray-900 dark:text-gray-200"
       >Password</label
     >
-    <div class="relative">
-      <span
-        class="absolute inset-y-0 left-0 flex items-center pl-3 text-indigo-400"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 11c1.105 0 2-.672 2-1.5S13.105 8 12 8s-2 .672-2 1.5.895 1.5 2 1.5z"
-          />
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7z"
-          />
-        </svg>
-      </span>
-      {{ form.password(class_='soft-input pl-10 pr-10', id='reg_password') }}
-      <button
-        type="button"
-        tabindex="-1"
-        class="absolute inset-y-0 right-0 flex items-center pr-3 text-indigo-400 hover:text-indigo-600"
-        onclick="const p=document.getElementById('reg_password'); p.type=p.type==='password'?'text':'password'; this.querySelector('svg').classList.toggle('opacity-30');"
-        aria-label="Toggle password visibility"
-      >
-        <svg
-          class="w-4 h-4 transition-opacity"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-          />
-        </svg>
-      </button>
+    <div class="mt-2">
+      {{ form.password(class_='block w-full rounded-md border-0 py-1.5
+      text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300
+      dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset
+      focus:ring-indigo-600 dark:focus:ring-indigo-500 sm:text-sm sm:leading-6',
+      placeholder='••••••••', autocomplete='new-password', id='reg_password') }}
     </div>
     <div class="mt-2" id="regPwStrength" aria-live="polite"></div>
+    {% if form.password.errors %}
+    <p class="mt-1 text-xs text-red-600 dark:text-red-400">
+      {{ form.password.errors[0] }}
+    </p>
+    {% endif %}
+    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+      Use at least 8 characters including a number and a symbol for a stronger
+      password.
+    </p>
   </div>
-  <button
-    class="primary-btn flex items-center justify-center gap-2 group !mt-2"
-  >
-    <svg
-      class="w-4 h-4 opacity-90 group-hover:translate-x-0.5 transition-transform"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      viewBox="0 0 24 24"
+  <div>
+    <button
+      type="submit"
+      class="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
     >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        d="M5 12h14M13 6l6 6-6 6"
-      />
-    </svg>
-    <span>Create account</span>
-  </button>
-  <div class="flex items-center gap-3 my-4 text-white/40 text-[11px]">
-    <div class="h-px flex-1 bg-white/30"></div>
-    <span>next</span>
-    <div class="h-px flex-1 bg-white/30"></div>
-  </div>
-  <div
-    class="text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-white/70"
-  >
-    <div>Already have an account?</div>
-    <a href="{{ url_for('login') }}" class="link">Sign in →</a>
+      Create account
+    </button>
   </div>
 </form>
 {% endblock %} {% block page_scripts %}
 <script>
-  // Registration password strength (same heuristic as login, kept separate for clarity)
   (function () {
     const pw = document.getElementById("reg_password");
     const box = document.getElementById("regPwStrength");
@@ -182,17 +117,17 @@
       const pct = Math.min(100, (s / 6) * 100);
       const label = levels[Math.min(levels.length - 1, s)];
       box.innerHTML =
-        '<div class="w-full bg-white/20 rounded-full h-1.5 overflow-hidden"><div class="h-full transition-all" style="width:' +
+        '<div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden"><div class="h-full transition-all" style="width:' +
         pct +
         '%;background:linear-gradient(90deg,#f87171,#fbbf24,#34d399,#6366f1)"></div></div>' +
         '<div class="mt-1 text-[10px] tracking-wide uppercase font-medium ' +
         (s <= 2
-          ? "text-rose-200"
+          ? "text-red-600 dark:text-red-400"
           : s <= 3
-          ? "text-amber-200"
+          ? "text-amber-600 dark:text-amber-400"
           : s <= 4
-          ? "text-emerald-200"
-          : "text-indigo-200") +
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-indigo-600 dark:text-indigo-400") +
         '">' +
         (v ? "Strength: " + label : "") +
         "</div>";

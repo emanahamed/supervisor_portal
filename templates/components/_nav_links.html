@@ -1,459 +1,859 @@
 {% set endpoint = request.endpoint or '' %} {% if current_user.is_authenticated
 %}
-<div
-  x-data="{
-  openCore:true,
-  openOps:true,
-  openTeach:true,
-  openTools: {{ 'true' if endpoint in ['pricing_config','tool_enroll','tool_timetable_main','tool_timetable_eastham','books_index','books_create','books_edit'] else 'false' }},
-  openAdmin:true
-}"
->
-  <!-- Core Section -->
-  <div
-    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700"
-  >
-    <button
-      type="button"
-      @click="openCore=!openCore"
-      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
-    >
-      <span>Core</span>
-      <span class="transition-transform" :class="openCore ? 'rotate-180' : ''"
-        >▾</span
-      >
-    </button>
-  </div>
-  <div x-show="openCore" x-collapse class="mt-1 space-y-0.5">
+<div x-data="nav()" x-init="init()" class="flex flex-1 flex-col text-sm">
+  <!-- Pinned Dashboard -->
+  <div class="mb-4">
     <a
       href="{{ url_for('index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='index' else '' }}"
+      class="group flex items-center gap-2 rounded-md px-2 py-1.5 font-medium {{ 'bg-indigo-100 text-indigo-800 dark:bg-indigo-600/30 dark:text-indigo-200' if endpoint=='index' else 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-200 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300' }}"
     >
       <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        class="h-4 w-4 text-indigo-500 group-hover:text-indigo-600 dark:text-indigo-400"
+        viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
         stroke-width="2"
-        viewBox="0 0 24 24"
+        stroke-linecap="round"
+        stroke-linejoin="round"
       >
+        <path d="M3 12l2-2 7-7 7 7 2 2" />
         <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M3 12l9-9 9 9M4.5 10.5v9A1.5 1.5 0 006 21h4.5v-6h3v6H18a1.5 1.5 0 001.5-1.5v-9"
+          d="M5 10v10a1 1 0 001 1h3m10-11v10a1 1 0 01-1 1h-3m-6 0v-4a1 1 0 011-1h2a1 1 0 011 1v4"
         />
       </svg>
-      Dashboard
+      <span>Dashboard</span>
     </a>
-    {% if can('manage_tasks') %}
-    <a
-      href="{{ url_for('todos_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if (endpoint.startswith('todos_') or endpoint.startswith('todo_')) else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
+  </div>
+
+  <ul role="list" class="flex-1 space-y-4">
+    {# Admin group (alphabetical order of groups, after Dashboard) #} {% if
+    current_user.is_superadmin or can('manage_users') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('admin')"
+          :aria-expanded="isOpen('admin')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2">
+            <svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M3 7h18M3 12h18M3 17h18" />
+            </svg>
+            Admin
+          </span>
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('admin')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('admin')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          {% if current_user.is_superadmin %}
+          <li>
+            <a
+              href="{{ url_for('role_permissions') }}"
+              class="nav-leaf {{ 'active' if endpoint=='role_permissions' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M12 12c2.21 0 4-1.79 4-4V5a4 4 0 10-8 0v3c0 2.21 1.79 4 4 4z"
+                />
+                <path d="M6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" />
+              </svg>
+              <span>Role Permissions</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('user_permissions') }}"
+              class="nav-leaf {{ 'active' if endpoint=='user_permissions' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 11h16" />
+                <path d="M4 7h16" />
+                <path d="M4 15h10" />
+                <path d="M17 21l4-4-4-4" />
+                <path d="M13 17h8" />
+              </svg>
+              <span>User Overrides</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('error_reports_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='error_reports_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+                <path
+                  d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                />
+              </svg>
+              <span>Error Reports</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Books #} {% if can('manage_books') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('books')"
+          :aria-expanded="isOpen('books')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2">
+            <svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+              />
+            </svg>
+            Books
+          </span>
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('books')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('books')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('books_index') }}"
+              class="nav-leaf {{ 'active' if endpoint in ['books_index','books_create','books_edit'] else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                <path
+                  d="M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5z"
+                />
+              </svg>
+              <span>Book List</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('book_orders_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='book_orders_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3h2l.4 2M7 13h10l4-8H5.4" />
+                <circle cx="7" cy="21" r="1" />
+                <circle cx="17" cy="21" r="1" />
+              </svg>
+              <span>Book Orders</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Invoice #} {% if can('manage_invoices') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('invoice')"
+          :aria-expanded="isOpen('invoice')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M9 17v-2m3 2v-4m3 4v-6" />
+              <path
+                d="M19 21H7a2 2 0 01-2-2V5a2 2 0 012-2h5.6a1 1 0 01.7.3l5.4 5.4a1 1 0 01.3.7V19a2 2 0 01-2 2z"
+              /></svg
+            >Invoice</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('invoice')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('invoice')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('invoices_index') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('invoice_') or endpoint.startswith('invoices_') else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M8 2h8l4 4v14a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"
+                />
+                <path d="M16 13H8" />
+                <path d="M16 17H8" />
+                <path d="M10 9H9" />
+              </svg>
+              <span>Invoice List</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('companies_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='companies_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 21V7a2 2 0 012-2h4v16" />
+                <path d="M9 21h6" />
+                <path d="M9 3h6l6 6v12a2 2 0 01-2 2h-4V3H9z" />
+              </svg>
+              <span>Companies</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Issues (single) #} {% if can('manage_issues') %}
+    <li>
+      <a
+        href="{{ url_for('issues_index') }}"
+        class="nav-single {{ 'active' if endpoint=='issues_index' else '' }}"
       >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M9 12l2 2 4-4M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
-        />
-      </svg>
-      Tasks
-    </a>
+        <svg
+          class="h-4 w-4 text-indigo-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+          <path d="M21 12A9 9 0 113 12a9 9 0 0118 0z" />
+        </svg>
+        Issues
+      </a>
+    </li>
+    {% endif %} {# Meetings #} {% if can('manage_meetings') or
+    can('manage_appointments') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('meetings')"
+          :aria-expanded="isOpen('meetings')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M8 7V3m8 4V3M5 11h14M5 19h14M5 15h14" /></svg
+            >Meetings</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('meetings')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('meetings')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          {% if can('manage_appointments') %}
+          <li>
+            <a
+              href="{{ url_for('admin_appointments') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('admin_appointments') else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M8 7V3m8 4V3M5 11h14M5 19h14M5 15h14" />
+              </svg>
+              <span>Appointments</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_meetings') %}
+          <li>
+            <a
+              href="{{ url_for('meetings_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='meetings_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 7h16" />
+                <path d="M10 11h6" />
+                <path d="M4 15h16" />
+                <path d="M4 11h2" />
+                <path d="M4 19h16" />
+              </svg>
+              <span>Meeting</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Staff Management #} {% if can('manage_staff') or
+    can('manage_availability') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('staff')"
+          :aria-expanded="isOpen('staff')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              <path d="M4 21a8 8 0 1116 0" /></svg
+            >Staff Management</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('staff')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('staff')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          {% if can('manage_staff') %}
+          <li>
+            <a
+              href="{{ url_for('staff_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='staff_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                <path d="M4 21a8 8 0 1116 0" />
+              </svg>
+              <span>Staff List</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_availability') %}
+          <li>
+            <a
+              href="{{ url_for('availability_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='availability_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 11l3 3L22 4" />
+                <path
+                  d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"
+                />
+              </svg>
+              <span>Tutor Availability</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Student Management #} {% if can('manage_students') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('students')"
+          :aria-expanded="isOpen('students')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M17 20h5V4H2v16h5" />
+              <path d="M7 8h10v8H7z" /></svg
+            >Student Management</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('students')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('students')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('students_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='students_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 20v-6" />
+                <path d="M7 9l5-3 5 3" />
+                <path d="M4 19h16" />
+                <path d="M12 13l-8-4 8-4 8 4-8 4z" />
+              </svg>
+              <span>Student List</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Tasks (single) #} {% if can('manage_tasks') %}
+    <li>
+      <a
+        href="{{ url_for('todos_index') }}"
+        class="nav-single {{ 'active' if (endpoint.startswith('todos_') or endpoint.startswith('todo_')) else '' }}"
+      >
+        <svg
+          class="h-4 w-4 text-indigo-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M9 12l2 2 4-4" />
+          <path
+            d="M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
+          />
+        </svg>
+        Tasks
+      </a>
+    </li>
+    {% endif %} {# Tools #} {% set show_tools = can('manage_pricing') or
+    can('access_enrollment_tool') or can('manage_attendance_fix') %} {% if
+    show_tools %}
+    <li>
+      <div>
+        <button
+          @click="toggle('tools')"
+          :aria-expanded="isOpen('tools')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M10.3 4.3c.4-1.8 3-1.8 3.4 0a1.7 1.7 0 002.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 001.1 2.6c1.8.4 1.8 3 0 3.4a1.7 1.7 0 00-1.1 2.6c.9 1.5-.8 3.3-2.4 2.4a1.7 1.7 0 00-2.6 1.1c-.4 1.8-3 1.8-3.4 0a1.7 1.7 0 00-2.6-1.1c-1.5.9-3.3-.8-2.4-2.4a1.7 1.7 0 00-1.1-2.6c-1.8-.4-1.8-3 0-3.4a1.7 1.7 0 001.1-2.6c-.9-1.5.8-3.3 2.4-2.4.9.6 2.2.1 2.6-1.1z"
+              />
+              <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg
+            >Tools</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('tools')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('tools')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          {% if can('manage_attendance_fix') %}
+          <li>
+            <a
+              href="{{ url_for('attendance_fix') }}"
+              class="nav-leaf {{ 'active' if endpoint=='attendance_fix' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3h18" />
+                <path d="M9 8h12" />
+                <path d="M3 13h18" />
+                <path d="M9 18h12" />
+                <path d="M5 8v8" />
+                <path d="M5 8a2 2 0 110-4 2 2 0 010 4z" />
+                <path d="M5 20a2 2 0 110-4 2 2 0 010 4z" />
+              </svg>
+              <span>Fix Attendance Data</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_pricing') %}
+          <li>
+            <a
+              href="{{ url_for('pricing_config') }}"
+              class="nav-leaf {{ 'active' if endpoint=='pricing_config' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 18h6" />
+                <path d="M10 6h8" />
+                <path d="M8 6a2 2 0 11-4 0 2 2 0 014 0z" />
+                <path d="M18 6a2 2 0 110-4 2 2 0 010 4z" />
+                <path d="M8 18a2 2 0 11-4 0 2 2 0 014 0z" />
+                <path d="M18 18a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              <span>Enrollment Calculator</span>
+            </a>
+          </li>
+          {% endif %} {% if can('access_enrollment_tool') %}
+          <li>
+            <a
+              href="{{ url_for('tool_schedule_message') }}"
+              class="nav-leaf {{ 'active' if endpoint=='tool_schedule_message' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M21 3v12" />
+                <path d="M5 9h16" />
+                <path d="M5 21V3" />
+                <path d="M9 21V9" />
+                <path d="M13 21V9" />
+                <path d="M17 21V9" />
+              </svg>
+              <span>Enrollment Message Generator</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Tutor Observations #} {% if can('manage_cycles') or
+    can('manage_observations') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('observations')"
+          :aria-expanded="isOpen('observations')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5" />
+              <path d="M16 3l5 5-8 8H8V11l8-8z" /></svg
+            >Tutor Observations</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('observations')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('observations')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          {% if can('manage_cycles') %}
+          <li>
+            <a
+              href="{{ url_for('cycles_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='cycles_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 5v14" />
+                <path d="M18 9l-6-6-6 6" />
+                <path d="M6 15l6 6 6-6" />
+              </svg>
+              <span>Observation Cycle</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_observations') %}
+          <li>
+            <a
+              href="{{ url_for('observations_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='observations_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 4h16v4H4z" />
+                <path d="M4 12h16v8H4z" />
+              </svg>
+              <span>Observation List</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
     {% endif %}
+  </ul>
+
+  <!-- Pinned Profile Bottom -->
+  <div class="mt-6 pt-4 border-t border-gray-200 dark:border-white/10">
     <a
       href="{{ url_for('profile') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='profile' else '' }}"
+      class="flex items-center gap-3 rounded-md px-2 py-2 {{ 'bg-indigo-100 text-indigo-800 dark:bg-indigo-600/30 dark:text-indigo-200' if endpoint=='profile' else 'hover:bg-indigo-50 dark:hover:bg-white/5' }}"
     >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M12 12a5 5 0 100-10 5 5 0 000 10zm-7 9a7 7 0 0114 0v1H5v-1z"
-        />
-      </svg>
-      My Profile
+      <img
+        src="https://eu.ui-avatars.com/api/?name={{ (current_user.name or 'User') | urlencode }}&size=64"
+        class="h-8 w-8 rounded-full ring-2 ring-white dark:ring-gray-800"
+        alt="pfp"
+      />
+      <div class="flex flex-col">
+        <span
+          class="text-sm font-medium text-gray-700 dark:text-gray-200 line-clamp-1"
+          >{{ current_user.name or 'User' }}</span
+        >
+        <span class="text-xs text-gray-400 dark:text-gray-500">My Profile</span>
+      </div>
     </a>
   </div>
-
-  <!-- Operations Section -->
-  <div
-    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
-  >
-    <button
-      type="button"
-      @click="openOps=!openOps"
-      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
-    >
-      <span>Operations</span>
-      <span class="transition-transform" :class="openOps ? 'rotate-180' : ''"
-        >▾</span
-      >
-    </button>
-  </div>
-  <div x-show="openOps" x-collapse class="mt-1 space-y-0.5">
-    {% if can('manage_appointments') %}
-    <a
-      href="{{ url_for('admin_appointments') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if (endpoint and endpoint.startswith('admin_appointments')) else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M8 7V3m8 4V3M4 11h16M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
-        />
-      </svg>
-      Appointments
-    </a>
-    {% endif %} {% if can('manage_attendance_fix') %}
-    <a
-      href="{{ url_for('attendance_fix') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='attendance_fix' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM17 17l3 3m0 0l3-3m-3 3v-8"
-        />
-      </svg>
-      Fix Attendance Data
-    </a>
-    {% endif %} {% if can('manage_availability') %}
-    <a
-      href="{{ url_for('availability_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='availability_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-      </svg>
-      Tutors Availability
-    </a>
-    {% endif %} {% if can('manage_invoices') %}
-    <a
-      href="{{ url_for('invoices_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if (endpoint and (endpoint.startswith('invoice_') or endpoint.startswith('invoices_'))) else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M9 3h6a2 2 0 012 2v14l-5-3-5 3V5a2 2 0 012-2z"
-        />
-      </svg>
-      Invoices
-    </a>
-    {% endif %} {% if can('manage_issues') %}
-    <a
-      href="{{ url_for('issues_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='issues_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
-        />
-      </svg>
-      Issues
-    </a>
-    {% endif %} {% if can('manage_meetings') %}
-    <a
-      href="{{ url_for('meetings_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='meetings_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M8 7V3m8 4V3M4 11h16M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
-        />
-      </svg>
-      Meetings
-    </a>
-    {% endif %}
-  </div>
-
-  <!-- Teaching & Quality Section -->
-  <div
-    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
-  >
-    <button
-      type="button"
-      @click="openTeach=!openTeach"
-      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
-    >
-      <span>Teaching</span>
-      <span class="transition-transform" :class="openTeach ? 'rotate-180' : ''"
-        >▾</span
-      >
-    </button>
-  </div>
-  <div x-show="openTeach" x-collapse class="mt-1 space-y-0.5">
-    {% if can('manage_cycles') %}
-    <a
-      href="{{ url_for('cycles_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='cycles_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M4.05 11a8 8 0 0114.9-2M19.95 13a8 8 0 01-14.9 2M12 8v4l2.5 2.5"
-        />
-      </svg>
-      Observation Cycles
-    </a>
-    {% endif %} {% if can('manage_observations') %}
-    <a
-      href="{{ url_for('observations_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='observations_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M3 4h18M3 10h18M9 16h12M9 22h12M3 16h.01M3 22h.01"
-        />
-      </svg>
-      Observation List
-    </a>
-    {% endif %} {% if can('manage_staff') %}
-    <a
-      href="{{ url_for('staff_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='staff_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M17 20v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2m14-10a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
-        />
-      </svg>
-      Staff List
-    </a>
-    {% endif %} {% if can('manage_tasks') and can('manage_students') %}
-    <a
-      href="{{ url_for('students_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='students_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M12 14l9-5-9-5-9 5 9 5z"
-        />
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M12 14l6.16-3.422A12.083 12.083 0 0112 21.5a12.083 12.083 0 01-6.16-10.922L12 14z"
-        />
-      </svg>
-      Students
-    </a>
-    {% endif %}
-  </div>
-
-  <!-- Tools Section -->
-  {% set show_tools = can('manage_pricing') or can('access_enrollment_tool') or
-  can('manage_books') %} {% if show_tools %}
-  <div
-    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
-  >
-    <button
-      type="button"
-      @click="openTools=!openTools"
-      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
-    >
-      <span>Tools</span>
-      <span class="transition-transform" :class="openTools ? 'rotate-180' : ''"
-        >▾</span
-      >
-    </button>
-  </div>
-  <div x-show="openTools" x-collapse class="mt-1 space-y-0.5">
-    {% if can('manage_pricing') %}
-    <a
-      href="{{ url_for('pricing_config') }}"
-      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='pricing_config' else '' }}"
-      >Pricing Config</a
-    >
-    {% endif %} {% if can('access_enrollment_tool') %}
-    <a
-      href="{{ url_for('tool_enroll') }}"
-      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='tool_enroll' else '' }}"
-      >Enrollment Calc</a
-    >
-    <a
-      href="{{ url_for('tool_schedule_message') }}"
-      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='tool_schedule_message' else '' }}"
-      >Schedule Message</a
-    >
-    {% endif %} {% if can('manage_books') %}
-    <a
-      href="{{ url_for('books_index') }}"
-      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint in ['books_index','books_create','books_edit'] else '' }}"
-      >Books Catalog</a
-    >
-    {% endif %}
-  </div>
-  {% endif %}
-
-  <!-- Admin Section -->
-  {% if current_user.is_superadmin or can('manage_users') %}
-  <div
-    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
-  >
-    <button
-      type="button"
-      @click="openAdmin=!openAdmin"
-      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
-    >
-      <span>Admin</span>
-      <span class="transition-transform" :class="openAdmin ? 'rotate-180' : ''"
-        >▾</span
-      >
-    </button>
-  </div>
-  <div x-show="openAdmin" x-collapse class="mt-1 space-y-0.5">
-    {% if current_user.is_superadmin %}
-    <a
-      href="{{ url_for('role_permissions') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='role_permissions' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M12 6l7 4v4l-7 4-7-4v-4l7-4z"
-        />
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v8" />
-      </svg>
-      Role Permissions
-    </a>
-    <a
-      href="{{ url_for('user_permissions') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='user_permissions' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M5 12h14M5 6h14M5 18h14"
-        />
-      </svg>
-      User Overrides
-    </a>
-    <a
-      href="{{ url_for('error_reports_index') }}"
-      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='error_reports_index' else '' }}"
-    >
-      <svg
-        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
-        />
-      </svg>
-      Error Reports
-    </a>
-    {% endif %}
-  </div>
-  {% endif %}
 </div>
+
+<script>
+  function nav() {
+    return {
+      state: {},
+      init() {
+        try {
+          this.state = JSON.parse(localStorage.getItem("navStateV2")) || {};
+        } catch (e) {
+          this.state = {};
+        }
+        if (Object.keys(this.state).length === 0) {
+          this.state = { invoice: true };
+        }
+      },
+      save() {
+        localStorage.setItem("navStateV2", JSON.stringify(this.state));
+      },
+      toggle(key) {
+        this.state[key] = !this.state[key];
+        this.save();
+      },
+      isOpen(key) {
+        return !!this.state[key];
+      },
+    };
+  }
+</script>
+
+<style>
+  .nav-leaf,
+  .nav-single {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    line-height: 1.1;
+    border-radius: 0.375rem;
+    padding: 0.375rem 0.5rem;
+    font-weight: 400;
+    color: #4b5563;
+  }
+  .dark .nav-leaf,
+  .dark .nav-single {
+    color: #d1d5db;
+  }
+  .nav-leaf:hover,
+  .nav-single:hover {
+    background: #eef2ff;
+    color: #4338ca;
+  }
+  .dark .nav-leaf:hover,
+  .dark .nav-single:hover {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+  }
+  .nav-leaf.active,
+  .nav-single.active {
+    background: #e0e7ff;
+    color: #3730a3;
+    font-weight: 600;
+  }
+  .dark .nav-leaf.active,
+  .dark .nav-single.active {
+    background: rgba(99, 102, 241, 0.25);
+    color: #c7d2fe;
+  }
+</style>
 {% else %}
 <a
   href="{{ url_for('login') }}"

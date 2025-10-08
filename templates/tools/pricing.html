@@ -1,7 +1,55 @@
 {% extends 'base.html' %} {% block page_title %}Pricing Configuration{% endblock
 %} {% block content %} {# tools nav removed #}
+<script>
+  // Server-provided current tuition matrix for Alpine initialization
+  window._tuitionMatrix = {{ matrix|tojson }};
+</script>
 <div class="soft-card p-6 space-y-6" x-data="pricingForm()" x-init="init()">
   <h2 class="text-lg font-semibold">Tuition & Registration Pricing</h2>
+  <div class="border border-slate-200 rounded-md overflow-hidden">
+    <div class="bg-slate-50 px-4 py-2 flex items-center justify-between">
+      <h3 class="text-xs font-semibold tracking-wide uppercase text-slate-600">
+        Current Tuition Matrix
+      </h3>
+      <span class="text-[11px] text-slate-500"
+        >Registration Fee: £{{ '%.2f'|format(registration_fee|float) }}</span
+      >
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-[11px]">
+        <thead class="bg-slate-100 text-slate-600 uppercase tracking-wide">
+          <tr>
+            <th class="py-2 px-3 text-left">Year</th>
+            <th class="py-2 px-3 text-left">1 Subj</th>
+            <th class="py-2 px-3 text-left">2 Subj</th>
+            <th class="py-2 px-3 text-left">3 Subj</th>
+            <th class="py-2 px-3 text-left">4 Subj</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% set order =
+          ['alevel','year10','year11','year3-5','year6-7','year8','year9'] %} {%
+          set labels = {'alevel':'A-Level','year10':'Year 10','year11':'Year
+          11','year3-5':'Year 3-5','year6-7':'Year 6-7','year8':'Year
+          8','year9':'Year 9'} %} {% for key in order %} {% set row =
+          matrix.get(key, {}) %}
+          <tr>
+            <td class="py-2 px-3 font-medium text-slate-700">
+              {{ labels[key] }}
+            </td>
+            {% for subj in ['1','2','3','4'] %} {% set val = row.get(subj) %}
+            <td
+              class="py-2 px-3 whitespace-nowrap {% if not val %}text-slate-300{% endif %}"
+            >
+              {% if val %}£{{ '%.2f'|format(val) }}{% else %}-{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
   <form method="post" class="space-y-6 text-xs">
     {{ form.hidden_tag() }}
     <template x-for="group in groups" :key="group.key">
@@ -81,7 +129,7 @@
     return {
       groups: [],
       init() {
-        // Derive groups from server-provided matrix (embedded as JSON in a script tag if desired) or static map
+        const matrix = window._tuitionMatrix || {};
         const spec = [
           {
             key: "year3-5",
@@ -153,6 +201,12 @@
             ],
           },
         ];
+        const valFor = (groupKey, fieldName) => {
+          // fieldName pattern: yearX_Y_Z (last token is subject count)
+          const parts = fieldName.split("_");
+          const subjCount = parts[parts.length - 1];
+          return (matrix[groupKey] || {})[subjCount] ?? "";
+        };
         this.groups = spec.map((g) => ({
           key: g.key,
           label: g.label,
@@ -160,7 +214,7 @@
             name,
             label,
             id: name,
-            value: document.querySelector(`[name="${name}"]`)?.value || "",
+            value: valFor(g.key, name),
           })),
         }));
       },

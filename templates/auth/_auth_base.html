@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en" class="h-full bg-white dark:bg-gray-900">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -16,151 +16,69 @@
       type="image/png"
       href="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
     />
-    <style>
-      .glass {
-        backdrop-filter: blur(14px) saturate(140%);
-        background: rgba(255, 255, 255, 0.65);
-      }
-      .gradient-bg {
-        background: radial-gradient(
-          circle at 20% 20%,
-          #6366f1,
-          #8b5cf6 45%,
-          #4338ca 100%
-        );
-      }
-      .soft-input {
-        border: 1px solid #e2e8f0;
-        border-radius: 0.75rem;
-        padding: 0.75rem 0.9rem;
-        width: 100%;
-        outline: none;
-        background: rgba(255, 255, 255, 0.85);
-      }
-      .soft-input:focus {
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-      }
-      .primary-btn {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: #fff;
-        font-weight: 600;
-        padding: 0.75rem 1rem;
-        border-radius: 0.9rem;
-        width: 100%;
-        box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.5);
-      }
-      .primary-btn:hover {
-        filter: brightness(1.05);
-      }
-      .link {
-        color: #6366f1;
-        font-weight: 500;
-      }
-      .link:hover {
-        text-decoration: underline;
-      }
-      .logo-ring {
-        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3);
-      }
-    </style>
     {% block head_extra %}{% endblock %}
   </head>
-  <body
-    class="h-full gradient-bg text-slate-700 dark:text-slate-200 flex items-center justify-center p-6 transition-colors"
-  >
-    <button
-      id="themeToggle"
-      type="button"
-      aria-label="Toggle dark mode"
-      class="absolute top-4 right-4 z-20 inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full bg-white/70 dark:bg-slate-800/70 backdrop-blur border border-white/30 dark:border-slate-700 text-slate-600 dark:text-slate-200 shadow hover:shadow-md transition"
-    >
-      <span id="themeToggleIcon">🌙</span>
-      <span class="hidden sm:inline" id="themeToggleText">Dark</span>
-    </button>
-    <div
-      class="absolute inset-0 overflow-hidden pointer-events-none select-none"
-    >
+  <body class="h-full">
+    <div class="flex min-h-full">
       <div
-        class="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-20 blur-3xl bg-fuchsia-400 mix-blend-overlay"
-      ></div>
-      <div
-        class="absolute -bottom-40 -right-40 w-[32rem] h-[32rem] rounded-full opacity-30 blur-3xl bg-indigo-500 mix-blend-multiply"
-      ></div>
-    </div>
-    <div class="relative z-10 w-full max-w-md">
-      <div class="mb-8 text-center flex flex-col items-center gap-4">
-        <a href="{{ url_for('index') }}" class="inline-flex items-center">
-          <img
-            src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
-            class="h-16 w-auto rounded-2xl logo-ring shadow-lg ring-1 ring-white/20"
-            alt="Logo"
-          />
-        </a>
-      </div>
-      {% with messages = get_flashed_messages(with_categories=true) %}{% if
-      messages %}
-      <div class="space-y-2 mb-5">
-        {% for category, message in messages %}
-        <div
-          class="glass rounded-xl p-3 border border-white/30 text-sm {% if category=='danger' %}bg-rose-100/60 text-rose-700{% elif category=='success' %}bg-emerald-100/60 text-emerald-700{% elif category=='warning' %}bg-amber-100/60 text-amber-700{% else %}bg-indigo-100/60 text-indigo-700{% endif %}"
-        >
-          {{ message|safe }}
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}{% endwith %}
-      <div
-        class="glass rounded-2xl border border-white/30 shadow-xl p-8 backdrop-blur-xl dark:bg-slate-900/70 dark:border-slate-700"
+        class="flex flex-1 flex-col justify-center px-4 py-12 sm:px-6 lg:flex-none lg:px-20 xl:px-24"
       >
-        {% block auth_content %}{% endblock %}
-      </div>
-      <div class="mt-4 text-center">
-        <a
-          href="{{ url_for('index') }}"
-          class="text-[11px] text-white/80 dark:text-slate-300 hover:underline inline-flex items-center gap-1"
-        >
-          <svg
-            class="w-3 h-3"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M15 19l-7-7 7-7"
+        <div class="mx-auto w-full max-w-sm lg:w-96">
+          <div>
+            <img
+              src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+              alt="Excel Tutors"
+              class="h-12 w-auto mb-2 dark:hidden"
             />
-          </svg>
-          Back to site
-        </a>
+            <img
+              src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+              alt="Excel Tutors"
+              class="h-12 w-auto mb-2 not-dark:hidden"
+            />
+            {% block auth_heading %}{% endblock %}
+          </div>
+          <div class="mt-10">
+            {% with messages = get_flashed_messages(with_categories=true) %} {%
+            if messages %}
+            <div class="space-y-2 mb-6">
+              {% for category, message in messages %}
+              <div
+                class="text-sm rounded-md px-3 py-2 font-medium {{ 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300' if category=='danger' else ('bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' if category=='success' else ('bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' if category=='warning' else 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300')) }}"
+              >
+                {{ message|safe }}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %} {% endwith %} {% block auth_content %}{% endblock %}
+          </div>
+          <div
+            class="mt-10 text-center text-xs text-gray-500 dark:text-gray-400"
+          >
+            © 2025 Excel Tutors • v{{ APP_VERSION }} •
+            <a href="{{ url_for('index') }}" class="underline decoration-dotted"
+              >Back to site</a
+            >
+          </div>
+        </div>
       </div>
-      <div
-        class="mt-4 text-center text-[10px] text-white/70 dark:text-slate-400"
-      >
-        © 2025 Excel Tutors • v{{ APP_VERSION }}
+      <div class="relative hidden w-0 flex-1 lg:block">
+        <img
+          src="https://images.unsplash.com/photo-1496917756835-20cb06e75b4e?auto=format&fit=crop&w=1908&q=80"
+          alt=""
+          class="absolute inset-0 h-full w-full object-cover"
+        />
+        <div
+          class="absolute inset-0 bg-indigo-600/10 dark:bg-indigo-900/30 mix-blend-multiply"
+        ></div>
       </div>
     </div>
     <script>
       (function () {
         const root = document.documentElement;
-        const btn = document.getElementById("themeToggle");
-        const icon = document.getElementById("themeToggleIcon");
-        const text = document.getElementById("themeToggleText");
         const stored = localStorage.getItem("authTheme");
         if (stored === "dark") {
           root.classList.add("dark");
-          icon.textContent = "☀️";
-          if (text) text.textContent = "Light";
         }
-        btn &&
-          btn.addEventListener("click", () => {
-            const dark = root.classList.toggle("dark");
-            localStorage.setItem("authTheme", dark ? "dark" : "light");
-            icon.textContent = dark ? "☀️" : "🌙";
-            if (text) text.textContent = dark ? "Light" : "Dark";
-          });
       })();
       (function () {
         function attach(el) {
@@ -169,7 +87,7 @@
           if (!ind) {
             ind = document.createElement("div");
             ind.className =
-              "caps-indicator text-[10px] mt-1 text-amber-200 dark:text-amber-300 font-medium hidden";
+              "caps-indicator text-[10px] mt-1 text-amber-600 dark:text-amber-400 font-medium hidden";
             ind.textContent = "Caps Lock is ON";
             el.parentElement.appendChild(ind);
           }
