@@ -1,0 +1,22 @@
+<nav class="flex gap-4 mb-6 text-sm">
+  <a
+    href="{{ url_for('pricing_config') }}"
+    class="soft-tab {% if request.endpoint == 'pricing_config' %}active{% endif %}"
+    >Pricing</a
+  >
+  <a
+    href="{{ url_for('tool_enroll') }}"
+    class="soft-tab {% if request.endpoint == 'tool_enroll' %}active{% endif %}"
+    >Enroll Calc</a
+  >
+  <a
+    href="{{ url_for('tool_schedule_message') }}"
+    class="soft-tab {% if request.endpoint == 'tool_schedule_message' %}active{% endif %}"
+    >Schedule Msg</a
+  >
+  <a
+    href="{{ url_for('books_index') }}"
+    class="soft-tab {% if request.endpoint in ['books_index','books_create','books_edit'] %}active{% endif %}"
+    >Books</a
+  >
+</nav>

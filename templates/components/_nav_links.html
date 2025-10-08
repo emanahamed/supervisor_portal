@@ -1,371 +1,468 @@
 {% set endpoint = request.endpoint or '' %} {% if current_user.is_authenticated
-%} {# Alphabetically sorted items with new labels + icons #}
-<a
-  href="{{ url_for('index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='index' else '' }}"
+%}
+<div
+  x-data="{
+  openCore:true,
+  openOps:true,
+  openTeach:true,
+  openTools: {{ 'true' if endpoint in ['pricing_config','tool_enroll','tool_timetable_main','tool_timetable_eastham','books_index','books_create','books_edit'] else 'false' }},
+  openAdmin:true
+}"
 >
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M3 12l9-9 9 9M4.5 10.5v9A1.5 1.5 0 006 21h4.5v-6h3v6H18a1.5 1.5 0 001.5-1.5v-9"
-    />
-  </svg>
-  Dashboard
-</a>
-{# Alphabetical after Dashboard: Appointments, Attendance Fix, Availability,
-Cycles, Invoices, Issues, Meetings, Observation List, Staff List, Tasks #} {% if
-can('manage_appointments') %}
-<a
-  href="{{ url_for('admin_appointments') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if (request.endpoint and request.endpoint.startswith('admin_appointments')) else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M8 7V3m8 4V3M4 11h16M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
-    />
-  </svg>
-  Appointments
-</a>
-{% endif %} {% if can('manage_attendance_fix') %}
-<a
-  href="{{ url_for('attendance_fix') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='attendance_fix' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM17 17l3 3m0 0l3-3m-3 3v-8"
-    />
-  </svg>
-  Fix Attendance Data
-</a>
-{% endif %} {% if can('manage_availability') %}
-<a
-  href="{{ url_for('availability_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='availability_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-  Tutors Availability
-</a>
-{% endif %} {% if can('manage_cycles') %}
-<a
-  href="{{ url_for('cycles_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='cycles_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M4.05 11a8 8 0 0114.9-2M19.95 13a8 8 0 01-14.9 2M12 8v4l2.5 2.5"
-    />
-  </svg>
-  Observation Cycles
-</a>
-{% endif %} {% if can('manage_invoices') %}
-<a
-  href="{{ url_for('invoices_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if (request.endpoint and (request.endpoint.startswith('invoice_') or request.endpoint.startswith('invoices_'))) else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M9 3h6a2 2 0 012 2v14l-5-3-5 3V5a2 2 0 012-2z"
-    />
-  </svg>
-  Invoices
-</a>
-{% endif %} {% if can('manage_issues') %}
-<a
-  href="{{ url_for('issues_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='issues_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
-    />
-  </svg>
-  Issues
-</a>
-{% endif %} {% if can('manage_meetings') %}
-<a
-  href="{{ url_for('meetings_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='meetings_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M8 7V3m8 4V3M4 11h16M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
-    />
-  </svg>
-  Meetings
-</a>
-{% endif %} {% if can('manage_observations') %}
-<a
-  href="{{ url_for('observations_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='observations_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M3 4h18M3 10h18M9 16h12M9 22h12M3 16h.01M3 22h.01"
-    />
-  </svg>
-  Observation List
-</a>
-{% endif %} {% if can('manage_staff') %}
-<a
-  href="{{ url_for('staff_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='staff_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M17 20v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2m14-10a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
-    />
-  </svg>
-  Staff List
-</a>
-{% endif %} {% if can('manage_tasks') %} {% if can('manage_students') %}
-<a
-  href="{{ url_for('students_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='students_index' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M12 14l9-5-9-5-9 5 9 5z"
-    />
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M12 14l6.16-3.422A12.083 12.083 0 0112 21.5a12.083 12.083 0 01-6.16-10.922L12 14z"
-    />
-  </svg>
-  Students
-</a>
-{% endif %}
-<a
-  href="{{ url_for('todos_index') }}"
-  class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if (endpoint.startswith('todos_') or endpoint.startswith('todo_')) else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M9 12l2 2 4-4M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
-    />
-  </svg>
-  Tasks
-</a>
-{% endif %}
-<a
-  href="{{ url_for('profile') }}"
-  class="group flex items-center gap-2 px-3 py-2 mt-1 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='profile' else '' }}"
->
-  <svg
-    class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M12 12a5 5 0 100-10 5 5 0 000 10zm-7 9a7 7 0 0114 0v1H5v-1z"
-    />
-  </svg>
-  My Profile
-</a>
-{% if current_user.is_authenticated and (current_user.is_superadmin or
-can('manage_users')) %}
-<div class="pt-4 mt-2 border-t border-slate-200">
+  <!-- Core Section -->
   <div
-    class="px-3 mb-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase"
+    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700"
   >
-    Admin
+    <button
+      type="button"
+      @click="openCore=!openCore"
+      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
+    >
+      <span>Core</span>
+      <span class="transition-transform" :class="openCore ? 'rotate-180' : ''"
+        >▾</span
+      >
+    </button>
   </div>
+  <div x-show="openCore" x-collapse class="mt-1 space-y-0.5">
+    <a
+      href="{{ url_for('index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M3 12l9-9 9 9M4.5 10.5v9A1.5 1.5 0 006 21h4.5v-6h3v6H18a1.5 1.5 0 001.5-1.5v-9"
+        />
+      </svg>
+      Dashboard
+    </a>
+    {% if can('manage_tasks') %}
+    <a
+      href="{{ url_for('todos_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if (endpoint.startswith('todos_') or endpoint.startswith('todo_')) else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M9 12l2 2 4-4M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
+        />
+      </svg>
+      Tasks
+    </a>
+    {% endif %}
+    <a
+      href="{{ url_for('profile') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='profile' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 12a5 5 0 100-10 5 5 0 000 10zm-7 9a7 7 0 0114 0v1H5v-1z"
+        />
+      </svg>
+      My Profile
+    </a>
+  </div>
+
+  <!-- Operations Section -->
+  <div
+    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
+  >
+    <button
+      type="button"
+      @click="openOps=!openOps"
+      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
+    >
+      <span>Operations</span>
+      <span class="transition-transform" :class="openOps ? 'rotate-180' : ''"
+        >▾</span
+      >
+    </button>
+  </div>
+  <div x-show="openOps" x-collapse class="mt-1 space-y-0.5">
+    {% if can('manage_appointments') %}
+    <a
+      href="{{ url_for('admin_appointments') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if (endpoint and endpoint.startswith('admin_appointments')) else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M8 7V3m8 4V3M4 11h16M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
+        />
+      </svg>
+      Appointments
+    </a>
+    {% endif %} {% if can('manage_attendance_fix') %}
+    <a
+      href="{{ url_for('attendance_fix') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='attendance_fix' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM17 17l3 3m0 0l3-3m-3 3v-8"
+        />
+      </svg>
+      Fix Attendance Data
+    </a>
+    {% endif %} {% if can('manage_availability') %}
+    <a
+      href="{{ url_for('availability_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='availability_index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+      Tutors Availability
+    </a>
+    {% endif %} {% if can('manage_invoices') %}
+    <a
+      href="{{ url_for('invoices_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if (endpoint and (endpoint.startswith('invoice_') or endpoint.startswith('invoices_'))) else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M9 3h6a2 2 0 012 2v14l-5-3-5 3V5a2 2 0 012-2z"
+        />
+      </svg>
+      Invoices
+    </a>
+    {% endif %} {% if can('manage_issues') %}
+    <a
+      href="{{ url_for('issues_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='issues_index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
+        />
+      </svg>
+      Issues
+    </a>
+    {% endif %} {% if can('manage_meetings') %}
+    <a
+      href="{{ url_for('meetings_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='meetings_index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M8 7V3m8 4V3M4 11h16M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
+        />
+      </svg>
+      Meetings
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Teaching & Quality Section -->
+  <div
+    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
+  >
+    <button
+      type="button"
+      @click="openTeach=!openTeach"
+      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
+    >
+      <span>Teaching</span>
+      <span class="transition-transform" :class="openTeach ? 'rotate-180' : ''"
+        >▾</span
+      >
+    </button>
+  </div>
+  <div x-show="openTeach" x-collapse class="mt-1 space-y-0.5">
+    {% if can('manage_cycles') %}
+    <a
+      href="{{ url_for('cycles_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='cycles_index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M4.05 11a8 8 0 0114.9-2M19.95 13a8 8 0 01-14.9 2M12 8v4l2.5 2.5"
+        />
+      </svg>
+      Observation Cycles
+    </a>
+    {% endif %} {% if can('manage_observations') %}
+    <a
+      href="{{ url_for('observations_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='observations_index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M3 4h18M3 10h18M9 16h12M9 22h12M3 16h.01M3 22h.01"
+        />
+      </svg>
+      Observation List
+    </a>
+    {% endif %} {% if can('manage_staff') %}
+    <a
+      href="{{ url_for('staff_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='staff_index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M17 20v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2m14-10a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
+        />
+      </svg>
+      Staff List
+    </a>
+    {% endif %} {% if can('manage_tasks') and can('manage_students') %}
+    <a
+      href="{{ url_for('students_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='students_index' else '' }}"
+    >
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 14l9-5-9-5-9 5 9 5z"
+        />
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 14l6.16-3.422A12.083 12.083 0 0112 21.5a12.083 12.083 0 01-6.16-10.922L12 14z"
+        />
+      </svg>
+      Students
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Tools Section -->
+  {% set show_tools = can('manage_pricing') or can('access_enrollment_tool') or
+  can('manage_books') %} {% if show_tools %}
+  <div
+    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
+  >
+    <button
+      type="button"
+      @click="openTools=!openTools"
+      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
+    >
+      <span>Tools</span>
+      <span class="transition-transform" :class="openTools ? 'rotate-180' : ''"
+        >▾</span
+      >
+    </button>
+  </div>
+  <div x-show="openTools" x-collapse class="mt-1 space-y-0.5">
+    {% if can('manage_pricing') %}
+    <a
+      href="{{ url_for('pricing_config') }}"
+      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='pricing_config' else '' }}"
+      >Pricing Config</a
+    >
+    {% endif %} {% if can('access_enrollment_tool') %}
+    <a
+      href="{{ url_for('tool_enroll') }}"
+      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='tool_enroll' else '' }}"
+      >Enrollment Calc</a
+    >
+    <a
+      href="{{ url_for('tool_schedule_message') }}"
+      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='tool_schedule_message' else '' }}"
+      >Schedule Message</a
+    >
+    {% endif %} {% if can('manage_books') %}
+    <a
+      href="{{ url_for('books_index') }}"
+      class="block px-4 py-1.5 rounded-md text-sm hover:bg-indigo-50 dark:hover:bg-slate-800 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint in ['books_index','books_create','books_edit'] else '' }}"
+      >Books Catalog</a
+    >
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Admin Section -->
   {% if current_user.is_superadmin or can('manage_users') %}
-  <a
-    href="{{ url_for('approve_users') }}"
-    data-admin-link="1"
-    class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='approve_users' else '' }}"
+  <div
+    class="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-1 bg-white/90 backdrop-blur dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-700 mt-4"
   >
-    <svg
-      class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      viewBox="0 0 24 24"
+    <button
+      type="button"
+      @click="openAdmin=!openAdmin"
+      class="w-full flex items-center justify-between text-[10px] tracking-wide font-semibold uppercase text-slate-500 dark:text-slate-400"
     >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-6 8l2 2 4-4m4 9H4a2 2 0 01-2-2v-4a4 4 0 014-4h1m10 0h1a4 4 0 014 4v4a2 2 0 01-2 2z"
-      />
-    </svg>
-    Approve Users
-  </a>
-  {% endif %} {% if current_user.is_superadmin %}
-  <a
-    href="{{ url_for('role_permissions') }}"
-    class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='role_permissions' else '' }}"
-  >
-    <svg
-      class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      viewBox="0 0 24 24"
+      <span>Admin</span>
+      <span class="transition-transform" :class="openAdmin ? 'rotate-180' : ''"
+        >▾</span
+      >
+    </button>
+  </div>
+  <div x-show="openAdmin" x-collapse class="mt-1 space-y-0.5">
+    {% if current_user.is_superadmin %}
+    <a
+      href="{{ url_for('role_permissions') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='role_permissions' else '' }}"
     >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        d="M12 6l7 4v4l-7 4-7-4v-4l7-4z"
-      />
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v8" />
-    </svg>
-    Role Permissions
-  </a>
-  {% endif %} {% if current_user.is_superadmin %}
-  <a
-    href="{{ url_for('user_permissions') }}"
-    class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='user_permissions' else '' }}"
-  >
-    <svg
-      class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      viewBox="0 0 24 24"
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 6l7 4v4l-7 4-7-4v-4l7-4z"
+        />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v8" />
+      </svg>
+      Role Permissions
+    </a>
+    <a
+      href="{{ url_for('user_permissions') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='user_permissions' else '' }}"
     >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        d="M5 12h14M5 6h14M5 18h14"
-      />
-    </svg>
-    User Overrides
-  </a>
-  <a
-    href="{{ url_for('error_reports_index') }}"
-    class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700 {{ 'bg-indigo-100 font-semibold' if request.endpoint=='error_reports_index' else '' }}"
-  >
-    <svg
-      class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      viewBox="0 0 24 24"
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M5 12h14M5 6h14M5 18h14"
+        />
+      </svg>
+      User Overrides
+    </a>
+    <a
+      href="{{ url_for('error_reports_index') }}"
+      class="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 {{ 'bg-indigo-100 dark:bg-indigo-600/30 font-semibold' if endpoint=='error_reports_index' else '' }}"
     >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
-      />
-    </svg>
-    Error Reports
-  </a>
+      <svg
+        class="h-4 w-4 text-slate-400 group-hover:text-indigo-600"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z"
+        />
+      </svg>
+      Error Reports
+    </a>
+    {% endif %}
+  </div>
   {% endif %}
 </div>
-{% endif %} {% else %}
+{% else %}
 <a
   href="{{ url_for('login') }}"
-  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
   >Login</a
 >
 <a
   href="{{ url_for('register') }}"
-  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 text-slate-700"
+  class="block px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
   >Register</a
 >
 {% endif %}

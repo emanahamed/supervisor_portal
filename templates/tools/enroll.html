@@ -1,0 +1,151 @@
+{% extends 'base.html' %} {% block crumb_current %}Enrollment Calculator{%
+endblock %} {% block page_title %}Enrollment & Pricing Calculator{% endblock %}
+{% block content %} {# tools nav removed #}
+<div x-data="enrollCalc()" x-init="init()" class="space-y-6">
+  <div class="soft-card p-6 space-y-4">
+    <h2 class="text-lg font-semibold">Enrollment Calculator</h2>
+    <div class="grid md:grid-cols-3 gap-4 text-sm">
+      <div>
+        <label class="soft-label">Year Group</label>
+        <select x-model="year" class="soft-input w-full">
+          <template x-for="yg in yearGroups" :key="yg">
+            <option :value="yg" x-text="prettyYear(yg)"></option>
+          </template>
+        </select>
+      </div>
+      <div>
+        <label class="soft-label">Subjects</label>
+        <select x-model.number="subjects" class="soft-input w-full">
+          <template x-for="n in [1,2,3,4]" :key="n">
+            <option :value="n" x-text="n"></option>
+          </template>
+        </select>
+      </div>
+      <div>
+        <label class="soft-label">Registration Fee Applies?</label>
+        <input type="checkbox" x-model="includeReg" class="align-middle mr-2" />
+        <span class="text-xs text-slate-600">Include registration fee</span>
+      </div>
+    </div>
+    <div class="pt-4 border-t border-slate-200 mt-4 text-sm">
+      <p class="mb-2">
+        Monthly Tuition:
+        <span class="font-semibold" x-text="currency(tuition)"></span>
+      </p>
+      <template x-if="includeReg">
+        <p class="mb-2">
+          Registration Fee:
+          <span class="font-semibold" x-text="currency(registrationFee)"></span>
+        </p>
+      </template>
+      <p class="text-slate-600 text-xs" x-show="!tuition">
+        Select a combination to see pricing.
+      </p>
+      <div class="mt-4 font-semibold text-lg" x-show="tuition">
+        Total Due First Month: <span x-text="currency(totalFirstMonth)"></span>
+      </div>
+    </div>
+  </div>
+  <div class="soft-card p-6">
+    <h3 class="font-semibold mb-2 text-sm">Current Tuition Matrix</h3>
+    <div class="overflow-auto">
+      <table class="soft-table text-xs">
+        <thead>
+          <tr>
+            <th class="text-left">Year</th>
+            <th>1 Subj</th>
+            <th>2 Subj</th>
+            <th>3 Subj</th>
+            <th>4 Subj</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="row in matrixRows" :key="row.year">
+            <tr>
+              <td x-text="prettyYear(row.year)" class="font-medium"></td>
+              <td x-text="currency(row.prices[1])"></td>
+              <td x-text="currency(row.prices[2])"></td>
+              <td x-text="currency(row.prices[3])"></td>
+              <td x-text="currency(row.prices[4])"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-[11px] text-slate-500 mt-2" x-show="registrationFee">
+      Registration Fee: <span x-text="currency(registrationFee)"></span>
+    </p>
+  </div>
+</div>
+<script>
+  function enrollCalc() {
+    return {
+      yearGroups: [],
+      matrix: {},
+      registrationFee: 0,
+  writingBookPrice: 0,
+  plannerPrice: 0,
+  bookCatalog: [],
+      stationeryItems: [],
+      depositPercent: 50,
+      year: null,
+      subjects: 1,
+      includeReg: true,
+      init() {
+        fetch('{{ url_for('api_tuition_matrix') }}')
+          .then(r => r.json())
+          .then(data => {
+            this.matrix = data.matrix || {};
+            this.registrationFee = data.registration_fee || 0;
+            this.writingBookPrice = data.writing_book_price || 1.5;
+            this.plannerPrice = data.planner_price || 3.0;
+            this.bookCatalog = data.book_catalog || [];
+            this.stationeryItems = (data.stationery_items || []).map(it => ({
+              key: it.key,
+              label: it.label || it.key,
+              price: Number(it.price || 0),
+              qty: Number(it.default_qty || 0)
+            }));
+            this.depositPercent = Number(data.deposit_percent || 50);
+            this.yearGroups = Object.keys(this.matrix);
+            if (this.yearGroups.length) this.year = this.yearGroups[0];
+          });
+      },
+      get tuition() {
+        if (!this.year || !this.matrix[this.year]) return 0;
+        return Number(this.matrix[this.year][this.subjects] || 0);
+      },
+      get totalFirstMonth() {
+        return this.tuition + (this.includeReg ? this.registrationFee : 0);
+      },
+      get matrixRows() {
+        return this.yearGroups.map(y => ({ year: y, prices: this.matrix[y] }));
+      },
+  currency(v) { if (v === null || v === undefined || v === '' || isNaN(v)) return '-'; return '£' + Number(v).toFixed(2); },
+      prettyYear(y) {
+        if (y.startsWith('year')) return 'Year ' + y.replace('year','').replace('_','-');
+        if (y === 'alevel') return 'A-Level';
+        return y;
+      },
+      // New dynamic helpers
+      selectedSubjectCount() { return this.subjects; },
+      calcDeposit() { return (this.tuition * (this.depositPercent/100)); },
+      stationeryTotal() { return this.stationeryItems.reduce((s,i)=>s + (i.price * i.qty),0); },
+      bookList() {
+        // Filter catalog by year and subjects chosen (simple heuristic: include matching subject or universal)
+        const subjCount = this.subjects;
+        const yearKey = this.year || '';
+        // Assume catalog items can optionally declare: years (array), min_subjects, max_subjects, subjects (array)
+        return this.bookCatalog.filter(b => {
+          const yearsOk = !b.years || b.years.includes(yearKey);
+          const subjOk = !b.min_subjects || subjCount >= b.min_subjects;
+            const subjOk2 = !b.max_subjects || subjCount <= b.max_subjects;
+          return yearsOk && subjOk && subjOk2;
+        });
+      },
+      booksTotal() { return this.bookList().reduce((s,b)=> s + Number(b.price||0),0); },
+      grandTotal() { return this.tuition + (this.includeReg ? this.registrationFee : 0) + this.calcDeposit() + this.stationeryTotal() + this.booksTotal(); }
+    }
+  }
+</script>
+{% endblock %}

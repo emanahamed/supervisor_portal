@@ -1,0 +1,170 @@
+{% extends 'base.html' %} {% block page_title %}Pricing Configuration{% endblock
+%} {% block content %} {# tools nav removed #}
+<div class="soft-card p-6 space-y-6" x-data="pricingForm()" x-init="init()">
+  <h2 class="text-lg font-semibold">Tuition & Registration Pricing</h2>
+  <form method="post" class="space-y-6 text-xs">
+    {{ form.hidden_tag() }}
+    <template x-for="group in groups" :key="group.key">
+      <div>
+        <h3
+          class="font-semibold text-slate-600 uppercase tracking-wide text-[11px] mb-2"
+          x-text="group.label"
+        ></h3>
+        <div class="grid md:grid-cols-4 gap-4">
+          <template x-for="field in group.fields" :key="field.name">
+            <div>
+              <label
+                class="block text-[11px] mb-1"
+                :for="field.id"
+                x-text="field.label"
+              ></label>
+              <input
+                :id="field.id"
+                :name="field.name"
+                type="number"
+                step="0.01"
+                :value="field.value"
+                class="soft-input w-full"
+              />
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+    <div>
+      <label class="block text-[11px] mb-1" for="stationery_json"
+        >Stationery Items JSON</label
+      >
+      {{ form.stationery_json(class='soft-input w-full h-32 font-mono
+      text-[11px]') }}
+      <p class="text-[10px] text-slate-500 mt-1">
+        List of objects: [{"key":"writing_book","label":"Writing
+        Book","price":1.5,"default_qty":0}].
+      </p>
+    </div>
+    <div>
+      <label class="block text-[11px] mb-1" for="deposit_percent"
+        >Default Deposit %</label
+      >
+      {{ form.deposit_percent(class='soft-input w-full') }}
+      <p class="text-[10px] text-slate-500 mt-1">
+        Percentage of tuition auto-applied on enrollment (e.g. 50 for 50%).
+      </p>
+    </div>
+    <div>
+      <label class="block text-[11px] mb-1" for="registration_fee"
+        >Registration Fee</label
+      >
+      {{ form.registration_fee(class='soft-input w-40') }}
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-[11px] mb-1" for="writing_book_price"
+          >Writing Book Unit Price</label
+        >
+        {{ form.writing_book_price(class='soft-input w-full') }}
+      </div>
+      <div>
+        <label class="block text-[11px] mb-1" for="planner_price"
+          >Planner Unit Price</label
+        >
+        {{ form.planner_price(class='soft-input w-full') }}
+      </div>
+    </div>
+    <div class="pt-2">
+      <button class="soft-btn soft-btn-primary">Save Pricing</button>
+    </div>
+  </form>
+</div>
+<script>
+  function pricingForm() {
+    return {
+      groups: [],
+      init() {
+        // Derive groups from server-provided matrix (embedded as JSON in a script tag if desired) or static map
+        const spec = [
+          {
+            key: "year3-5",
+            label: "Year 3-5",
+            fields: [
+              ["year3_5_1", "Y3-5 1 Subject"],
+              ["year3_5_2", "Y3-5 2 Subjects"],
+              ["year3_5_3", "Y3-5 3 Subjects"],
+            ],
+          },
+          {
+            key: "year6-7",
+            label: "Year 6-7",
+            fields: [
+              ["year6_7_1", "Y6-7 1 Subject"],
+              ["year6_7_2", "Y6-7 2 Subjects"],
+              ["year6_7_3", "Y6-7 3 Subjects"],
+              ["year6_7_4", "Y6-7 4 Subjects"],
+            ],
+          },
+          {
+            key: "year8",
+            label: "Year 8",
+            fields: [
+              ["year8_1", "Y8 1 Subj"],
+              ["year8_2", "Y8 2 Subj"],
+              ["year8_3", "Y8 3 Subj"],
+              ["year8_4", "Y8 4 Subj"],
+            ],
+          },
+          {
+            key: "year9",
+            label: "Year 9",
+            fields: [
+              ["year9_1", "Y9 1 Subj"],
+              ["year9_2", "Y9 2 Subj"],
+              ["year9_3", "Y9 3 Subj"],
+              ["year9_4", "Y9 4 Subj"],
+            ],
+          },
+          {
+            key: "year10",
+            label: "Year 10",
+            fields: [
+              ["year10_1", "Y10 1 Subj"],
+              ["year10_2", "Y10 2 Subj"],
+              ["year10_3", "Y10 3 Subj"],
+              ["year10_4", "Y10 4 Subj"],
+            ],
+          },
+          {
+            key: "year11",
+            label: "Year 11",
+            fields: [
+              ["year11_1", "Y11 1 Subj"],
+              ["year11_2", "Y11 2 Subj"],
+              ["year11_3", "Y11 3 Subj"],
+              ["year11_4", "Y11 4 Subj"],
+            ],
+          },
+          {
+            key: "alevel",
+            label: "A-Level",
+            fields: [
+              ["alevel_1", "A-Level 1 Subj"],
+              ["alevel_2", "A-Level 2 Subj"],
+              ["alevel_3", "A-Level 3 Subj"],
+              ["alevel_4", "A-Level 4 Subj"],
+            ],
+          },
+        ];
+        this.groups = spec.map((g) => ({
+          key: g.key,
+          label: g.label,
+          fields: g.fields.map(([name, label]) => ({
+            name,
+            label,
+            id: name,
+            value: document.querySelector(`[name="${name}"]`)?.value || "",
+          })),
+        }));
+      },
+    };
+  }
+</script>
+{% endblock %}

@@ -1,3 +1,72 @@
+<script>
+  // Register component before form so Alpine sees methods immediately.
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("studentSuggest", (initial = "") => ({
+      query: initial,
+      results: [],
+      open: false,
+      hover: -1,
+      activeLabel: "",
+      _debouncedFetcher: null,
+      _debounce(fn, wait) {
+        let t;
+        return function (...args) {
+          clearTimeout(t);
+          t = setTimeout(() => fn.apply(this, args), wait);
+        };
+      },
+      fetchSuggestions() {
+        if (!this._debouncedFetcher) {
+          this._debouncedFetcher = this._debounce((v) => this._doFetch(v), 180);
+        }
+        const q = this.query.trim();
+        if (!q) {
+          this.results = [];
+          this.open = false;
+          this.activeLabel = "";
+          return;
+        }
+        this._debouncedFetcher(q);
+      },
+      _doFetch(q) {
+        fetch(`/api/students/suggest?q=${encodeURIComponent(q)}`)
+          .then((r) => (r.ok ? r.json() : []))
+          .then((data) => {
+            if (!Array.isArray(data)) data = [];
+            this.results = data;
+            this.open = !!data.length;
+            this.hover = 0;
+            this.activeLabel = data[0] ? data[0].label : "";
+          })
+          .catch(() => {
+            this.results = [];
+            this.open = false;
+            this.activeLabel = "";
+          });
+      },
+      highlight(dir) {
+        if (!this.open || !this.results.length) return;
+        this.hover =
+          (this.hover + dir + this.results.length) % this.results.length;
+        this.activeLabel = this.results[this.hover]?.label || "";
+      },
+      chooseActive() {
+        if (this.results[this.hover]) this.choose(this.results[this.hover]);
+      },
+      choose(r) {
+        this.query = r.label;
+        this.activeLabel = r.label;
+        this.open = false;
+      },
+      outside(e) {
+        if (!this.$el.contains(e.target)) this.open = false;
+      },
+      init() {
+        document.addEventListener("click", (e) => this.outside(e));
+      },
+    }));
+  });
+</script>
 <form
   method="POST"
   action="{{ url_for('meeting_edit', mid=meeting.id) if meeting else url_for('meeting_new') }}"
@@ -33,10 +102,50 @@
     </div>
   </div>
   <div class="grid md:grid-cols-2 gap-4">
-    <div>
+    <div
+      x-data="studentSuggest('{{ form.student_name.data or '' }}')"
+      class="relative"
+    >
       <label class="soft-label">Student (optional)</label>
-      {{ form.student_name(class='soft-input') }} {% for e in
-      form.student_name.errors %}
+      <input
+        type="text"
+        name="student_name"
+        x-model="query"
+        @input="fetchSuggestions"
+        @keydown.down.prevent="highlight(1)"
+        @keydown.up.prevent="highlight(-1)"
+        @keydown.enter.prevent="chooseActive()"
+        placeholder="Type ID or name"
+        class="soft-input pr-10"
+        autocomplete="off"
+        value="{{ form.student_name.data or '' }}"
+      />
+      <template x-if="activeLabel"
+        ><div
+          class="absolute inset-y-0 right-2 flex items-center text-[10px] text-slate-400"
+          x-text="activeLabel"
+        ></div
+      ></template>
+      <div
+        x-show="open"
+        x-cloak
+        class="absolute z-20 mt-1 w-full max-h-56 overflow-auto bg-white dark:bg-[#151515] border border-slate-200 dark:border-slate-700 rounded-md shadow-lg text-xs"
+      >
+        <template x-if="!results.length">
+          <div class="px-3 py-2 text-slate-500">No matches…</div>
+        </template>
+        <template x-for="(r,i) in results" :key="r.id">
+          <div
+            @click="choose(r)"
+            @mouseenter="hover=i"
+            :class="['px-3 py-1 cursor-pointer flex justify-between gap-2', i===hover ? 'bg-indigo-50 dark:bg-slate-700' : '']"
+          >
+            <span x-text="r.label"></span>
+            <span class="text-slate-400" x-text="r.student_id"></span>
+          </div>
+        </template>
+      </div>
+      {% for e in form.student_name.errors %}
       <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
       {% endfor %}
     </div>

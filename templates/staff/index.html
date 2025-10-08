@@ -250,6 +250,12 @@ content %}
           </td>
           <td class="py-2 px-3 text-xs whitespace-nowrap">
             <a
+              class="text-slate-600"
+              href="{{ url_for('staff_detail', sid=s.id) }}"
+              >View</a
+            >
+            <span class="text-slate-400">·</span>
+            <a
               class="text-indigo-600"
               href="{{ url_for('staff_edit', sid=s.id) }}"
               >Edit</a

@@ -62,6 +62,82 @@ class PermissionAudit(db.Model):
     actor = db.relationship('User', foreign_keys=[actor_user_id])
     target_user = db.relationship('User', foreign_keys=[target_user_id])
 
+
+class Setting(db.Model):
+    """Generic key/value settings store (since 0.9.9+ tools integration).
+
+    Values stored as text; JSON blobs allowed. Access via helper functions
+    (get_setting / set_setting) to centralise JSON (de)serialization.
+    """
+    key = db.Column(db.String(120), primary_key=True)
+    value = db.Column(db.Text)
+
+
+class Book(db.Model):
+    """Physical / digital learning material (replaces prior JSON book_catalog setting).
+
+    Simplified structure aligned to enrollment calculator expectations.
+    year_group matches tuition matrix keys (e.g. year3-5, year6-7, year8, year9, year10, year11, alevel).
+    subject is a free-text short label (e.g. Maths, English, Science) for optional future filtering.
+    min_subjects / max_subjects gate display based on number of subjects a learner is enrolling for.
+    active flag allows soft-hiding without deleting historical records.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, index=True)  # maps Book_Name
+    price = db.Column(db.Float, nullable=False, default=0.0)      # maps Price
+    subject = db.Column(db.String(120))                           # maps Subject
+    # Legacy field retained for compatibility; replaced by raw year value (which may be blank)
+    year_group = db.Column(db.String(40), index=True)
+    # New explicit catalog spec fields (Oct 2025)
+    cover = db.Column(db.String(255))            # file name or descriptor for cover
+    cover_url = db.Column(db.String(500))        # Cover_URL
+    inner = db.Column(db.String(255))            # Inner
+    inner_url = db.Column(db.String(500))        # Inner_URL
+    print_format = db.Column(db.String(120))     # Print_Format (e.g. 2-in-1)
+    finishing = db.Column(db.String(120))        # Finishing
+    # Legacy columns removed via one-off migration (min_subjects, max_subjects, image_url)
+    active = db.Column(db.Boolean, default=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def serialize(self):
+        # Provide data aligned with new CRUD spec plus minimal legacy keys
+        payload = {
+            'id': self.id,
+            'name': self.name,
+            'price': float(self.price or 0),
+            'subject': self.subject,
+            'year': self.year_group,  # simple year value (may be blank/None)
+            'cover': self.cover,
+            'cover_url': self.cover_url,
+            'inner': self.inner,
+            'inner_url': self.inner_url,
+            'print_format': self.print_format,
+            'finishing': self.finishing,  # legacy flat string
+            'finishing_list': [fo.name for fo in getattr(self, 'finishing_options', [])] if hasattr(self, 'finishing_options') else (self.finishing.split(',') if self.finishing else []),
+            'active': self.active,
+        }
+        return payload
+
+# Normalized finishing options (many-to-many) introduced Oct 2025.
+# Retain Book.finishing (CSV) for backward compatibility & quick display; authoritative list via relationship.
+book_finishing = db.Table(
+    'book_finishing',
+    db.Column('book_id', db.Integer, db.ForeignKey('book.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('finishing_id', db.Integer, db.ForeignKey('finishing_option.id', ondelete='CASCADE'), primary_key=True)
+)
+
+class FinishingOption(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False, index=True)
+
+# Late binding of relationship onto Book to avoid reordering existing class definition
+try:
+    if not hasattr(Book, 'finishing_options'):
+        Book.finishing_options = db.relationship('FinishingOption', secondary=book_finishing, lazy='joined')
+except Exception:
+    pass
+
 class Staff(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -73,6 +149,19 @@ class Staff(db.Model):
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class StaffChange(db.Model):
+    """Audit log for Staff field changes (since 0.9.10)."""
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id', ondelete='CASCADE'), nullable=False, index=True)
+    field = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
+    changed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    staff = db.relationship('Staff', lazy=True)
+    changed_by = db.relationship('User', lazy=True)
 
 class ObservationCycle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -433,6 +522,7 @@ class Invoice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     invoice_no = db.Column(db.String(50), unique=True, nullable=False, index=True)
     company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
     invoice_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
     due_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
     parent_name = db.Column(db.String(200), nullable=False)
@@ -449,10 +539,55 @@ class Invoice(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    created_by = db.relationship('User', lazy=True)
+
     def period_label(self):
         try:
             return f"{self.period_start.strftime('%d %b %Y')} – {self.period_end.strftime('%d %b %Y')}"
         except Exception:
             return ''
+
+
+# ---------------- Book Orders (Oct 2025) ---------------- #
+class BookOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    delivery_date = db.Column(db.Date)  # Date by which delivery requested (4 PM implied)
+    email_sent_at = db.Column(db.DateTime)
+    notes = db.Column(db.Text)  # optional future use
+
+    created_by = db.relationship('User', lazy=True)
+    items = db.relationship('BookOrderItem', backref='order', cascade='all, delete-orphan', lazy=True)
+
+    def total_copies(self):
+        return sum(i.quantity or 0 for i in self.items)
+
+
+class BookOrderItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('book_order.id', ondelete='CASCADE'), nullable=False, index=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=True, index=True)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    # Snapshot fields to preserve historical context even if book changes later
+    book_name = db.Column(db.String(255), nullable=False)
+    print_format = db.Column(db.String(120))
+    finishing = db.Column(db.String(255))
+    cover_url = db.Column(db.String(500))
+    inner_url = db.Column(db.String(500))
+
+    book = db.relationship('Book', lazy=True)
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'book_id': self.book_id,
+            'book_name': self.book_name,
+            'quantity': self.quantity,
+            'print_format': self.print_format,
+            'finishing': self.finishing,
+            'cover_url': self.cover_url,
+            'inner_url': self.inner_url,
+        }
 
 

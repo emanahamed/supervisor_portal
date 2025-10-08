@@ -1,8 +1,8 @@
 from flask_wtf import FlaskForm
-from wtforms import (BooleanField, DateField, DecimalField, FloatField,
-                     HiddenField, IntegerField, PasswordField, SelectField,
-                     SelectMultipleField, StringField, SubmitField,
-                     TextAreaField, TimeField)
+from wtforms import (BooleanField, DateField, DecimalField, FieldList,
+                     FloatField, FormField, HiddenField, IntegerField,
+                     PasswordField, SelectField, SelectMultipleField,
+                     StringField, SubmitField, TextAreaField, TimeField)
 from wtforms.validators import (DataRequired, Email, Length, NumberRange,
                                 Optional)
 from wtforms.widgets import CheckboxInput, ListWidget
@@ -202,3 +202,68 @@ class StudentForm(FlaskForm):
     academic = TextAreaField("Academic", validators=[Optional(), Length(max=5000)])
     status = StringField("Status", validators=[Optional(), Length(max=120)])
     submit = SubmitField("Save Student")
+
+
+class PricingConfigForm(FlaskForm):
+    """Form for dynamic tuition + registration + book pricing configuration."""
+    year3_5_1 = DecimalField("Y3-5 1 Subject", validators=[Optional()])
+    year3_5_2 = DecimalField("Y3-5 2 Subjects", validators=[Optional()])
+    year3_5_3 = DecimalField("Y3-5 3 Subjects", validators=[Optional()])
+    year6_7_1 = DecimalField("Y6-7 1 Subject", validators=[Optional()])
+    year6_7_2 = DecimalField("Y6-7 2 Subjects", validators=[Optional()])
+    year6_7_3 = DecimalField("Y6-7 3 Subjects", validators=[Optional()])
+    year6_7_4 = DecimalField("Y6-7 4 Subjects", validators=[Optional()])
+    year8_1 = DecimalField("Y8 1 Subj", validators=[Optional()])
+    year8_2 = DecimalField("Y8 2 Subj", validators=[Optional()])
+    year8_3 = DecimalField("Y8 3 Subj", validators=[Optional()])
+    year8_4 = DecimalField("Y8 4 Subj", validators=[Optional()])
+    year9_1 = DecimalField("Y9 1 Subj", validators=[Optional()])
+    year9_2 = DecimalField("Y9 2 Subj", validators=[Optional()])
+    year9_3 = DecimalField("Y9 3 Subj", validators=[Optional()])
+    year9_4 = DecimalField("Y9 4 Subj", validators=[Optional()])
+    year10_1 = DecimalField("Y10 1 Subj", validators=[Optional()])
+    year10_2 = DecimalField("Y10 2 Subj", validators=[Optional()])
+    year10_3 = DecimalField("Y10 3 Subj", validators=[Optional()])
+    year10_4 = DecimalField("Y10 4 Subj", validators=[Optional()])
+    year11_1 = DecimalField("Y11 1 Subj", validators=[Optional()])
+    year11_2 = DecimalField("Y11 2 Subj", validators=[Optional()])
+    year11_3 = DecimalField("Y11 3 Subj", validators=[Optional()])
+    year11_4 = DecimalField("Y11 4 Subj", validators=[Optional()])
+    alevel_1 = DecimalField("A-Level 1 Subj", validators=[Optional()])
+    alevel_2 = DecimalField("A-Level 2 Subj", validators=[Optional()])
+    alevel_3 = DecimalField("A-Level 3 Subj", validators=[Optional()])
+    alevel_4 = DecimalField("A-Level 4 Subj", validators=[Optional()])
+    registration_fee = DecimalField("Registration Fee", validators=[Optional()])
+    # Stationery / optional item unit prices
+    writing_book_price = DecimalField("Writing Book Price", validators=[Optional()])
+    planner_price = DecimalField("Planner Price", validators=[Optional()])
+    # Dynamic stationery items JSON (list of {key,label,price,default_qty})
+    stationery_json = TextAreaField("Stationery Items JSON", validators=[Optional()])
+    # Default deposit percent (applied to tuition unless overridden)
+    deposit_percent = DecimalField("Default Deposit % of Tuition", validators=[Optional()])
+    submit = SubmitField("Save Pricing")
+
+
+YEAR_GROUP_CHOICES = [
+    ('year3-5','Year 3-5'),
+    ('year6-7','Year 6-7'),
+    ('year8','Year 8'),
+    ('year9','Year 9'),
+    ('year10','Year 10'),
+    ('year11','Year 11'),
+    ('alevel','A-Level'),
+]
+
+class BookForm(FlaskForm):
+    name = StringField("Book Name", validators=[DataRequired(), Length(max=255)])  # Book_Name
+    subject = StringField("Subject", validators=[Optional(), Length(max=120)])
+    year_group = StringField("Year", validators=[Optional(), Length(max=20)])  # simple year value
+    price = DecimalField("Price", validators=[DataRequired()], places=2)
+    cover = StringField("Cover", validators=[Optional(), Length(max=255)])
+    cover_url = StringField("Cover URL", validators=[Optional(), Length(max=500)])
+    inner = StringField("Inner", validators=[Optional(), Length(max=255)])
+    inner_url = StringField("Inner URL", validators=[Optional(), Length(max=500)])
+    print_format = StringField("Print Format", validators=[Optional(), Length(max=120)])
+    finishing = StringField("Finishing", validators=[Optional(), Length(max=120)])
+    active = BooleanField("Active", default=True)
+    submit = SubmitField("Save Book")

@@ -1,0 +1,68 @@
+{% extends 'base.html' %} {% block page_title %}Schedule Message Generator{%
+endblock %} {% block content %} {# tools nav removed #}
+<div class="soft-card p-6 space-y-6" x-data>
+  {% if result and result.error %}
+  <div class="text-red-600 text-sm">{{ result.error }}</div>
+  {% endif %}
+  <h2 class="text-lg font-semibold">Schedule Message Generator</h2>
+  <form method="post" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+      <div class="md:col-span-2">
+        <label class="block text-[11px] uppercase tracking-wide mb-1"
+          >Raw Pasted Schedule</label
+        >
+        <textarea
+          name="raw"
+          rows="10"
+          class="soft-input w-full"
+          placeholder="Paste exported schedule here..."
+        >
+{{ raw }}</textarea
+        >
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wide mb-1"
+          >Class Start Date (optional)</label
+        >
+        <input
+          type="date"
+          name="class_start_date"
+          value="{{ class_start_date }}"
+          class="soft-input w-full"
+        />
+        <p class="text-[10px] text-slate-500 mt-1 leading-snug">
+          If provided, will be inserted into the generated message.
+        </p>
+      </div>
+    </div>
+    <div>
+      <button class="soft-btn soft-btn-primary">Parse & Generate</button>
+    </div>
+  </form>
+  {% if result and result.message %}
+  <div class="pt-4">
+    <h3 class="font-semibold mb-2 text-sm">Preview</h3>
+    {% if result.class_start_date %}
+    <div class="text-[11px] mb-2 text-slate-500">
+      Class Start Date: {{ result.class_start_date }}
+    </div>
+    {% endif %}
+    <pre
+      class="bg-slate-900/80 text-slate-200 p-4 rounded text-xs whitespace-pre-wrap"
+    >
+{{ result.message }}</pre
+    >
+  </div>
+  <div class="pt-2 flex gap-2">
+    <button
+      type="button"
+      class="soft-btn"
+      x-on:click="navigator.clipboard.writeText(`{{ result.message|replace('`','\u0060') }}`); $dispatch('flash',{message:'Copied to clipboard', level:'success'})"
+    >
+      Copy Message
+    </button>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

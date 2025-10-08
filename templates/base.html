@@ -6,6 +6,8 @@
     <title>
       {% block title %}Excel Tutors — Observation Tracker{% endblock %}
     </title>
+  {% from 'components/forms_macros.html' import csrf_field %}
+  {% if CSRF_TOKEN %}<meta name="csrf-token" content="{{ CSRF_TOKEN }}" />{% endif %}
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -21,6 +23,14 @@
       };
     </script>
     <style>
+      /* Theme Tokens */
+      :root {
+        --c-bg-dark: #0D0D0D; /* almost black */
+        --c-text-primary-dark: #FFFFFF; /* pure white */
+        --c-accent-green: #00FF85; /* neon green */
+        --c-accent-blue: #1E90FF; /* electric blue */
+        --c-hover-pink: #FF0099; /* vivid pink */
+      }
       .soft-card {
         background: #fff;
         border: 1px solid #e2e8f0;
@@ -28,8 +38,8 @@
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
       }
       .dark .soft-card {
-        background: #1e293b;
-        border-color: #334155;
+        background: #161616;
+        border-color: #262626;
       }
       .soft-btn {
         display: inline-flex;
@@ -46,12 +56,22 @@
         background: #e2e8f0;
       }
       .dark .soft-btn {
-        background: #334155;
-        color: #e2e8f0;
+        background: #222; /* neutral dark */
+        color: var(--c-text-primary-dark);
+        border: 1px solid #2E2E2E;
       }
       .dark .soft-btn:hover {
-        background: #475569;
+        background: #2d2d2d;
+        color: var(--c-hover-pink);
       }
+      .soft-btn-primary { background: #4f46e5; color:#fff; }
+      .soft-btn-primary:hover { background:#4338ca; }
+      .dark .soft-btn-primary { background: var(--c-accent-blue); color:#000; text-shadow:0 0 4px rgba(255,255,255,0.4); }
+      .dark .soft-btn-primary:hover { background: var(--c-hover-pink); color:#fff; }
+      .soft-btn-accent { background: #10b981; color:#fff; }
+      .soft-btn-accent:hover { background:#059669; }
+      .dark .soft-btn-accent { background: var(--c-accent-green); color:#000; box-shadow:0 0 6px rgba(0,255,133,0.4); }
+      .dark .soft-btn-accent:hover { background: var(--c-hover-pink); color:#fff; box-shadow:0 0 8px rgba(255,0,153,0.45); }
       .soft-badge {
         background: #f1f5f9;
         color: #334155;
@@ -62,8 +82,8 @@
         letter-spacing: 0.5px;
       }
       .dark .soft-badge {
-        background: #334155;
-        color: #cbd5e1;
+        background: #1f1f1f;
+        color: #bbb;
       }
       .soft-input {
         border: 1px solid #cbd5e1;
@@ -76,12 +96,12 @@
         outline-offset: 1px;
       }
       .dark .soft-input {
-        background: #1e293b;
-        border-color: #475569;
-        color: #e2e8f0;
+        background: #141414;
+        border-color: #2c2c2c;
+        color: var(--c-text-primary-dark);
       }
       .dark .soft-input:focus {
-        outline-color: #818cf8;
+        outline-color: var(--c-accent-blue);
       }
       .brand-logo-img {
         height: 34px;
@@ -91,8 +111,40 @@
       [x-cloak] {
         display: none !important;
       }
-      .dark body { background: #0f172a; }
+      body { color:#1e293b; }
+      .dark body { background: var(--c-bg-dark); color: var(--c-text-primary-dark); }
+      .dark .prose, .dark .text-slate-700, .dark .text-slate-600 { color: var(--c-text-primary-dark) !important; }
+      /* Headings accent line */
+      .page-header { position:relative; padding-left:0.75rem; }
+      .page-header:before { content:""; position:absolute; left:0; top:0.3rem; bottom:0.3rem; width:4px; border-radius:2px; background:linear-gradient(180deg,var(--c-accent-green),var(--c-accent-blue)); }
+      .dark .page-header:before { box-shadow:0 0 6px rgba(0,255,133,0.5),0 0 10px rgba(30,144,255,0.4); }
+      .breadcrumb { font-size:11px; text-transform:uppercase; letter-spacing:0.08em; display:flex; gap:0.5rem; align-items:center; color:#64748b; }
+      .breadcrumb a { color:#475569; }
+      .breadcrumb a:hover { color:#111827; }
+      .dark .breadcrumb { color:#888; }
+      .dark .breadcrumb a { color: var(--c-accent-blue); }
+      .dark .breadcrumb a:hover { color: var(--c-hover-pink); }
+      .hover-accent:hover { color: var(--c-hover-pink) !important; }
       .theme-icon { width:16px; height:16px; display:block; }
+      /* Slim custom scrollbar (light/dark aware) */
+      .nav-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+      .dark .nav-scroll { scrollbar-color: #475569 transparent; }
+      .nav-scroll::-webkit-scrollbar { width: 6px; }
+      .nav-scroll::-webkit-scrollbar-track { background: transparent; }
+      .nav-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+      .nav-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      .dark .nav-scroll::-webkit-scrollbar-thumb { background: #475569; }
+      .dark .nav-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+      /* Table tweaks for dark mode */
+      .dark table thead { background:#1a1a1a !important; }
+      .dark table tbody tr { border-color:#222; }
+      .dark table tbody tr:hover { background:#111 !important; }
+      /* Remove legacy soft-tab (was inline tool nav) */
+      .soft-tab, .soft-tab.active { display:none !important; }
+      /* Accent link styles */
+      a { transition:color .2s, background-color .2s; }
+      .dark a { color: var(--c-accent-blue); }
+      .dark a:hover { color: var(--c-hover-pink); }
     </style>
   </head>
   <body
@@ -132,7 +184,7 @@
             ✕
           </button>
         </div>
-        <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1 text-sm">
+        <nav class="flex-1 min-h-0 overflow-y-auto nav-scroll px-3 py-4 space-y-1 text-sm">
           {% include 'components/_nav_links.html' %}
         </nav>
         <div class="px-4 py-4 text-[10px] text-slate-400 space-y-1">
@@ -161,7 +213,7 @@
               class="brand-logo-img"
           /></a>
         </div>
-        <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1 text-sm">
+        <nav class="flex-1 min-h-0 overflow-y-auto nav-scroll px-3 py-4 space-y-1 text-sm">
           {% include 'components/_nav_links.html' %}
         </nav>
         <div class="px-5 py-4 text-[10px] text-slate-400 space-y-1">
@@ -181,18 +233,25 @@
 
     <!-- Main content area -->
     <div class="flex flex-col flex-1 md:pl-60">
-      <header
-        class="sticky top-0 z-30 backdrop-blur bg-white/80 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700"
-      >
-        <div class="px-4 h-14 flex items-center gap-4">
-          <div class="flex items-center gap-3">
-            <button class="md:hidden soft-btn" @click="sidebarOpen=true">
-              Menu
-            </button>
-            <h1 class="text-base font-semibold text-slate-700">
-              {% block page_title %}{% endblock %}
-            </h1>
-            {% block page_subtitle %}{% endblock %}
+      <header class="sticky top-0 z-30 backdrop-blur bg-white/85 dark:bg-[#121212]/90 border-b border-slate-200 dark:border-[#1e1e1e]">
+        <div class="px-4 h-16 flex items-center gap-4">
+          <div class="flex flex-col gap-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <button class="md:hidden soft-btn text-xs" @click="sidebarOpen=true">Menu</button>
+              <nav class="breadcrumb hidden sm:flex">
+                {% block breadcrumb %}
+                <a href="{{ url_for('index') }}" class="hover-accent">Home</a>
+                <span>/</span>
+                <span>{% block crumb_current %}{% endblock %}</span>
+                {% endblock %}
+              </nav>
+            </div>
+            <div class="flex items-center gap-3 min-w-0">
+              <h1 class="page-header text-sm sm:text-base font-semibold truncate">
+                {% block page_title %}{% endblock %}
+              </h1>
+              {% block page_subtitle %}{% endblock %}
+            </div>
           </div>
           <div class="flex items-center gap-4 ml-auto">
             <button
@@ -244,6 +303,7 @@
               >
             </div>
             <form action="{{ url_for('logout') }}" method="post" class="inline">
+              {{ csrf_field() }}
               <button class="soft-btn text-xs">Logout</button>
             </form>
             {% else %}
@@ -261,62 +321,30 @@
           </div>
         </div>
       </header>
-      <main
-        class="flex-1 overflow-y-auto px-4 py-6 bg-slate-50 dark:bg-slate-900 transition-colors duration-300"
-      >
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            <div class="space-y-2 mb-4">
-              {% for category, message in messages %}
-                <div class="soft-card p-3 text-sm border-l-4 {% if category=='success' %}border-green-500{% elif category=='warning' %}border-yellow-500{% elif category=='danger' %}border-red-500{% else %}border-indigo-500{% endif %}">
-                  {{ message }}
-                </div>
-              {% endfor %}
-            </div>
-          {% endif %}
-  {% endwith %}
+      <main class="flex-1 overflow-y-auto px-4 py-6 bg-slate-50 dark:bg-[#0D0D0D] transition-colors duration-300">
+        <div id="flash-mount" class="hidden" data-flashes='{{ get_flashed_messages(with_categories=true)|tojson|safe }}'></div>
+        <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+        <script>
+          (function(){
+            const mount=document.getElementById('flash-mount');
+            if(!mount) return; const flashes=mount.getAttribute('data-flashes');
+            let data=[]; try{ data=JSON.parse(flashes)||[]; }catch(e){}
+            function pushToast(msg,type){
+              const wrap=document.createElement('div');
+              wrap.className='soft-card px-4 py-2 text-xs flex items-center gap-2 border-l-4 opacity-0 translate-y-1 transition-all duration-300';
+              const map={success:'border-green-500',danger:'border-red-500',warning:'border-yellow-500',info:'border-indigo-500'};
+              wrap.classList.add(map[type]||map.info);
+              wrap.textContent=msg; document.getElementById('toast-container').appendChild(wrap);
+              requestAnimationFrame(()=>{ wrap.classList.remove('opacity-0','translate-y-1'); });
+              setTimeout(()=>{ wrap.classList.add('opacity-0','translate-y-1'); setTimeout(()=>wrap.remove(),300); },4000);
+            }
+            data.forEach(([cat,msg])=> pushToast(msg,cat));
+            // Expose global event for on-demand toasts
+            window.addEventListener('toast', e=>{ const d=e.detail||{}; pushToast(d.message||'Notice', d.type||'info'); });
+          })();
+        </script>
   {% block content %}{% endblock %}
-  {% block report_form %}
-  <form method="post" action="{{ url_for('error_report_create') }}" enctype="multipart/form-data" class="space-y-4">
-          <div>
-            <label class="text-xs font-semibold">Title</label>
-            <input
-              name="title"
-              required
-              class="soft-input w-full text-sm"
-              placeholder="Short summary"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold">Comment / Details</label>
-            <textarea
-              name="comment"
-              rows="4"
-              class="soft-input w-full text-sm"
-              placeholder="Describe the issue, steps to reproduce, expected vs actual"
-            ></textarea>
-          </div>
-          <div>
-            <label class="text-xs font-semibold">Screenshot (optional)</label>
-            <input
-              type="file"
-              name="screenshot"
-              accept="image/png,image/jpeg"
-              class="soft-input w-full text-xs"
-            />
-          </div>
-          <div class="flex items-center gap-2 pt-2">
-            <button class="soft-btn">Submit</button>
-            <button type="button" class="soft-btn" @click="show=false">
-              Cancel
-            </button>
-          </div>
-          <p class="text-[10px] text-slate-500">
-            Diagnostic metadata is only attached if reporting from an error
-            page.
-          </p>
-  </form>
-  {% endblock %}
+  {# Error report inline form removed; reporting now only via dedicated button/modal or error page #}
       </div>
     </div>
 
@@ -422,6 +450,14 @@
     <script>window.__SERVER_THEME_PREF__='{{ user_theme_preference }}';</script>
     <script src="{{ url_for('static', filename='js/theme.js') }}" defer></script>
     <script>
+      // Fallback: if Alpine fails to init within 2s, un-cloak elements to avoid blank page.
+      (function(){
+        function uncloak(){ document.querySelectorAll('[x-cloak]').forEach(el=> el.removeAttribute('x-cloak')); }
+        document.addEventListener('alpine:init', ()=> { /* Alpine will remove x-cloak automatically */ });
+        window.addEventListener('DOMContentLoaded', ()=> { setTimeout(uncloak, 2000); });
+      })();
+    </script>
+    <script>
       (function(){
         const $=s=>document.querySelector(s); const modal=$('#versionModal'); const body=$('#versionBody');
         const searchInput=$('#versionSearch'); const scopeSelect=$('#versionScope'); const versionIndex=$('#versionIndex');
@@ -439,6 +475,23 @@
         copyBtn&&copyBtn.addEventListener('click',()=>{ const current=sections.find(s=>s.version==='{{ APP_VERSION }}'); if(!current) return; const text=`Version ${current.version} - ${current.date}\n\n${current.markdown}`; navigator.clipboard.writeText(text).then(()=>{ copyBtn.textContent='Copied'; setTimeout(()=>copyBtn.textContent='Copy',1500); }); });
         expandAllBtn&&expandAllBtn.addEventListener('click',()=>{ body.querySelectorAll('[data-panel]').forEach(p=>{ if(p.classList.contains('hidden')){ p.classList.remove('hidden'); const chev=p.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(180deg)'; } }); });
         collapseAllBtn&&collapseAllBtn.addEventListener('click',()=>{ body.querySelectorAll('[data-panel]').forEach(p=>{ if(!p.classList.contains('hidden')){ p.classList.add('hidden'); const chev=p.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(0deg)'; } }); });
+      })();
+    </script>
+    <script>
+      (function(){
+        const meta=document.querySelector('meta[name="csrf-token"]');
+        if(!meta) return; const token=meta.getAttribute('content'); if(!token) return;
+        // Inject into any POST form lacking token
+        document.addEventListener('DOMContentLoaded',()=>{
+          document.querySelectorAll('form[method="post" i]:not([data-no-csrf])').forEach(f=>{
+            if(!f.querySelector('input[name="csrf_token"]')){
+              const i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value=token; f.appendChild(i);
+            }
+          });
+        });
+        // Patch fetch to add token automatically for same-origin unsafe verbs
+        const _fetch=window.fetch; window.fetch=function(res,init){
+          try{init=init||{}; const url= typeof res==='string'?res:res.url; const sameOrigin = !/^https?:\/\//i.test(url) || url.startsWith(location.origin); const method=(init.method||'GET').toUpperCase(); if(sameOrigin && ['POST','PUT','PATCH','DELETE'].includes(method)){ init.headers=init.headers||{}; if(init.headers instanceof Headers){ if(!init.headers.has('X-CSRFToken')) init.headers.set('X-CSRFToken', token);} else { if(!('X-CSRFToken' in init.headers)) init.headers['X-CSRFToken']=token; } } }catch(_e){} return _fetch(res,init); };
       })();
     </script>
   </body>

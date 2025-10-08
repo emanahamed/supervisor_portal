@@ -1,0 +1,425 @@
+{% extends 'base.html' %}
+{% block crumb_current %}Books{% endblock %}
+{% block page_title %}Books{% endblock %}
+{% block content %}
+{# In-page tools nav removed; navigation handled by side navigation #}
+<div x-data="booksCrud()" x-cloak class="space-y-4">
+  <!-- Filters / Actions -->
+  <div class="soft-card p-4 flex flex-col gap-4">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <h2 class="font-semibold text-lg">Book Catalogue</h2>
+      <div class="flex items-center gap-2">
+  <button @click="openCreate()" class="soft-btn soft-btn-primary text-xs">Add Book</button>
+  {% if can('order_books') %}
+  <button @click="openOrderModal()" class="soft-btn soft-btn-accent text-xs" :disabled="selectedIds.length===0">Order Selected (<span x-text="selectedIds.length"></span>)</button>
+  {% endif %}
+        <a href="{{ url_for('book_orders_index') }}" class="soft-btn text-xs">Orders</a>
+      </div>
+    </div>
+    <form @submit.prevent="applyAndReload" class="flex flex-wrap items-end gap-3 text-xs">
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold">Search</label>
+        <input type="text" x-model="filters.q" placeholder="Name / Subject" class="soft-input h-8" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold">Subject</label>
+        <select x-model="filters.subject" class="soft-input h-8">
+          <option value="">All</option>
+          {% for s in subjects %}<option value="{{ s|lower }}" {% if selected_subject==s|lower %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold">Year</label>
+        <select x-model="filters.year" class="soft-input h-8">
+          <option value="">All</option>
+          <template x-for="(label,val) in yearOptions" :key="val">
+            <option :value="val" x-text="label"></option>
+          </template>
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold">Status</label>
+        <select x-model="filters.status" class="soft-input h-8">
+          <option value="active">Active</option>
+          <option value="hidden">Hidden</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold">Sort</label>
+        <select x-model="filters.sort" class="soft-input h-8">
+          <option value="name">Name</option>
+          <option value="year">Year</option>
+          <option value="subject">Subject</option>
+          <option value="price">Price</option>
+          <option value="status">Status</option>
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold">Direction</label>
+        <select x-model="filters.direction" class="soft-input h-8">
+          <option value="asc">Asc</option>
+          <option value="desc">Desc</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <button type="submit" class="soft-btn text-xs">Apply</button>
+        <button type="button" @click="resetFilters" class="soft-btn text-xs">Reset</button>
+        <label class="text-[10px] font-semibold">Per Page
+          <select x-model="per_page" @change="page=1; reload()" class="soft-input h-8 ml-1">
+            {% for size in per_page_choices %}<option value="{{ size }}" {% if per_page==size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+    </form>
+  </div>
+
+  <!-- JSON File Import / Upsert -->
+  <div class="soft-card p-4 space-y-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <h3 class="font-semibold text-sm">JSON File Import / Upsert</h3>
+    </div>
+    <p class="text-[11px] text-slate-500 leading-relaxed">Upload a <code>.json</code> file containing an array of book objects with keys: <code>Book_Name, Subject, Year, Price, Cover, Cover_URL, Inner, Inner_URL, Print_Format, Finishing</code>. Existing <strong>Book_Name</strong> entries will be updated.</p>
+    <form action="{{ url_for('books_import_json_file') }}" method="post" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3 text-xs">
+      {{ csrf_field() }}
+      <input type="file" name="file" accept="application/json,.json" class="soft-input text-xs" required />
+      <button class="soft-btn text-xs">Upload & Import</button>
+      <span class="text-[10px] text-slate-400">Max few MB (parsed server-side)</span>
+    </form>
+  </div>
+
+  <!-- Results Table -->
+  <div class="soft-card p-0 overflow-hidden">
+    <div class="overflow-auto">
+      <table class="min-w-full text-xs">
+        <thead class="bg-slate-100/70 text-slate-600 text-[10px] uppercase tracking-wide">
+          <tr>
+            <th class="p-2 text-left w-6"><input type="checkbox" @change="toggleAll($event)" :checked="allVisibleSelected"></th>
+            <th class="p-2 text-left w-16">Cover</th>
+            <th class="p-2 text-left cursor-pointer" @click="sortBy('name')">Name<span x-show="filters.sort==='name'" x-text="filters.direction==='asc'?' ▲':' ▼'"></span></th>
+            <th class="p-2 text-left cursor-pointer" @click="sortBy('year')">Year<span x-show="filters.sort==='year'" x-text="filters.direction==='asc'?' ▲':' ▼'"></span></th>
+            <th class="p-2 text-left cursor-pointer" @click="sortBy('subject')">Subject<span x-show="filters.sort==='subject'" x-text="filters.direction==='asc'?' ▲':' ▼'"></span></th>
+            <th class="p-2 text-left cursor-pointer" @click="sortBy('price')">Price<span x-show="filters.sort==='price'" x-text="filters.direction==='asc'?' ▲':' ▼'"></span></th>
+            <th class="p-2 text-left">Status</th>
+            <th class="p-2 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="b in books" :key="b.id">
+            <tr class="border-b last:border-0 hover:bg-slate-50">
+              <td class="p-2 align-top"><input type="checkbox" :value="b.id" @change="toggleSelect(b.id)" :checked="selectedIds.includes(b.id)"></td>
+              <td class="p-2">
+                <template x-if="b.cover_url">
+                  <img :src="b.cover_url" alt="cover" class="h-12 w-12 object-cover rounded border" />
+                </template>
+                <template x-if="!b.cover_url">
+                  <div class="h-12 w-12 flex items-center justify-center bg-slate-100 rounded text-[9px] text-slate-500">No Img</div>
+                </template>
+              </td>
+              <td class="p-2 font-medium align-top">
+                <div x-text="b.name"></div>
+                <div class="text-[10px] text-slate-400" x-show="b.print_format || b.finishing" x-text="[b.print_format,b.finishing].filter(Boolean).join(' · ')"></div>
+              </td>
+              <td class="p-2 whitespace-nowrap align-top" x-text="b.year || '-' "></td>
+              <td class="p-2 whitespace-nowrap align-top" x-text="b.subject || '-' "></td>
+              <td class="p-2 align-top" x-text="currency(b.price)"></td>
+              <td class="p-2 align-top">
+                <label class="inline-flex items-center gap-1 cursor-pointer select-none">
+                  <input type="checkbox" :checked="b.active" @change="toggleActive(b)" class="h-4 w-4">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded font-medium" :class="b.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'" x-text="b.active ? 'Active':'Hidden'"></span>
+                </label>
+              </td>
+              <td class="p-2 text-right align-top whitespace-nowrap">
+                <div class="inline-flex gap-2">
+                  <button class="text-indigo-600 hover:underline" @click="openEdit(b)">Edit</button>
+                  <button class="text-red-600 hover:underline" @click="confirmDelete(b)">Del</button>
+                </div>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="books.length===0">
+            <td colspan="8" class="text-center py-6 text-slate-500">No books found.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between gap-4 px-4 py-3 text-[11px] border-t" x-show="pages>1">
+  <div>Page <span x-text="page"></span> / <span x-text="pages"></span> • Total <span x-text="total"></span> • Selected <span x-text="selectedIds.length"></span></div>
+      <div class="flex items-center gap-2">
+        <button class="soft-btn text-xs" :disabled="page<=1" @click="goto(page-1)">Prev</button>
+        <button class="soft-btn text-xs" :disabled="page>=pages" @click="goto(page+1)">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div
+    x-show="modal.open"
+    x-transition
+    x-cloak
+    class="fixed inset-0 z-50 flex items-start md:items-center justify-center p-4"
+  >
+    <div class="absolute inset-0 bg-slate-900/50" @click="closeModal()"></div>
+    <div
+      class="relative bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
+    >
+      <div class="px-5 py-3 border-b flex items-center gap-4">
+        <h3
+          class="font-semibold text-sm"
+          x-text="modal.mode==='create'?'Add Book':'Edit Book'"
+        ></h3>
+        <button
+          class="ml-auto text-slate-500 hover:text-slate-700"
+          @click="closeModal()"
+        >
+          ✕
+        </button>
+      </div>
+      <form
+        @submit.prevent="submitForm"
+        class="flex flex-col gap-4 p-5 text-sm overflow-y-auto"
+      >
+        <div class="grid md:grid-cols-3 gap-5">
+          <div class="md:col-span-2 space-y-4">
+            <div class="grid md:grid-cols-2 gap-4">
+              <div>
+                <label class="soft-label text-[11px]">Book Name</label>
+                <input type="text" x-model="form.name" required class="soft-input w-full" placeholder="Year 6 SATS Maths Arithmetic..." />
+              </div>
+              <div>
+                <label class="soft-label text-[11px]">Subject</label>
+                <input type="text" x-model="form.subject" class="soft-input w-full" />
+              </div>
+            </div>
+            <div class="grid md:grid-cols-3 gap-4">
+              <div>
+                <label class="soft-label text-[11px]">Year</label>
+                <input type="text" x-model="form.year_group" class="soft-input w-full" placeholder="year6-7 / Year 6 / etc" />
+              </div>
+              <div>
+                <label class="soft-label text-[11px]">Price</label>
+                <input type="number" step="0.01" x-model.number="form.price" required class="soft-input w-full" />
+              </div>
+              <div>
+                <label class="soft-label text-[11px]">Print Format</label>
+                <select x-model="form.print_format" class="soft-input w-full">
+                  <option value="">-</option>
+                  <option value="2-in-1">2-in-1</option>
+                  <option value="1-in-1">1-in-1</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-4">
+              <div>
+                <label class="soft-label text-[11px]">Cover</label>
+                <input type="text" x-model="form.cover" class="soft-input w-full" />
+              </div>
+              <div>
+                <label class="soft-label text-[11px]">Cover URL</label>
+                <input type="text" x-model="form.cover_url" @input="previewImage()" placeholder="https://" class="soft-input w-full" />
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-4">
+              <div>
+                <label class="soft-label text-[11px]">Inner</label>
+                <input type="text" x-model="form.inner" class="soft-input w-full" />
+              </div>
+              <div>
+                <label class="soft-label text-[11px]">Inner URL</label>
+                <input type="text" x-model="form.inner_url" placeholder="https://" class="soft-input w-full" />
+              </div>
+            </div>
+            <div>
+              <label class="soft-label text-[11px] flex items-center gap-2">Finishing <span class="text-[10px] font-normal text-slate-400">(multi-select)</span></label>
+              <div class="flex flex-wrap gap-2 mt-1">
+                <template x-for="opt in finishingOptions" :key="opt">
+                  <label class="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border cursor-pointer select-none"
+                         :class="form.finishing.includes(opt)?'bg-indigo-50 border-indigo-300 text-indigo-700':'bg-white border-slate-200 text-slate-600'">
+                    <input type="checkbox" class="hidden" :value="opt" @change="toggleFinishing(opt)" :checked="form.finishing.includes(opt)">
+                    <span x-text="opt"></span>
+                  </label>
+                </template>
+              </div>
+            </div>
+            <div>
+              <label class="inline-flex items-center gap-2 text-[11px]">
+                <input type="checkbox" x-model="form.active" /> Active (visible)
+              </label>
+            </div>
+          </div>
+          <div class="md:col-span-1 flex flex-col gap-3 items-center">
+            <div class="text-[10px] font-semibold">Cover Preview</div>
+            <template x-if="preview">
+              <img :src="preview" alt="preview" class="h-48 w-32 object-cover rounded border" />
+            </template>
+            <template x-if="!preview">
+              <div class="h-48 w-32 rounded border flex items-center justify-center text-[10px] text-slate-400">No Image</div>
+            </template>
+            <div class="text-[10px] text-slate-400 text-center px-2">Paste a Cover URL to update preview.</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-2 border-t border-slate-200">
+          <button
+            class="soft-btn soft-btn-primary"
+            x-text="modal.mode==='create'?'Create':'Update'"
+          ></button>
+          <button type="button" class="soft-btn" @click="closeModal()">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Order Modal (moved inside x-data root so orderModal is in scope) -->
+  <template x-if="orderModal.open">
+    <div class="fixed inset-0 z-50 flex items-start md:items-center justify-center p-4" x-trap.noscroll="orderModal.open" x-cloak>
+      <div class="absolute inset-0 bg-slate-900/50" @click="orderModal.open=false"></div>
+      <div class="relative bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div class="px-5 py-3 border-b flex items-center gap-4">
+          <h3 class="font-semibold text-sm">Order Books</h3>
+          <button class="ml-auto text-slate-500 hover:text-slate-700" @click="orderModal.open=false">✕</button>
+        </div>
+        <div class="p-5 flex flex-col gap-4 overflow-y-auto text-xs">
+          <div class="grid grid-cols-12 gap-2 font-semibold text-[10px] uppercase tracking-wide text-slate-500">
+            <div class="col-span-6">Book</div>
+            <div class="col-span-2">Format</div>
+            <div class="col-span-2">Finishing</div>
+            <div class="col-span-2">Qty</div>
+          </div>
+          <template x-for="(it, idx) in orderModal.items" :key="it.book_id">
+            <div class="grid grid-cols-12 gap-2 items-center">
+              <div class="col-span-6" x-text="it.name"></div>
+              <div class="col-span-2" x-text="it.print_format||'-'"></div>
+              <div class="col-span-2 truncate" x-text="it.finishing||'-'"></div>
+              <div class="col-span-2"><input type="number" min="1" class="soft-input h-8 w-full" x-model.number="it.quantity"></div>
+            </div>
+          </template>
+          <div class="flex items-center gap-2">
+            <label class="text-xs flex items-center gap-2">Delivery Date <input type="text" placeholder="DD-MM-YYYY" x-model="orderModal.delivery_date" class="soft-input h-8 text-xs w-36" /></label>
+            <span class="text-[10px] text-slate-400">Delivery expected by 4 PM that date.</span>
+          </div>
+        </div>
+        <div class="px-5 py-3 border-t flex items-center gap-3">
+          <button class="soft-btn soft-btn-primary text-xs" @click="submitOrder()">Submit Order</button>
+          <button class="soft-btn text-xs" @click="orderModal.open=false">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+<script>
+  // Inject initial page of books from server to avoid immediate reload loop
+  const INITIAL_BOOKS = {{ books|tojson|safe }};
+  const CSRF_TOKEN = '{{ csrf_token() if csrf_token else '' }}';
+  function booksCrud(){
+    return {
+  books: INITIAL_BOOKS,
+  selectedIds: [],
+  orderModal: { open:false, delivery_date:'', items:[] },
+      page: {{ page|default(1) }},
+      pages: {{ pages|default(1) }},
+      total: {{ total|default(0) }},
+      per_page: {{ per_page|default(25) }},
+      yearOptions: { 'Year 3-5':'year3-5','Year 6-7':'year6-7','Year 8':'year8','Year 9':'year9','Year 10':'year10','Year 11':'year11','A-Level':'alevel' },
+      filters: {
+        q: '{{ q or '' }}',
+        year: '{{ selected_year or '' }}',
+        subject: '{{ selected_subject or '' }}',
+        status: '{{ selected_status or 'active' }}',
+        sort: '{{ sort or 'name' }}',
+        direction: '{{ direction or 'asc' }}'
+      },
+      modal: { open:false, mode:'create' },
+  form: { id:null, name:'', price:0, subject:'', year_group:'', cover:'', cover_url:'', inner:'', inner_url:'', print_format:'', finishing:[], active:true },
+  errors: {},
+  finishingOptions: ['Matte','Colour','Black&White','Gloss'],
+  // finishing stored as array internally for multi-select
+  // (persisted as comma-separated string when submitting)
+      preview: '',
+      currency(v){ if(v==null||v==='') return '£0.00'; return '£'+Number(v).toFixed(2); },
+      buildParams(){
+        const p = new URLSearchParams();
+        if(this.filters.q) p.set('q', this.filters.q);
+        if(this.filters.year) p.set('year', this.filters.year);
+        if(this.filters.subject) p.set('subject', this.filters.subject);
+        if(this.filters.status) p.set('status', this.filters.status);
+        if(this.filters.sort) p.set('sort', this.filters.sort);
+        if(this.filters.direction) p.set('direction', this.filters.direction);
+        p.set('page', this.page);
+        p.set('per_page', this.per_page);
+        return p.toString();
+      },
+      applyAndReload(){ this.page = 1; this.reload(); },
+      reload(){ window.location = '{{ url_for('books_index') }}' + '?' + this.buildParams(); },
+      goto(p){ this.page = p; this.reload(); },
+      resetFilters(){ this.filters.q=''; this.filters.year=''; this.filters.subject=''; this.filters.status='active'; this.filters.sort='name'; this.filters.direction='asc'; this.applyAndReload(); },
+      sortBy(field){ if(this.filters.sort===field){ this.filters.direction = this.filters.direction==='asc'?'desc':'asc'; } else { this.filters.sort=field; this.filters.direction='asc'; } this.applyAndReload(); },
+  openCreate(){ this.modal.mode='create'; this.modal.open=true; this.errors={}; this.form={id:null,name:'',price:0,subject:'',year_group:'',cover:'',cover_url:'',inner:'',inner_url:'',print_format:'',finishing:[],active:true}; this.preview=''; },
+  openEdit(b){ this.modal.mode='edit'; this.modal.open=true; this.errors={}; this.form={ id:b.id, name:b.name, price:b.price, subject:b.subject||'', year_group:b.year||'', cover:b.cover||'', cover_url:b.cover_url||'', inner:b.inner||'', inner_url:b.inner_url||'', print_format:b.print_format||'', finishing: (b.finishing? b.finishing.split(',').map(s=>s.trim()).filter(Boolean):[]), active:b.active!==false }; this.preview=b.cover_url||''; },
+      closeModal(){ this.modal.open=false; },
+      previewImage(){ this.preview=this.form.cover_url; },
+      submitForm(){
+        this.errors={};
+        if(!this.form.name || !this.form.name.trim()) this.errors.name='Name required';
+        if(this.form.price==='' || this.form.price===null || isNaN(Number(this.form.price))) this.errors.price='Valid price required';
+        if(Object.keys(this.errors).length){ return; }
+        const finishingJoined = Array.isArray(this.form.finishing)? this.form.finishing.join(','): (this.form.finishing||'');
+        const payload={ name:this.form.name.trim(), price:this.form.price, subject:this.form.subject||'', year_group:this.form.year_group||'', cover:this.form.cover||'', cover_url:this.form.cover_url||'', inner:this.form.inner||'', inner_url:this.form.inner_url||'', print_format:this.form.print_format||'', finishing:finishingJoined, active:this.form.active?1:0 };
+        const editBase='{{ url_for('books_edit', book_id=0) }}';
+        const url = this.modal.mode==='create'? '{{ url_for('books_create') }}' : editBase.replace(/0\/edit$/, this.form.id + '/edit');
+        fetch(url,{ method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRFToken': CSRF_TOKEN}, body: new URLSearchParams(payload) })
+          .then(r=>{ if(r.redirected){ window.location.href=r.url; return; } return r.text(); })
+          .then(()=>{ this.modal.open=false; this.reload(); });
+      },
+      confirmDelete(b){ if(!confirm('Permanently delete this book? This cannot be undone.')) return; fetch('{{ url_for('books_delete', book_id=0) }}'.replace('0', b.id), { method:'POST', headers:{'X-CSRFToken': CSRF_TOKEN} }).then(()=> this.reload()); },
+      toggleActive(b){ fetch('{{ url_for('books_toggle', book_id=0) }}'.replace('0', b.id), { method:'POST', headers:{'X-CSRFToken': CSRF_TOKEN} }).then(()=> this.reload()); },
+      toggleFinishing(opt){
+        const idx = this.form.finishing.indexOf(opt);
+        if(idx>=0) this.form.finishing.splice(idx,1); else this.form.finishing.push(opt);
+      },
+      toggleSelect(id){ const i=this.selectedIds.indexOf(id); if(i>=0) this.selectedIds.splice(i,1); else this.selectedIds.push(id); },
+      toggleAll(evt){ if(evt.target.checked){ this.selectedIds = this.books.map(b=>b.id); } else { this.selectedIds=[]; } },
+      get allVisibleSelected(){ return this.books.length>0 && this.selectedIds.length===this.books.length; },
+      openOrderModal(){
+        if(this.selectedIds.length===0){ console.warn('openOrderModal: no selected ids'); return; }
+        this.orderModal.items = this.selectedIds.map(id=>{ const b=this.books.find(bb=>bb.id===id)||{}; return { book_id:id, name:b.name||'', print_format:b.print_format||'', finishing:b.finishing||'', quantity:1 }; });
+        this.orderModal.delivery_date='';
+        this.orderModal.open=true;
+        // order modal opened
+      },
+  submitOrder(){
+        const invalid=this.orderModal.items.some(i=>!i.quantity || i.quantity<=0);
+        if(invalid){ this.toast('All quantities must be positive integers','danger'); return; }
+        let dd = (this.orderModal.delivery_date||'').trim();
+        if(dd && !/^\d{2}-\d{2}-\d{4}$/.test(dd) && !/^\d{4}-\d{2}-\d{2}$/.test(dd)){
+          this.toast('Delivery date must be DD-MM-YYYY','warning'); return; }
+        const payload={ delivery_date:dd, items:this.orderModal.items.map(i=>({book_id:i.book_id, quantity:i.quantity})) };
+        fetch('{{ url_for('book_orders_create') }}',{ method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken': CSRF_TOKEN}, body: JSON.stringify(payload), redirect:'follow' })
+          .then(async r=>{
+            const ct = r.headers.get('content-type')||'';
+            if(ct.includes('application/json')){
+              try { const data = await r.json(); return data; } catch(e){ return {success:false,error:'Invalid JSON ('+e+')'} }
+            }
+            // Non-JSON -> likely HTML login or error page
+            const text = await r.text();
+            if(r.status===302 || /<form[^>]*login/i.test(text)){
+              return {success:false,error:'Session expired: please refresh & login again.'};
+            }
+            return {success:false,error:'Unexpected server response '+r.status};
+          })
+          .then(resp=>{ if(!resp || !resp.success){ this.toast('Order failed: '+(resp&&resp.error||'Unknown'), 'danger'); } else { this.toast('Order sent (#'+resp.order_id+')','success'); this.selectedIds=[]; this.orderModal.open=false; window.location='{{ url_for('book_orders_index') }}'; } })
+          .catch(e=> { console.error('Order create network error', e); this.toast('Network error creating order','danger'); });
+      },
+      toast(message,type='info'){ window.dispatchEvent(new CustomEvent('toast',{detail:{message,type}})); }
+    }
+  }
+
+  // (Text-area JSON import removed in favour of file upload form)
+  </script>
+<!-- Toasts -->
+<div x-data="{items:[], push(t){const id=Date.now()+Math.random(); this.items.push({...t,id}); setTimeout(()=>{this.items=this.items.filter(x=>x.id!==id)},4000);} }" @toast.window="push($event.detail)" class="fixed top-4 right-4 z-50 space-y-2">
+  <template x-for="t in items" :key="t.id">
+    <div class="soft-card px-4 py-2 text-xs border-l-4" :class="{'border-green-500':t.type==='success','border-red-500':t.type==='danger','border-yellow-500':t.type==='warning','border-indigo-500':t.type==='info'}" x-text="t.message"></div>
+  </template>
+</div>
+{% endblock %}

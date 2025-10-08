@@ -1,0 +1,71 @@
+{% extends 'base.html' %} {% block page_title %}{{ 'Edit' if book else 'Add' }}
+Book{% endblock %} {% block content %} {# tools nav removed #}
+<div class="soft-card p-6 max-w-xl">
+  <h2 class="font-semibold text-lg mb-4">
+    {{ 'Edit' if book else 'Add' }} Book
+  </h2>
+  <form method="post" class="space-y-4 text-sm">
+    {{ form.hidden_tag() }}
+    <div>
+      <label class="soft-label">Name</label>
+      {{ form.name(class='soft-input w-full') }} {% for e in form.name.errors %}
+      <p class="text-red-600 text-xs">{{ e }}</p>
+      {% endfor %}
+    </div>
+    <div class="grid md:grid-cols-3 gap-4">
+      <div>
+        <label class="soft-label">Price</label>
+        {{ form.price(class='soft-input w-full') }}
+      </div>
+      <div>
+        <label class="soft-label">Subject</label>
+        {{ form.subject(class='soft-input w-full') }}
+      </div>
+      <div>
+        <label class="soft-label">Year</label>
+        {{ form.year_group(class='soft-input w-full') }}
+      </div>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="soft-label">Cover</label>
+        {{ form.cover(class='soft-input w-full') }}
+      </div>
+      <div>
+        <label class="soft-label">Cover URL</label>
+        {{ form.cover_url(class='soft-input w-full') }}
+      </div>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="soft-label">Inner</label>
+        {{ form.inner(class='soft-input w-full') }}
+      </div>
+      <div>
+        <label class="soft-label">Inner URL</label>
+        {{ form.inner_url(class='soft-input w-full') }}
+      </div>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="soft-label">Print Format</label>
+        {{ form.print_format(class='soft-input w-full') }}
+      </div>
+      <div>
+        <label class="soft-label">Finishing</label>
+        {{ form.finishing(class='soft-input w-full') }}
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      {{ form.active }}
+      <label for="active" class="text-xs">Active (visible)</label>
+    </div>
+    <div class="pt-2">
+      <button class="soft-btn soft-btn-primary">
+        {{ 'Update' if book else 'Create' }}
+      </button>
+      <a href="{{ url_for('books_index') }}" class="soft-btn text-xs">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

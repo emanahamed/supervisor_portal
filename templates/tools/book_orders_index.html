@@ -1,0 +1,98 @@
+{% extends 'base.html' %} {% block page_title %}Book Orders{% endblock %} {%
+block content %} {# tools nav removed #}
+<div class="soft-card p-4 mb-6 flex items-center justify-between">
+  <h2 class="font-semibold text-lg">Book Orders</h2>
+  <a href="{{ url_for('books_index') }}" class="soft-btn text-xs"
+    >Back to Books</a
+  >
+</div>
+<div class="soft-card p-4 mb-4">
+  <form method="get" class="grid md:grid-cols-6 gap-3 text-xs items-end" x-data="{show:false}" @keydown.enter="$el.closest('form').submit()">
+    <div class="md:col-span-2">
+      <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Search</label>
+      <input type="text" name="q" value="{{ q or '' }}" placeholder="Book or user" class="soft-input py-1 text-xs" />
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Created From</label>
+      <input type="text" name="from" value="{{ created_from or '' }}" placeholder="DD-MM-YYYY" class="soft-input py-1 text-xs" />
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Created To</label>
+      <input type="text" name="to" value="{{ created_to or '' }}" placeholder="DD-MM-YYYY" class="soft-input py-1 text-xs" />
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Delivery Date</label>
+      <input type="text" name="delivery" value="{{ delivery or '' }}" placeholder="DD-MM-YYYY" class="soft-input py-1 text-xs" />
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Has Delivery</label>
+      <select name="has_delivery" class="soft-input py-1 text-xs">
+        <option value="">Any</option>
+        <option value="1" {% if has_delivery=='1' %}selected{% endif %}>Yes</option>
+      </select>
+    </div>
+    <div class="flex gap-2 md:col-span-6">
+      <button class="soft-btn !py-1">Filter</button>
+      <a href="{{ url_for('book_orders_index') }}" class="soft-btn-secondary !py-1">Reset</a>
+      <a href="{{ url_for('book_orders_export_all', format='csv') }}" class="soft-btn-secondary !py-1">CSV</a>
+      <a href="{{ url_for('book_orders_export_all', format='pdf') }}" class="soft-btn-secondary !py-1">PDF</a>
+    </div>
+  </form>
+</div>
+<div class="soft-card p-0 overflow-hidden">
+  <table class="min-w-full text-xs">
+    <thead
+      class="bg-slate-100/70 text-slate-600 text-[10px] uppercase tracking-wide"
+    >
+      <tr>
+        <th class="p-2 text-left">Order ID</th>
+        <th class="p-2 text-left">Created</th>
+        <th class="p-2 text-left">By</th>
+        <th class="p-2 text-left">Delivery Date</th>
+        <th class="p-2 text-left">Items</th>
+        <th class="p-2 text-left">Email Sent</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in orders %}
+      <tr class="border-b last:border-0 hover:bg-slate-50">
+        <td class="p-2 align-top">#{{ o.id }}</td>
+        <td class="p-2 align-top">
+          {{ o.created_at.strftime('%d-%m-%Y %H:%M') if o.created_at else '' }}
+        </td>
+        <td class="p-2 align-top">
+          {{ o.created_by.name if o.created_by else '' }}
+        </td>
+        <td class="p-2 align-top">
+          {{ o.delivery_date.strftime('%d-%m-%Y') if o.delivery_date else '-' }}
+        </td>
+        <td class="p-2 align-top">
+          <ul class="space-y-1">
+            {% for i in o.items %}
+            <li>
+              <span class="font-medium">{{ i.book_name }}</span>
+              <span class="text-slate-500">× {{ i.quantity }}</span>
+              {% if i.print_format %}<span class="text-slate-400"
+                >• {{ i.print_format }}</span
+              >{% endif %} {% if i.finishing %}<span class="text-slate-400"
+                >• {{ i.finishing }}</span
+              >{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </td>
+        <td class="p-2 align-top">
+          {% if o.email_sent_at %}{{ o.email_sent_at.strftime('%d-%m-%Y %H:%M') }}{% else %}<span class="text-slate-400">Pending</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %} {% if orders|length == 0 %}
+      <tr>
+        <td colspan="6" class="text-center py-8 text-slate-500">
+          No orders yet.
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

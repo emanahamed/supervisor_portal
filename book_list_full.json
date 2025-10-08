@@ -1,0 +1,98 @@
+[
+  {
+    "Book_Name": "Year 6 SATS Maths Arithmetic and Reasoning (2 books)",
+    "Subject": "",
+    "Year": "",
+    "Price": 20.0,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  },
+  {
+    "Book_Name": "Student Planner (Small)",
+    "Subject": "",
+    "Year": "",
+    "Price": 3.0,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  },
+  {
+    "Book_Name": "Student Planner (Large)",
+    "Subject": "",
+    "Year": "",
+    "Price": 5.0,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  },
+  {
+    "Book_Name": "Science Writing Book",
+    "Subject": "",
+    "Year": "",
+    "Price": 1.5,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  },
+  {
+    "Book_Name": "Printing White Paper",
+    "Subject": "",
+    "Year": "",
+    "Price": 0.0,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  },
+  {
+    "Book_Name": "Maths Writing Book",
+    "Subject": "",
+    "Year": "",
+    "Price": 1.5,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  },
+  {
+    "Book_Name": "Hand Writing Book",
+    "Subject": "English",
+    "Year": "",
+    "Price": 6.0,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  },
+  {
+    "Book_Name": "Excel Year 8 Maths Workbook",
+    "Subject": "Maths",
+    "Year": 8,
+    "Price": 23.0,
+    "Cover": "",
+    "Cover_URL": "",
+    "Inner": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  }
+]

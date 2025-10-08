@@ -82,11 +82,18 @@
         </p>
       </div>
     </div>
-    <div class="mt-4 flex gap-2">
+    <div class="mt-4 flex gap-2 flex-wrap">
       <button class="soft-btn soft-btn-primary">Save</button>
       <a class="soft-btn bg-slate-100" href="{{ url_for('staff_index') }}"
         >Cancel</a
       >
+      {% if staff %}
+      <a
+        class="soft-btn bg-slate-100"
+        href="{{ url_for('staff_detail', sid=staff.id) }}"
+        >View Detail</a
+      >
+      {% endif %}
     </div>
   </form>
 </div>

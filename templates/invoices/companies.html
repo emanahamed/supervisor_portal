@@ -1,5 +1,22 @@
 {% extends 'base.html' %} {% block page_title %}Companies{% endblock %} {% block
 content %}
+<script>
+  // Define global deleteModal early so Alpine expressions referencing it during initial scan do not throw.
+  window.deleteModal = window.deleteModal || {
+    open: false,
+    action: "",
+    title: "Delete Company",
+    invoiceCount: 0,
+    bulk: false,
+    submitting: false,
+  };
+  document.addEventListener("alpine:init", () => {
+    if (window.Alpine && !window.deleteModal.__wrapped) {
+      window.deleteModal = Alpine.reactive(window.deleteModal);
+      window.deleteModal.__wrapped = true;
+    }
+  });
+</script>
 <div x-data="companyCrud()" class="space-y-6">
   <div class="grid md:grid-cols-5 gap-4">
     <div class="soft-card p-4">
@@ -44,7 +61,22 @@ content %}
       class="soft-input text-sm ml-auto w-56"
     />
   </div>
-  <div class="overflow-x-auto text-sm">
+  <div class="overflow-x-auto text-sm" x-data="bulkManage()">
+    <div class="flex items-center gap-3 mb-2">
+      <div
+        class="text-xs text-slate-500"
+        x-text="selectedIds.length ? selectedIds.length + ' selected' : 'No selection'"
+      ></div>
+      <button
+        type="button"
+        class="soft-btn text-xs"
+        :disabled="!selectedIds.length"
+        @click="openBulkDelete()"
+        :class="{'opacity-50 cursor-not-allowed': !selectedIds.length}"
+      >
+        Bulk Delete / Reassign
+      </button>
+    </div>
     <table
       class="min-w-full border divide-y divide-slate-200 bg-white rounded-lg"
     >
@@ -52,6 +84,9 @@ content %}
         class="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"
       >
         <tr>
+          <th class="p-2">
+            <input type="checkbox" @change="toggleAll($event)" />
+          </th>
           <th class="p-2 text-left">Logo</th>
           <th class="p-2 text-left">Name</th>
           <th class="p-2 text-left">Prefix</th>
@@ -65,7 +100,18 @@ content %}
       </thead>
       <tbody class="divide-y divide-slate-100" id="companyRows">
         {% for c in companies %}
-        <tr x-show="match('{{ c.name|e }}')">
+        <tr
+          x-show="match('{{ c.name|e }}')"
+          :class="selectedIds.includes({{ c.id }}) ? 'bg-indigo-50 dark:bg-slate-800/40' : ''"
+        >
+          <td class="p-2 align-top">
+            <input
+              type="checkbox"
+              value="{{ c.id }}"
+              @change="toggleOne($event)"
+              :checked="selectedIds.includes({{ c.id }})"
+            />
+          </td>
           <td class="p-2">
             {% if c.logo_path %}<img
               src="{{ url_for('static', filename=c.logo_path) }}"
@@ -73,7 +119,16 @@ content %}
               alt="logo"
             />{% endif %}
           </td>
-          <td class="p-2 font-medium">{{ c.name }}</td>
+          <td class="p-2 font-medium flex items-center gap-1">
+            <span>{{ c.name }}</span>
+            {% set inv_count = company_stats[c.id].count %} {% if inv_count>0 %}
+            <span
+              class="soft-badge bg-yellow-100 text-yellow-700 dark:bg-yellow-700/30 dark:text-yellow-300"
+              title="Has {{ inv_count }} invoice(s) – requires reassignment to delete"
+              >{{ inv_count }}</span
+            >
+            {% endif %}
+          </td>
           <td class="p-2">{{ c.invoice_prefix }}</td>
           <td class="p-2 text-center">{{ company_stats[c.id].count }}</td>
           <td class="p-2 text-center">
@@ -103,15 +158,62 @@ content %}
             <button class="soft-btn text-xs" @click="openEdit({{ c.id }})">
               Edit
             </button>
-            <form
-              method="post"
-              action="{{ url_for('company_delete', company_id=c.id) }}"
-              onsubmit="return confirm('Delete company?');"
+            <button
+              class="soft-btn text-xs"
+              @click="openSingleDelete({ id: {{ c.id }}, name: '{{ c.name|e }}', invoiceCount: {{ company_stats[c.id].count }} })"
             >
-              <button class="soft-btn text-xs">Del</button>
-            </form>
+              Del
+            </button>
           </td>
         </tr>
+
+        <script>
+          function bulkManage() {
+            return {
+              selectedIds: [],
+              toggleOne(e) {
+                const id = parseInt(e.target.value);
+                if (e.target.checked) {
+                  if (!this.selectedIds.includes(id)) this.selectedIds.push(id);
+                } else {
+                  this.selectedIds = this.selectedIds.filter((x) => x !== id);
+                }
+              },
+              toggleAll(e) {
+                const checked = e.target.checked;
+                this.selectedIds = checked
+                  ? Array.from(
+                      document.querySelectorAll(
+                        "#companyRows input[type=checkbox][value]"
+                      )
+                    ).map((cb) => parseInt(cb.value))
+                  : [];
+                document
+                  .querySelectorAll("#companyRows input[type=checkbox][value]")
+                  .forEach((cb) => {
+                    cb.checked = checked;
+                  });
+              },
+              openSingleDelete(info) {
+                deleteModal.bulk = false;
+                deleteModal.open = true;
+                deleteModal.invoiceCount = info.invoiceCount;
+                deleteModal.title = `Delete ${info.name}`;
+                deleteModal.action = `/companies/${info.id}/delete`;
+              },
+              openBulkDelete() {
+                if (!this.selectedIds.length) return;
+                deleteModal.bulk = true;
+                deleteModal.open = true;
+                deleteModal.invoiceCount = 0;
+                deleteModal.title = `Bulk Delete / Reassign (${this.selectedIds.length})`;
+                deleteModal.action = `/companies/bulk-delete?ids=${this.selectedIds.join(
+                  ","
+                )}`;
+              },
+            };
+          }
+        </script>
         {% else %}
         <tr>
           <td colspan="9" class="p-4 text-center text-slate-500">
@@ -252,6 +354,86 @@ content %}
             x-text="mode==='create' ? 'Create' : 'Save'"
           ></button
           ><button type="button" class="soft-btn" @click="close()">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Delete / Reassign Modal (moved after loop & table to avoid early evaluation issues) -->
+  <div
+    x-data
+    x-show="deleteModal.open"
+    x-cloak
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+  >
+    <div
+      class="absolute inset-0 bg-slate-900/60"
+      @click="deleteModal.open=false"
+    ></div>
+    <div
+      class="relative bg-white dark:bg-[#181818] rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4"
+      @keydown.escape.window="deleteModal.open=false"
+    >
+      <h2 class="text-sm font-semibold" x-text="deleteModal.title"></h2>
+      <template x-if="deleteModal.invoiceCount && !deleteModal.bulk">
+        <div class="text-xs text-amber-600 dark:text-amber-400">
+          This company has
+          <strong x-text="deleteModal.invoiceCount"></strong> invoice(s). You
+          can reassign them to another company or force delete.
+        </div>
+      </template>
+      <template x-if="deleteModal.bulk">
+        <div class="text-xs text-slate-600 dark:text-slate-300">
+          <span x-text="selectedIds.length"></span> companies selected.
+          Companies with invoices will be reassigned or deleted based on
+          options.
+        </div>
+      </template>
+      <form
+        method="post"
+        :action="deleteModal.action"
+        class="space-y-4"
+        @submit="deleteModal.submitting=true"
+      >
+        <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+        <div class="space-y-2 text-xs">
+          <label class="font-semibold">Reassign Invoices To (optional)</label>
+          <select name="reassign_company_id" class="soft-input w-full text-xs">
+            <option value="">-- Leave / Delete Independently --</option>
+            {% for c in companies %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="space-y-1 text-xs">
+          <label class="flex items-center gap-1"
+            ><input type="checkbox" name="force" value="1" />
+            <span>Allow destructive delete (superadmin)</span></label
+          >
+          <label class="flex items-center gap-1"
+            ><input type="checkbox" name="delete_invoices" value="1" />
+            <span>Permanently delete invoices (cannot be undone)</span></label
+          >
+          <div
+            class="text-[10px] text-red-600 dark:text-red-400"
+            x-show="deleteModal.bulk===false"
+          >
+            If you proceed without reassignment, invoices will be permanently
+            removed.
+          </div>
+        </div>
+        <div class="flex items-center gap-3 pt-2">
+          <button
+            class="soft-btn-accent soft-btn text-xs"
+            :disabled="deleteModal.submitting"
+            x-text="deleteModal.bulk ? 'Execute Bulk Action' : 'Delete'"
+          ></button>
+          <button
+            type="button"
+            class="soft-btn text-xs"
+            @click="deleteModal.open=false"
+          >
             Cancel
           </button>
         </div>

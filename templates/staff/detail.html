@@ -1,0 +1,166 @@
+{% extends 'base.html' %} {% block page_title %}Staff Detail{% endblock %} {%
+block content %}
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">{{ staff.name }}</h2>
+    <span class="text-xs text-slate-400">Staff ID: {{ staff.id }}</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <a class="soft-btn bg-slate-100" href="{{ url_for('staff_index') }}"
+      >Back</a
+    >
+    <a
+      class="soft-btn soft-btn-primary"
+      href="{{ url_for('staff_edit', sid=staff.id) }}"
+      >Edit</a
+    >
+    <a
+      class="soft-btn bg-rose-100 text-rose-700"
+      href="{{ url_for('staff_delete', sid=staff.id) }}"
+      onclick="return confirm('Delete this staff member?')"
+      >Delete</a
+    >
+  </div>
+</div>
+
+<div class="grid md:grid-cols-3 gap-6 mb-8">
+  <div class="soft-card p-4 md:col-span-1">
+    <h3 class="text-sm font-semibold text-slate-600 mb-3">Profile</h3>
+    <dl class="text-sm space-y-2">
+      <div>
+        <dt class="font-medium text-slate-500">Name</dt>
+        <dd>{{ staff.name }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Department</dt>
+        <dd>{{ staff.department or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Email</dt>
+        <dd>{{ staff.email or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Phone</dt>
+        <dd>{{ staff.phone or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Branches</dt>
+        <dd>{{ staff.branch or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Status</dt>
+        <dd>
+          <span
+            class="soft-badge {% if staff.active %}!bg-emerald-100 !text-emerald-700{% else %}!bg-slate-200 !text-slate-600{% endif %}"
+            >{{ 'Active' if staff.active else 'Inactive' }}</span
+          >
+        </dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Created</dt>
+        <dd>{{ staff.created_at|fmt_date }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Updated</dt>
+        <dd>{{ staff.updated_at|fmt_date }}</dd>
+      </div>
+    </dl>
+  </div>
+  <div class="soft-card p-4 md:col-span-2">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-3">
+      <h3 class="text-sm font-semibold text-slate-600">Recent Changes</h3>
+      {% if total is not none %}
+      <span class="text-xs text-slate-400">{{ total }} total</span>
+      {% endif %}
+    </div>
+    <form method="get" class="grid md:grid-cols-6 gap-3 mb-4 text-xs">
+      <input type="hidden" name="page" value="1" />
+      <div class="flex flex-col gap-1">
+        <label class="font-medium text-slate-500">Field</label>
+        <select name="field" class="soft-input py-1">
+          <option value="">All</option>
+          {% for f in distinct_fields %}
+          <option value="{{ f }}" {% if f==field_filter %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="font-medium text-slate-500">Actor</label>
+        <select name="actor" class="soft-input py-1">
+          <option value="">All</option>
+          {% for a_id, a_name in actor_rows %}
+          <option value="{{ a_id }}" {% if actor_filter and a_id==actor_filter %}selected{% endif %}>{{ a_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="font-medium text-slate-500">Start</label>
+        <input type="date" name="start" class="soft-input py-1" value="{{ start_date }}" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="font-medium text-slate-500">End</label>
+        <input type="date" name="end" class="soft-input py-1" value="{{ end_date }}" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="font-medium text-slate-500">Per Page</label>
+        <select name="per_page" class="soft-input py-1">
+          {% for size in [25,50,100] %}
+          <option value="{{ size }}" {% if per_page==size %}selected{% endif %}>{{ size }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex items-end gap-2">
+        <button class="soft-btn soft-btn-primary w-full">Filter</button>
+        <a href="{{ url_for('staff_detail', sid=staff.id) }}" class="soft-btn bg-slate-100">Reset</a>
+        <a href="{{ url_for('staff_changes_export', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None) }}" class="soft-btn bg-slate-100" title="Download filtered CSV">CSV</a>
+      </div>
+    </form>
+    {% if changes %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-xs">
+        <thead class="bg-slate-100 text-slate-600 uppercase tracking-wide">
+          <tr>
+            <th class="py-2 px-2 text-left">When</th>
+            <th class="py-2 px-2 text-left">Field</th>
+            <th class="py-2 px-2 text-left">Old</th>
+            <th class="py-2 px-2 text-left">New</th>
+            <th class="py-2 px-2 text-left">By</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for ch in changes %}
+          <tr>
+            <td class="py-1 px-2 whitespace-nowrap">
+              {{ ch.changed_at.strftime('%Y-%m-%d %H:%M') if ch.changed_at else '' }}
+            </td>
+            <td class="py-1 px-2 whitespace-nowrap">{{ ch.field }}</td>
+            <td class="py-1 px-2">{{ ch.old_value if ch.old_value is not none else '—' }}</td>
+            <td class="py-1 px-2">{{ ch.new_value if ch.new_value is not none else '—' }}</td>
+            <td class="py-1 px-2 whitespace-nowrap">{{ ch.changed_by.name if ch.changed_by else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-4 flex items-center justify-between text-xs">
+      <div>
+        Page {{ page }} of {{ total_pages }}
+      </div>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+          <a class="soft-btn bg-slate-100" href="{{ url_for('staff_detail', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None, page=page-1, per_page=per_page) }}">Prev</a>
+        {% endif %}
+        {% if page < total_pages %}
+          <a class="soft-btn bg-slate-100" href="{{ url_for('staff_detail', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None, page=page+1, per_page=per_page) }}">Next</a>
+        {% endif %}
+        {% if page < total_pages %}
+          <a class="soft-btn soft-btn-primary" href="{{ url_for('staff_detail', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None, page=page+1, per_page=per_page) }}">Load more</a>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p class="text-sm text-slate-500">No changes recorded.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

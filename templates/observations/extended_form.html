@@ -3,7 +3,8 @@
 {% block content %}
 <div class="max-w-5xl mx-auto space-y-6">
   <form method="POST" action="" id="observationExtendedForm" class="space-y-8">
-    {{ csrf_token() if csrf_token is defined }}
+    {# Proper CSRF hidden field (avoid raw token rendering at top of page) #}
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}">{% endif %}
     <div class="soft-card p-6 space-y-6">
       <h2 class="text-lg font-semibold text-slate-700 flex items-center gap-2">1. Core Details</h2>
       <div class="grid md:grid-cols-4 gap-4">

@@ -1,0 +1,87 @@
+{% extends 'base.html' %} {% block page_title %}Order #{{ order.id }}{% endblock
+%} {% block content %} {# tools nav removed #}
+<div class="soft-card p-4 mb-6 flex items-center justify-between">
+  <div>
+    <h2 class="font-semibold text-lg">Book Order #{{ order.id }}</h2>
+    <div class="text-[11px] text-slate-500 mt-1">
+      Created {{ order.created_at.strftime('%d-%m-%Y %H:%M') if order.created_at
+      else '' }} by {{ order.created_by.name if order.created_by else 'Unknown'
+      }}
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{{ url_for('book_orders_index') }}" class="soft-btn text-xs"
+      >All Orders</a
+    >
+    <form
+      action="{{ url_for('book_orders_resend', order_id=order.id) }}"
+      method="post"
+      class="inline"
+    >
+      {{ csrf_field() }}<button class="soft-btn text-xs">Resend Email</button>
+    </form>
+    <a
+      href="{{ url_for('book_orders_pdf', order_id=order.id) }}"
+      class="soft-btn text-xs"
+      >PDF</a
+    >
+  </div>
+</div>
+<div class="soft-card p-0 overflow-hidden mb-6">
+  <table class="min-w-full text-xs">
+    <thead
+      class="bg-slate-100/70 text-slate-600 text-[10px] uppercase tracking-wide"
+    >
+      <tr>
+        <th class="p-2 text-left">No.</th>
+        <th class="p-2 text-left">Book</th>
+        <th class="p-2 text-left">Print Format</th>
+        <th class="p-2 text-left">Finishing</th>
+        <th class="p-2 text-left">Quantity</th>
+        <th class="p-2 text-left">Links</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in order.items %}
+      <tr class="border-b last:border-0 hover:bg-slate-50">
+        <td class="p-2 align-top">{{ loop.index }}</td>
+        <td class="p-2 align-top font-medium">{{ i.book_name }}</td>
+        <td class="p-2 align-top">{{ i.print_format or '-' }}</td>
+        <td class="p-2 align-top">{{ i.finishing or '-' }}</td>
+        <td class="p-2 align-top">{{ i.quantity }}</td>
+        <td class="p-2 align-top space-x-2">
+          {% if i.cover_url %}<a
+            href="{{ i.cover_url }}"
+            class="text-indigo-600 hover:underline"
+            target="_blank"
+            >Cover</a
+          >{% endif %} {% if i.inner_url %}<a
+            href="{{ i.inner_url }}"
+            class="text-indigo-600 hover:underline"
+            target="_blank"
+            >Inner</a
+          >{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="soft-card p-4 text-xs flex flex-wrap gap-6">
+  <div>
+    <span class="font-semibold">Delivery Date:</span> {{
+    order.delivery_date.strftime('%d-%m-%Y') if order.delivery_date else '—' }}
+    (4 PM)
+  </div>
+  <div>
+    <span class="font-semibold">Email Sent:</span> {% if order.email_sent_at
+    %}{{ order.email_sent_at.strftime('%d-%m-%Y %H:%M') }}{% else %}<span
+      class="text-slate-500"
+      >Not yet</span
+    >{% endif %}
+  </div>
+  <div>
+    <span class="font-semibold">Total Copies:</span> {{ order.total_copies() }}
+  </div>
+</div>
+{% endblock %}

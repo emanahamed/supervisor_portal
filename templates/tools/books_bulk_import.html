@@ -1,0 +1,49 @@
+{% extends 'base.html' %} {% block page_title %}Bulk Import Books{% endblock %}
+{% block content %} {# tools nav removed #}
+<div class="soft-card p-6 max-w-xl space-y-4">
+  <h2 class="font-semibold text-lg">Bulk Import Books</h2>
+  <p class="text-xs text-slate-600">
+    Upload a JSON array or CSV file with column headers. Recognised fields:
+    <code>Book_Name / name</code>, <code>Price / price</code>,
+    <code>Subject / subject</code>, <code>Year / year</code>,
+    <code>Cover / cover</code>, <code>Cover_URL / cover_url</code>,
+    <code>Inner / inner</code>, <code>Inner_URL / inner_url</code>,
+    <code>Print_Format / print_format</code>,
+    <code>Finishing / finishing</code>. Missing optional fields will be stored
+    as blank.
+  </p>
+  <form method="post" enctype="multipart/form-data" class="space-y-4 text-sm">
+    <div>
+      <label class="soft-label text-[11px]">File (.json or .csv)</label>
+      <input
+        type="file"
+        name="file"
+        accept=".json,.csv"
+        class="soft-input w-full"
+        required
+      />
+    </div>
+    <div class="flex items-center gap-2 pt-2">
+      <button class="soft-btn soft-btn-primary">Upload</button>
+      <a href="{{ url_for('books_index') }}" class="soft-btn text-xs">Back</a>
+    </div>
+  </form>
+  <details class="text-xs">
+    <summary class="cursor-pointer font-semibold">Example JSON</summary>
+    <pre class="bg-slate-50 p-3 rounded mt-2 overflow-auto text-[10px]">
+[
+  {
+    "Book_Name": "Year 6 SATS Maths Arithmetic and Reasoning (2 books)",
+    "Price": 20.0,
+    "Subject": "",
+    "Year": 6,
+    "Cover_URL": "",
+    "Inner_URL": "",
+    "Print_Format": "2-in-1",
+    "Finishing": ""
+  }
+]</pre
+    >
+  </details>
+</div>
+{% endblock %}

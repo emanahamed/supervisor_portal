@@ -1,0 +1,5 @@
+{% macro csrf_field() %}{% if CSRF_TOKEN %}<input
+  type="hidden"
+  name="csrf_token"
+  value="{{ CSRF_TOKEN }}"
+/>{% endif %}{% endmacro %}
