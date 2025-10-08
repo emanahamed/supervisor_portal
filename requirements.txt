@@ -21,6 +21,13 @@ APScheduler==3.10.4        # Background scheduling (appointment reminders)
 ########################################
 pytest==8.2.2
 
+# Optional (uncomment if adding coverage reporting later)
+# pytest-cov==5.0.0
+
+# Optional linting/formatting (enable when CI pipeline is introduced)
+# black==24.8.0
+# ruff==0.6.1
+
 ########################################
 # Upgrade Guidance
 # - Bump versions cautiously; run full test suite & manual smoke of:

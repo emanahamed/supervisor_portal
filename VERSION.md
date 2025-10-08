@@ -1,5 +1,22 @@
 # Version History
 
+## 2.0.2 - 2025-10-08
+
+System Setup Navigation Group & Tuition Pricing Relocation:
+
+- Introduced new "System Setup" sidebar group for foundational configuration tasks; initial item is the Tuition Prices Setup page (previously listed under Tools as "Enrollment Calculator").
+- Relocated pricing configuration link out of the general-purpose Tools grouping to improve information architecture—administrative setup now clearly separated from ad‑hoc utilities.
+- Renamed link label to a clearer action-oriented title: "Tuition Prices Setup" (was "Enrollment Calculator") for better user intent recognition.
+- Permission Gating: Entire group (and contained link) is shown only to users granted `manage_pricing` (or superadmin). Removed `manage_pricing` from Tools gating logic to prevent duplicate exposure.
+- Added unique persistent toggle key `system_setup` to localStorage nav state (`navStateV2`). Existing users start with it collapsed by default, preserving current open groups.
+- No database, API, or seeding changes (permission key already introduced in prior release). Purely navigational / UX structural update; safe patch increment.
+
+Follow-Ups (Not in 2.0.2):
+
+- Potential future System Setup items (branding assets, email/SMPP credentials, feature flags) once underlying config UIs exist.
+- Macro extraction for repeated collapsible group button/template patterns to reduce duplication.
+- Add subtle badge or dot indicator for pending setup tasks (e.g., unset pricing tiers) when config completeness tracking is implemented.
+
 ## 2.0.1 - 2025-10-08
 
 Sidebar Icon Consistency & Layout Spacing Polish:

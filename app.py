@@ -893,6 +893,7 @@ def create_tables_and_superadmin():
             ('manage_students','Manage student records'),
             ('manage_books','Manage book catalog'),
             ('order_books','Place book print orders'),
+            ('manage_pricing','Manage tuition pricing & fees'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -907,8 +908,8 @@ def create_tables_and_superadmin():
         role_defaults = {
             'staff': {'view_dashboard','manage_tasks','view_reports'},
             'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books'},
-            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_books','order_books'},
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing'},
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_books','order_books','manage_pricing'},
         }
         # Admin should also manage students (append if not present for backward runs)
         role_defaults['admin'].add('manage_students')

@@ -68,6 +68,25 @@
           {% if current_user.is_superadmin %}
           <li>
             <a
+              href="{{ url_for('approve_users') }}"
+              class="nav-leaf {{ 'active' if endpoint=='approve_users' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                <path d="M6 21v-2a6 6 0 0112 0v2" />
+                <path d="M9 11l2 2 4-4" />
+              </svg>
+              <span>Approve Users</span>
+            </a>
+          </li>
+          <li>
+            <a
               href="{{ url_for('role_permissions') }}"
               class="nav-leaf {{ 'active' if endpoint=='role_permissions' else '' }}"
             >
@@ -544,6 +563,71 @@
         </ul>
       </div>
     </li>
+    {% endif %} {# System Configuration (pricing setup only) #} {% if
+    can('manage_pricing') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('system_config')"
+          :aria-expanded="isOpen('system_config')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.95.58 2.15.08 2.573-1.065z"
+              />
+              <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            System Configuration</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('system_config')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('system_config')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('pricing_config') }}"
+              class="nav-leaf {{ 'active' if endpoint=='pricing_config' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 15.5A3.5 3.5 0 1115.5 12 3.5 3.5 0 0112 15.5z" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009.4 19a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009.4 4.6a1.65 1.65 0 001-.33A1.65 1.65 0 0010.91 3V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 00.33 1.82 1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
+                />
+              </svg>
+              <span>Pricing Setup</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
     {% endif %} {# Tasks (single) #} {% if can('manage_tasks') %}
     <li>
       <a
@@ -565,9 +649,8 @@
         Tasks
       </a>
     </li>
-    {% endif %} {# Tools #} {% set show_tools = can('manage_pricing') or
-    can('access_enrollment_tool') or can('manage_attendance_fix') %} {% if
-    show_tools %}
+    {% endif %} {# Tools #} {% set show_tools = can('access_enrollment_tool') or
+    can('manage_attendance_fix') %} {% if show_tools %}
     <li>
       <div>
         <button
@@ -631,11 +714,11 @@
               <span>Fix Attendance Data</span>
             </a>
           </li>
-          {% endif %} {% if can('manage_pricing') %}
+          {% endif %} {% if can('access_enrollment_tool') %}
           <li>
             <a
-              href="{{ url_for('pricing_config') }}"
-              class="nav-leaf {{ 'active' if endpoint=='pricing_config' else '' }}"
+              href="{{ url_for('tool_enroll') }}"
+              class="nav-leaf {{ 'active' if endpoint=='tool_enroll' else '' }}"
             >
               <svg
                 class="h-3.5 w-3.5 text-indigo-400"
@@ -644,17 +727,13 @@
                 stroke="currentColor"
                 stroke-width="2"
               >
-                <path d="M9 18h6" />
-                <path d="M10 6h8" />
-                <path d="M8 6a2 2 0 11-4 0 2 2 0 014 0z" />
-                <path d="M18 6a2 2 0 110-4 2 2 0 010 4z" />
-                <path d="M8 18a2 2 0 11-4 0 2 2 0 014 0z" />
-                <path d="M18 18a2 2 0 11-4 0 2 2 0 014 0z" />
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+                <path d="M9 3h6l6 6v12a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               </svg>
               <span>Enrollment Calculator</span>
             </a>
           </li>
-          {% endif %} {% if can('access_enrollment_tool') %}
           <li>
             <a
               href="{{ url_for('tool_schedule_message') }}"
