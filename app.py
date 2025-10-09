@@ -512,13 +512,18 @@ def user_can(perm_key: str) -> bool:
     except Exception:
         return False
 
-def permission_required(*perm_keys: str, any: bool = False):
+def permission_required(*perm_keys: str, any: bool = False, any_: bool | None = None):
     """Route decorator enforcing permissions.
+
+    Backward-compatible signature: supports both 'any' and 'any_' keyword args.
 
     @permission_required('perm_a')  # need perm_a
     @permission_required('perm_a','perm_b')  # need both
     @permission_required('perm_a','perm_b', any=True)  # need at least one
     """
+    # Resolve flag while avoiding shadowing built-in any()
+    any_flag = any_ if any_ is not None else any
+
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -527,9 +532,11 @@ def permission_required(*perm_keys: str, any: bool = False):
             if getattr(current_user, 'is_superadmin', False):
                 return fn(*args, **kwargs)
             checks = [user_can(p) for p in perm_keys]
-            allowed = any(checks) if any else all(checks)
+            # Use builtins.any/all explicitly to avoid name shadowing
+            import builtins as _b
+            allowed = _b.any(checks) if any_flag else _b.all(checks)
             if not allowed:
-                needed = ' or '.join(perm_keys) if any else ', '.join(perm_keys)
+                needed = ' or '.join(perm_keys) if any_flag else ', '.join(perm_keys)
                 abort(403, description=f"Requires permission: {needed}")
             return fn(*args, **kwargs)
         return wrapper
