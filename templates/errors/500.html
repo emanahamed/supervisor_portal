@@ -20,6 +20,7 @@ block content %}
         enctype="multipart/form-data"
         class="mt-4 w-full text-left space-y-3 p-4 border rounded-lg bg-slate-50"
       >
+        <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
         <div class="text-sm font-semibold">Submit Error Report</div>
         <input
           type="hidden"

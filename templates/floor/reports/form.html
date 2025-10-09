@@ -1,0 +1,82 @@
+<form method="post" action="{{ url_for('floor_reports_edit', rid=record.id) if record else url_for('floor_reports_new') }}" x-data="{ 
+  hasUnapproved: {{ 'true' if (record and record.has_unapproved) else 'false' }},
+  dayName: '',
+  init() { this.updateDay(); },
+  updateDay() {
+    const iso = this.$refs.dateInput?.value || '';
+    if (!iso) { this.dayName = ''; return; }
+    // Compute weekday from ISO date (YYYY-MM-DD) in a TZ-agnostic way
+    const [y, m, d] = iso.split('-').map(Number);
+    if (!y || !m || !d) { this.dayName = ''; return; }
+    const wk = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const idx = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    this.dayName = wk[idx];
+  }
+}" x-init="init()">
+  <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+  <div class="space-y-3">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium mb-1">Your Name</label>
+        <input type="text" class="soft-input" value="{{ current_user.name }}" disabled>
+        <input type="hidden" name="staff_user_id" value="{{ current_user.id }}">
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Date</label>
+        <input type="date" class="soft-input" name="date" x-ref="dateInput" @input="updateDay()" @change="updateDay()" value="{{ (record.date.isoformat() if record and record.date else (today.isoformat() if today else '')) }}">
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Day</label>
+        <input type="text" class="soft-input" :value="dayName || '{{ record.day if record else '' }}'" disabled>
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Shift (optional)</label>
+        <select name="shift_id" class="soft-input">
+          <option value="">Select your shift</option>
+          {% for s in my_shifts %}
+          <option value="{{ s.id }}" {% if record and record.shift_id==s.id %}selected{% endif %}>{{ s.day }} {{ s.date.strftime('%d-%m-%Y') }} — {{ s.branch or '' }} {{ ', '.join(s.floor_list()) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Floor</label>
+        <select name="floor" class="soft-input">
+          <option value="">Select floor</option>
+          {% for f in floor_opts %}
+          <option value="{{ f }}" {% if record and record.floor==f %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Branch</label>
+        <select name="branch" class="soft-input">
+          <option value="">Select branch</option>
+          {% for b in branches %}
+          <option value="{{ b }}" {% if record and record.branch==b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Pages printed (today)</label>
+        <input type="number" min="0" class="soft-input" name="pages_printed" value="{{ record.pages_printed if record else 0 }}" required>
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Any unapproved print?</label>
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" name="has_unapproved" value="yes" class="soft-checkbox" x-model="hasUnapproved"> Yes
+        </label>
+      </div>
+      <div class="md:col-span-2" x-show="hasUnapproved">
+        <label class="block text-xs font-medium mb-1">Unapproved details</label>
+        <textarea name="unapproved_details" rows="3" class="soft-input">{{ record.unapproved_details if record else '' }}</textarea>
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-medium mb-1">Notes (optional)</label>
+        <textarea name="notes" rows="3" class="soft-input">{{ record.notes if record else '' }}</textarea>
+      </div>
+    </div>
+    <div class="mt-3 flex items-center justify-end gap-2">
+      <button type="submit" class="soft-btn primary">Save</button>
+    </div>
+  </div>
+</form>

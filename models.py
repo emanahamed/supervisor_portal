@@ -455,6 +455,67 @@ class Todo(db.Model):
         return (self.status or '').lower() == 'done'
 
 
+# ---------------- Floor Management: Shifts ---------------- #
+class Shift(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    staff_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    day = db.Column(db.String(20), nullable=False, index=True)  # Monday, Tuesday, ...
+    timeslots = db.Column(db.Text, nullable=False)  # CSV list e.g. "9-11,11-1"
+    branch = db.Column(db.String(120), index=True)  # Whitechapel, East Ham, Stratford, Docklands
+    floors = db.Column(db.Text)  # CSV list e.g. "Basement,Ground Floor"
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    staff_user = db.relationship('User', foreign_keys=[staff_user_id], lazy=True)
+
+    def timeslot_list(self) -> list[str]:
+        raw = self.timeslots or ''
+        return [t.strip() for t in raw.split(',') if t.strip()]
+
+    def floor_list(self) -> list[str]:
+        raw = self.floors or ''
+        return [t.strip() for t in raw.split(',') if t.strip()]
+
+
+# End of Day Checklists (Floor Management)
+class EndOfDayChecklist(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id', ondelete='SET NULL'), index=True)
+    staff_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    floor = db.Column(db.String(120))
+    items = db.Column(db.Text)  # JSON blob of checklist items {no:int, todo:str, value: 'yes'|'no' }
+    completed = db.Column(db.Boolean, default=True, index=True)  # created checklist implies completed
+    completed_at = db.Column(db.DateTime)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    shift = db.relationship('Shift', lazy=True)
+    staff_user = db.relationship('User', foreign_keys=[staff_user_id], lazy=True)
+    created_by = db.relationship('User', foreign_keys=[created_by_id], lazy=True)
+
+    def items_list(self):
+        try:
+            import json
+            return json.loads(self.items) if self.items else []
+        except Exception:
+            return []
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'shift_id': self.shift_id,
+            'staff_user_id': self.staff_user_id,
+            'date': self.date.isoformat() if self.date else None,
+            'floor': self.floor,
+            'items': self.items_list(),
+            'completed': bool(self.completed),
+            'completed_at': (self.completed_at.isoformat() if self.completed_at else None),
+        }
+
+
 class Student(db.Model):
     """Student record (since 0.9.9 tentative for Students module).
 
@@ -589,5 +650,76 @@ class BookOrderItem(db.Model):
             'cover_url': self.cover_url,
             'inner_url': self.inner_url,
         }
+
+
+# ---------------- Floor Management: Print Reports ---------------- #
+class PrintReport(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id', ondelete='SET NULL'), index=True)
+    staff_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)  # person filling the form
+    date = db.Column(db.Date, nullable=False, index=True)
+    day = db.Column(db.String(20), nullable=False, index=True)
+    floor = db.Column(db.String(120))
+    branch = db.Column(db.String(120))
+    pages_printed = db.Column(db.Integer, nullable=False, default=0)
+    has_unapproved = db.Column(db.Boolean, default=False, index=True)
+    unapproved_details = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    shift = db.relationship('Shift', lazy=True)
+    staff_user = db.relationship('User', foreign_keys=[staff_user_id], lazy=True)
+    created_by = db.relationship('User', foreign_keys=[created_by_id], lazy=True)
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'shift_id': self.shift_id,
+            'staff_user_id': self.staff_user_id,
+            'staff_name': self.staff_user.name if self.staff_user else None,
+            'date': self.date.isoformat() if self.date else None,
+            'day': self.day,
+            'floor': self.floor,
+            'branch': self.branch,
+            'pages_printed': self.pages_printed,
+            'has_unapproved': bool(self.has_unapproved),
+            'unapproved_details': self.unapproved_details,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ---------------- Floor Management: Call List (Oct 2025) ---------------- #
+class CallRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)  # called by
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False, index=True)
+    reason = db.Column(db.String(50), nullable=False, index=True)  # absence|lateness|payment issue|detention|meeting|event|other
+    date = db.Column(db.Date, nullable=False, index=True)
+    day = db.Column(db.String(20), nullable=False, index=True)
+    discussion = db.Column(db.Text, nullable=False)
+    outcome = db.Column(db.Text)
+    # Meeting-related (when reason == 'meeting')
+    appointment_date = db.Column(db.Date)
+    appointment_with_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    meeting_id = db.Column(db.Integer, db.ForeignKey('meeting.id'))
+    # Event-related (when reason == 'event')
+    event_attendance = db.Column(db.String(10))  # yes|no|unsure
+
+    created_by = db.relationship('User', foreign_keys=[created_by_id], lazy=True)
+    student = db.relationship('Student', foreign_keys=[student_id], lazy=True)
+    appointment_with = db.relationship('User', foreign_keys=[appointment_with_id], lazy=True)
+    meeting = db.relationship('Meeting', foreign_keys=[meeting_id], lazy=True)
+
+    def time_label(self):
+        try:
+            return self.created_at.strftime('%H:%M') if self.created_at else ''
+        except Exception:
+            return ''
 
 

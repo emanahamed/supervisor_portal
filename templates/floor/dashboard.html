@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block title %}Floor Dashboard{% endblock %}
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+  <div class="mb-6 flex items-center justify-between gap-4">
+    <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Floor Dashboard</h1>
+    <form class="flex items-center gap-2" method="get" action="{{ url_for('floor_dashboard') }}">
+      <input type="date" name="date" value="{{ selected_date.isoformat() if selected_date else '' }}" class="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-slate-900/50 px-3 py-1.5 text-sm" />
+      <select name="branch" class="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-slate-900/50 px-3 py-1.5 text-sm">
+        <option value="">All branches</option>
+        {% for b in branch_choices %}
+          <option value="{{ b }}" {% if selected_branch==b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+      <button class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-white text-sm hover:bg-indigo-700">Apply</button>
+    </form>
+  </div>
+
+  <!-- KPI Row -->
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+    <div class="soft-card p-4"><div class="text-xs uppercase tracking-wide text-slate-500 mb-1">🗓️ Shifts</div><div class="text-2xl font-semibold text-indigo-600">{{ shifts_today_count }}</div></div>
+    <div class="soft-card p-4"><div class="text-xs uppercase tracking-wide text-slate-500 mb-1">✅ Pending EOD</div><div class="text-2xl font-semibold text-amber-600">{{ pending_eod_count }}</div></div>
+    <div class="soft-card p-4"><div class="text-xs uppercase tracking-wide text-slate-500 mb-1">📞 Calls Queued</div><div class="text-2xl font-semibold text-fuchsia-600">{{ calls_queued_today }}</div></div>
+    <div class="soft-card p-4"><div class="text-xs uppercase tracking-wide text-slate-500 mb-1">🖨️ Pending Reports</div><div class="text-2xl font-semibold text-rose-600">{{ pending_print_reports }}</div></div>
+    <div class="soft-card p-4"><div class="text-xs uppercase tracking-wide text-slate-500 mb-1">⚠️ Unapproved Prints</div><div class="text-2xl font-semibold text-red-600">{{ unapproved_prints_today }}</div></div>
+    <div class="soft-card p-4"><div class="text-xs uppercase tracking-wide text-slate-500 mb-1">📅 Upcoming Meetings</div><div class="text-2xl font-semibold text-emerald-600">{{ upcoming_meetings }}</div><div class="text-[11px] text-slate-400 mt-1">Your pending todos: <strong>{{ my_pending_todos }}</strong></div></div>
+  </div>
+
+  <!-- Grids: Shifts, EOD, Print Reports, Calls -->
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+    <!-- Shifts -->
+    <div class="soft-card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Shifts for {{ selected_date.strftime('%A, %d %B %Y') }}</h2>
+        <a href="{{ url_for('floor_shifts_index') }}" class="text-xs text-indigo-600 hover:underline">Manage</a>
+      </div>
+      {% if shifts_for_day %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="text-slate-500">
+            <tr>
+              <th class="text-left py-2 pr-3">Staff</th>
+              <th class="text-left py-2 pr-3">Branch</th>
+              <th class="text-left py-2 pr-3">Floors</th>
+              <th class="text-left py-2">Timeslots</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-200/60 dark:divide-white/10">
+            {% for sh in shifts_for_day %}
+              <tr>
+                <td class="py-2 pr-3">{{ sh.staff_user.name if sh.staff_user else ('User #' ~ sh.staff_user_id) }}</td>
+                <td class="py-2 pr-3">{{ sh.branch or '—' }}</td>
+                <td class="py-2 pr-3">{{ ', '.join(sh.floor_list()) if sh.floors else '—' }}</td>
+                <td class="py-2">{{ ', '.join(sh.timeslot_list()) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p class="text-sm text-slate-500">No shifts scheduled.</p>
+      {% endif %}
+    </div>
+
+    <!-- End of Day Checklist -->
+    <div class="soft-card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">End of Day Checklists</h2>
+        <a href="{{ url_for('floor_checklists_index', date=selected_date.strftime('%Y-%m-%d')) }}" class="text-xs text-indigo-600 hover:underline">Open</a>
+      </div>
+      {% if eod_for_day %}
+        <ul class="text-sm divide-y divide-slate-200/60 dark:divide-white/10">
+          {% for cl in eod_for_day[:10] %}
+            <li class="py-2 flex items-center justify-between">
+              <div>
+                <div class="font-medium">{{ cl.staff_user.name if cl.staff_user else ('User #' ~ cl.staff_user_id) }}</div>
+                <div class="text-slate-500 text-xs">Floor: {{ cl.floor or '—' }}</div>
+              </div>
+              <a href="{{ url_for('floor_checklist_print', cid=cl.id) }}" class="text-xs text-indigo-600 hover:underline">Print</a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-sm text-slate-500">No checklists yet.</p>
+      {% endif %}
+      {% if missing_eod_staff %}
+        <div class="mt-3 text-xs text-amber-700 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
+          Pending from: {{ missing_eod_staff | map(attribute='name') | join(', ') }}
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Print Reports -->
+    <div class="soft-card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Print Reports</h2>
+        <a href="{{ url_for('floor_reports_index', date=selected_date.strftime('%Y-%m-%d')) }}" class="text-xs text-indigo-600 hover:underline">Open</a>
+      </div>
+      {% if print_reports_for_day %}
+        <ul class="text-sm divide-y divide-slate-200/60 dark:divide-white/10">
+          {% for pr in print_reports_for_day[:10] %}
+            <li class="py-2 flex items-center justify-between">
+              <div>
+                <div class="font-medium">{{ pr.staff_user.name if pr.staff_user else ('User #' ~ pr.staff_user_id) }}</div>
+                <div class="text-slate-500 text-xs">Branch: {{ pr.branch or '—' }} • Floor: {{ pr.floor or '—' }} • Pages: {{ pr.pages_printed or 0 }}</div>
+              </div>
+              {% if pr.has_unapproved %}
+                <span class="text-[11px] px-2 py-1 rounded bg-red-50 text-red-700 dark:bg-red-900/20">Unapproved</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-sm text-slate-500">No print reports yet.</p>
+      {% endif %}
+      {% if missing_pr_staff %}
+        <div class="mt-3 text-xs text-rose-700 bg-rose-50 dark:bg-rose-900/20 rounded p-2">
+          Missing from: {{ missing_pr_staff | map(attribute='name') | join(', ') }}
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Call List -->
+    <div class="soft-card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Call List (recent)</h2>
+        <a href="{{ url_for('floor_call_list_index', date=selected_date.strftime('%Y-%m-%d')) }}" class="text-xs text-indigo-600 hover:underline">Open</a>
+      </div>
+      {% if calls_for_day %}
+        <ul class="text-sm divide-y divide-slate-200/60 dark:divide-white/10">
+          {% for c in calls_for_day %}
+            <li class="py-2">
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="font-medium">{{ c.student.name if c.student else ('Student #' ~ c.student_id) }}</div>
+                  <div class="text-slate-500 text-xs">{{ c.reason|capitalize }} • {{ c.time_label() }}</div>
+                </div>
+                {% if not c.outcome %}
+                  <span class="text-[11px] px-2 py-1 rounded bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/20">Queued</span>
+                {% endif %}
+              </div>
+              {% if c.discussion %}
+                <div class="text-xs text-slate-600 dark:text-slate-300 mt-1">{{ c.discussion }}</div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-sm text-slate-500">No calls logged.</p>
+      {% endif %}
+      {% if reason_counts %}
+        <div class="mt-3 text-xs text-slate-600 dark:text-slate-300">
+          Reasons today:
+          {% for k, v in reason_counts.items() %}
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 dark:bg-slate-800/60 mr-2 mb-2">{{ k|capitalize }} <strong>{{ v }}</strong></span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

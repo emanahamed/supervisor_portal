@@ -1,0 +1,118 @@
+{% extends 'base.html' %} {% block title %}Print Reports{% endblock %}
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8" x-data="reportUI()">
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Print Reports</h1>
+    <div class="flex items-center gap-2">
+      <button class="soft-btn" @click="openCreate()">New Report</button>
+    </div>
+  </div>
+
+  <div class="soft-card p-3">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <input id="q" type="text" class="soft-input" placeholder="Search by name/floor/branch" @input="debouncedFilter">
+      <input id="date" type="date" class="soft-input" value="{{ selected_date.isoformat() }}" @change="applyFilter">
+      <select id="floor" class="soft-input" @change="applyFilter">
+        <option value="">All floors</option>
+        {% for f in floor_opts %}
+        <option value="{{ f }}" {% if selected_floor==f %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+      <select id="branch" class="soft-input" @change="applyFilter">
+        <option value="">All branches</option>
+        {% for b in branches %}
+        <option value="{{ b }}" {% if selected_branch==b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+      {% if staff_list %}
+      <select id="staff" class="soft-input" @change="applyFilter">
+        <option value="">All staff</option>
+        {% for u in staff_list %}
+        <option value="{{ u.id }}" {% if selected_staff==u.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      <button class="soft-btn" @click="resetFilters">Reset</button>
+    </div>
+
+    <div class="overflow-auto">
+      <table id="tbl_reports" data-sortable data-paginate data-page-size="25" class="min-w-full divide-y divide-gray-200 dark:divide-white/10">
+        <thead class="bg-gray-50 dark:bg-slate-800/50">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Day</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Staff</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Floor</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Branch</th>
+            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Pages</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Unapproved?</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Submitted</th>
+            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 no-sort">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-white/10">
+          {% for r in records %}
+          <tr>
+            <td class="px-3 py-2 text-sm"><time datetime="{{ r.date.isoformat() }}">{{ r.date.strftime('%d-%m-%Y') }}</time></td>
+            <td class="px-3 py-2 text-sm">{{ r.day }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.staff_user.name if r.staff_user else '' }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.floor or '' }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.branch or '' }}</td>
+            <td class="px-3 py-2 text-sm text-right">{{ r.pages_printed }}</td>
+            <td class="px-3 py-2 text-sm">{% if r.has_unapproved %}<span class="soft-badge bg-amber-100 text-amber-700">Yes</span>{% else %}<span class="soft-badge bg-emerald-100 text-emerald-700">No</span>{% endif %}</td>
+            {% set ts = r.created_at %}
+            <td class="px-3 py-2 text-sm"><time datetime="{{ ts.strftime('%Y-%m-%dT%H:%M') }}">{{ ts.strftime('%d-%m-%Y %H:%M') }}</time></td>
+            <td class="px-3 py-2 text-sm text-right">
+              <a class="soft-btn" href="{{ url_for('floor_report_print', rid=r.id) }}" target="_blank">Print</a>
+              <a class="soft-btn" href="{{ url_for('floor_report_pdf', rid=r.id) }}">Download PDF</a>
+              <button class="soft-btn" @click="openEdit({{ r.id }})">Edit</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal container -->
+  <div x-show="showModal" class="fixed inset-0 z-40" style="display:none;">
+    <div class="absolute inset-0 bg-black/40" @click="closeModal"></div>
+    <div class="relative z-50 mx-auto mt-10 w-full max-w-2xl rounded-lg bg-white dark:bg-slate-900 shadow-lg border border-gray-200 dark:border-white/10">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-white/10">
+        <h3 class="text-sm font-medium" x-text="modalTitle"></h3>
+        <button class="text-gray-500 hover:text-gray-700" @click="closeModal">✕</button>
+      </div>
+      <div class="p-4" x-html="modalBody"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function reportUI(){
+  return {
+    showModal: false,
+    modalTitle: '',
+    modalBody: '',
+    debouncedFilter: debounce(function(){ this.applyFilter(); },300),
+    openCreate(){ this.loadModal('{{ url_for('floor_reports_new') }}', 'New Report'); },
+    openEdit(id){ this.loadModal(`/floor/reports/${id}/edit`, 'Edit Report'); },
+    closeModal(){ this.showModal=false; this.modalTitle=''; this.modalBody=''; },
+    async loadModal(url, title){
+      this.modalTitle = title; this.showModal = true; this.modalBody = '<div class="p-3 text-sm text-slate-500">Loading…</div>';
+      const res = await fetch(url); const html = await res.text(); this.modalBody = html;
+    },
+    applyFilter(){
+      const params = new URLSearchParams();
+      const q = document.getElementById('q').value.trim(); if(q) params.set('q', q);
+      const d = document.getElementById('date').value; if(d) params.set('date', d);
+      const f = document.getElementById('floor').value; if(f) params.set('floor', f);
+      const b = document.getElementById('branch').value; if(b) params.set('branch', b);
+      const s = document.getElementById('staff'); if(s && s.value) params.set('staff', s.value);
+      window.location = `${location.pathname}?${params.toString()}`;
+    },
+    resetFilters(){ window.location = location.pathname; }
+  }
+}
+function debounce(fn, wait){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn.apply(null,a), wait); } }
+</script>
+{% endblock %}

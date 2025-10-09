@@ -9,6 +9,7 @@
         <div class="text-xs text-slate-500">Reported by {{ report.reporter.name if report.reporter else 'Unknown' }} on {{ report.created_at|fmt_date }}</div>
       </div>
       <form method="post" action="{{ url_for('error_report_status', rid=report.id) }}" class="flex items-center gap-2 text-xs">
+        <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
         <select name="status" class="soft-input text-xs">
           {% for s in ['Open','In Progress','Resolved'] %}
           <option value="{{ s }}" {% if report.status==s %}selected{% endif %}>{{ s }}</option>

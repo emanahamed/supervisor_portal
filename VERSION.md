@@ -1,5 +1,65 @@
 # Version History
 
+## 2.0.6 - 2025-10-09
+
+Dashboard: Pending End of Day (EOD) Widget + CSRF hardening for Error Reports
+
+- Added a compact EOD widget on the main dashboard:
+  - Shows a personal prompt when you have a shift today but haven’t submitted your EOD yet, with a quick link to complete it.
+  - For admins/centre managers/superadmin, lists up to 10 staff who are pending EOD for today with links to the EOD page; shows “and N more…” when applicable.
+  - Backed by new context values in the dashboard route: `my_eod_pending`, `missing_eod_staff`, and `today`.
+- CSRF reliability improvements for error reporting:
+  - Injected an explicit hidden CSRF input in the 500 page error report form and the error status update form.
+  - Enhanced the global CSRF injector to observe dynamically-inserted forms (MutationObserver) and auto-inject tokens.
+  - Kept fetch() header patch to attach `X-CSRFToken` for unsafe methods on same-origin requests.
+- No schema changes. Purely template and route-context updates. Bumped `VERSION` to 2.0.6.
+
+## 2.0.5 - 2025-10-09
+
+End of Day Checklist: Superadmin Delete + Versioning API polish
+
+- Added superadmin-only delete endpoint for End of Day Checklists:
+  - `POST /floor/checklists/<id>/delete` protected by login and superadmin check, CSRF-required.
+  - Index page now shows a Delete button for superadmin users with confirm prompt per row.
+- Versioning & Changelog:
+  - Confirmed lightweight version endpoints: `/version-history`, `/api/version`, `/api/changelog`.
+  - Structured changelog parsing available via `version_info.parse_changelog`; `latest_entry()` wires the current `VERSION` with its metadata.
+- Bumped `VERSION` to 2.0.5.
+
+## 2.0.4 - 2025-10-09
+
+Shift Management UX polish: JSON edit prefill, delete, and modal bindings
+
+- Added lightweight JSON endpoint `/api/floor/shifts/<id>` to fetch a shift for clean modal prefill (replaces DOM scraping).
+- Implemented safe delete endpoint `POST /floor/shifts/<id>/delete` with CSRF and guard against deleting past shifts.
+- Updated shifts index UI:
+  - Edit now loads data via fetch; prevents opening modal for past shifts.
+  - Added Delete button beside Edit (future-only), with confirmation.
+  - Modal form now binds Staff, Branch, Floor(s), Notes, and Timeslots directly with two-way state (Alpine).
+  - Floor(s) checkboxes reflect current selection and update form state.
+- Passed `BRANCH_CHOICES` into the index template to populate the Branch dropdown consistently.
+- No schema changes. Minor route additions only. Version bump to 2.0.4.
+
+## 2.0.3 - 2025-10-09
+
+Floor Management Scaffold (Nav, Permissions, Routes, Placeholders):
+
+- Added new sidebar group "Floor Management" gated by floor permissions and shown when the user has any of: `floor_dashboard`, `manage_shifts`, `manage_eod_checklist`, `manage_floor_reports`, `manage_call_list`.
+- Created initial routes and permission checks for:
+  - Dashboard (`/floor`)
+  - Shifts (`/floor/shifts`, `/floor/shifts/new`)
+  - End of Day Checklist (`/floor/checklists`, `/floor/checklists/new`)
+  - Print Reports (`/floor/reports`, `/floor/reports/new`)
+  - Call List (`/floor/call-list`, `/floor/call-list/new`)
+- Seeded permissions and default role grants (Centre Manager and Admin) previously; sidebar now consumes them. Superadmin sees all by default.
+- Added minimal placeholder templates for each page under `templates/floor/...` so pages render successfully pending full UI/logic.
+
+Notes / Next Steps:
+
+- Replace placeholders with real forms, lists, and persistence as requirements are finalised.
+- Consider extracting common list header actions into components for consistency with other modules (Meetings, Tasks).
+- Optional: add quick stats to the Floor Dashboard (active shifts now, pending EOD checklists, calls queued today).
+
 ## 2.0.2 - 2025-10-08
 
 System Setup Navigation Group & Tuition Pricing Relocation:

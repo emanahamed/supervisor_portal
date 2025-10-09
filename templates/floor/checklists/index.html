@@ -1,0 +1,266 @@
+{% extends 'base.html' %} {% block title %}End of Day Checklists{% endblock %}
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8" x-data="eodUI()">
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-xl font-semibold">End of Day Checklists</h1>
+    <div class="flex items-center gap-2">
+      <template x-if="hasMyShift">
+        <button class="soft-btn-accent" @click="openCreate()">
+          Create for my shift
+        </button>
+      </template>
+      <button class="soft-btn" @click="openCreate()">New Checklist</button>
+    </div>
+  </div>
+
+  <div class="soft-card p-3">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <input id="q" type="text" class="soft-input" placeholder="Search by name or floor" @input="debouncedFilter" />
+      <input id="date" type="date" class="soft-input" value="{{ selected_date.isoformat() }}" @change="applyFilter" />
+      <select id="floor" class="soft-input" @change="applyFilter">
+        <option value="">All floors</option>
+        {% for f in (floor_opts or []) %}
+        <option value="{{ f }}" {% if selected_floor==f %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+      {% if staff_list %}
+      <select id="staff" class="soft-input" @change="applyFilter">
+        <option value="">All staff</option>
+        {% for u in staff_list %}
+        <option value="{{ u.id }}" {% if selected_staff==u.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      <button class="soft-btn" @click="resetFilters">Reset</button>
+    </div>
+
+    <div class="overflow-auto">
+      <table
+        id="tbl_eod"
+        data-sortable
+        data-paginate
+        data-page-size="25"
+        class="min-w-full divide-y divide-gray-200 dark:divide-white/10"
+      >
+        <thead class="bg-gray-50 dark:bg-slate-800/50">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">
+              Staff
+            </th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">
+              Floor
+            </th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">
+              Status
+            </th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Submitted</th>
+            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 no-sort">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-white/10">
+          {% for c in checklists %}
+          <tr>
+            <td class="px-3 py-2 text-sm"><time datetime="{{ c.date.isoformat() }}">{{ c.date.strftime('%d-%m-%Y') }}</time></td>
+            <td class="px-3 py-2 text-sm">
+              {{ c.staff_user.name if c.staff_user else '' }}
+            </td>
+            <td class="px-3 py-2 text-sm">{{ c.floor or '' }}</td>
+            <td class="px-3 py-2 text-sm">
+              {% if c.completed %}
+              <span
+                class="soft-badge bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                >Completed</span
+              >
+              {% else %}
+              <span
+                class="soft-badge bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+                >Pending</span
+              >
+              {% endif %}
+            </td>
+            {% set ts = c.completed_at or c.created_at %}
+            <td class="px-3 py-2 text-sm">
+              {% if ts %}
+              <time datetime="{{ ts.strftime('%Y-%m-%dT%H:%M') }}">{{ ts.strftime('%d-%m-%Y %H:%M') }}</time>
+              {% else %}
+              —
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-sm text-right">
+              <a
+                class="soft-btn"
+                href="{{ url_for('floor_checklist_print', cid=c.id) }}"
+                target="_blank"
+                >Print</a
+              >
+              <a
+                class="soft-btn"
+                href="{{ url_for('floor_checklist_pdf', cid=c.id) }}"
+                >Download PDF</a
+              >
+              {% if current_user.is_superadmin %}
+              <form action="{{ url_for('floor_checklists_delete', cid=c.id) }}" method="post" class="inline" onsubmit="return confirm('Delete this checklist permanently? This cannot be undone.')">
+                <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+                <button type="submit" class="soft-btn danger">Delete</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal for create -->
+  <div x-show="showModal" class="fixed inset-0 z-40" style="display: none">
+    <div class="absolute inset-0 bg-black/40" @click="closeModal"></div>
+    <div
+      class="relative z-50 mx-auto mt-16 w-full max-w-2xl rounded-lg bg-white dark:bg-slate-900 shadow-lg border border-gray-200 dark:border-white/10"
+    >
+      <div
+        class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-white/10"
+      >
+        <h3 class="text-sm font-medium">New End of Day Checklist</h3>
+        <button class="text-gray-500 hover:text-gray-700" @click="closeModal">
+          ✕
+        </button>
+      </div>
+      <div class="p-4">
+        <form action="{{ url_for('floor_checklists_new') }}" method="post">
+          <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium mb-1"
+                >Shift (optional)</label
+              >
+              <select name="shift_id" class="soft-input">
+                <option value="">Select your shift</option>
+                {% for s in my_shifts %}
+                <option value="{{ s.id }}">
+                  {{ s.day }} {{ s.date.strftime('%d-%m-%Y') }} — {{ s.branch or
+                  '' }} {{ ', '.join(s.floor_list()) }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Date</label>
+              <input
+                type="date"
+                class="soft-input"
+                name="date"
+                value="{{ selected_date.isoformat() if selected_date else '' }}"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Floor</label>
+              <select name="floor" class="soft-input">
+                <option value="">Select floor</option>
+                {% set floors = ['Basement','Ground Floor','First Floor','Second
+                Floor','Third Floor'] %} {% for f in floors %}
+                <option value="{{ f }}">{{ f }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Your Name</label>
+              <input
+                type="text"
+                class="soft-input"
+                value="{{ current_user.name }}"
+                disabled
+              />
+              <input
+                type="hidden"
+                name="staff_user_id"
+                value="{{ current_user.id }}"
+              />
+            </div>
+          </div>
+
+          <div class="mt-4 space-y-2" x-data="addItems()">
+            {% set defaults = [
+              'Turned off all the A/C in the floor',
+              'Turned off all the lights in the floor',
+              'Turned off all the lights in the toilet',
+              'Turned off the computer',
+              'Shut all the windows',
+              'Shut the fire exit at the back',
+              'Returned the laptop',
+              'All tables are cleaned for next day classes',
+              'Stocks for utilities are checked for next day and refilled where necessary'
+            ] %}
+            {% for t in defaults %}
+            <div class="grid grid-cols-12 items-center gap-2">
+              <div class="col-span-1"><span class="soft-badge">{{ loop.index }}</span></div>
+              <div class="col-span-9"><div class="text-sm">{{ t }}</div><input type="hidden" name="item_{{ loop.index }}" value="{{ t }}"></div>
+              <div class="col-span-2 flex items-center gap-2">
+                <label class="inline-flex items-center gap-1 text-xs"><input type="checkbox" class="soft-checkbox" name="item_{{ loop.index }}_val" value="yes"> Yes</label>
+              </div>
+            </div>
+            {% endfor %}
+
+            <!-- Custom items list -->
+            <template x-for="(it, i) in items" :key="i">
+              <div class="grid grid-cols-12 items-center gap-2">
+                <div class="col-span-1"><span class="soft-badge" x-text="base + i + 1"></span></div>
+                <div class="col-span-9">
+                  <input type="text" class="soft-input" :name="`item_${base + i + 1}`" placeholder="Custom task" x-model="it.label" required>
+                </div>
+                <div class="col-span-2 flex items-center gap-2">
+                  <label class="inline-flex items-center gap-1 text-xs"><input type="checkbox" class="soft-checkbox" :name="`item_${base + i + 1}_val`" value="yes" x-model="it.checked"> Yes</label>
+                  <button type="button" class="soft-btn" @click="remove(i)">Remove</button>
+                </div>
+              </div>
+            </template>
+
+            <div class="mt-2 flex items-center gap-2">
+              <button type="button" class="soft-btn" @click="add()">Add item</button>
+            </div>
+          </div>
+
+          <div class="mt-4 flex items-center justify-end gap-2">
+            <button type="button" class="soft-btn" @click="closeModal">
+              Cancel
+            </button>
+            <button type="submit" class="soft-btn primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function eodUI(){
+    return {
+      showModal:false,
+      hasMyShift: {{ 'true' if my_shifts else 'false' }},
+      openCreate(){ this.showModal = true; },
+      closeModal(){ this.showModal = false; },
+      debouncedFilter: debounce(function(){ this.applyFilter(); },300),
+      applyFilter(){
+        const params = new URLSearchParams();
+        const q = document.getElementById('q').value.trim(); if(q) params.set('q', q);
+        const d = document.getElementById('date').value; if(d) params.set('date', d);
+        const f = document.getElementById('floor'); if(f && f.value) params.set('floor', f.value);
+        const s = document.getElementById('staff'); if(s && s.value) params.set('staff', s.value);
+        window.location = `${location.pathname}?${params.toString()}`;
+      },
+      resetFilters(){ window.location = location.pathname; }
+    }
+  }
+  function addItems(){
+    return {
+      base: {{ (defaults|length) if false else 9 }}, // ensure a base; will be replaced server-side if needed
+      items: [],
+      add(){ this.items.push({ label: '', checked: false }); },
+      remove(i){ this.items.splice(i,1); }
+    }
+  }
+  function debounce(fn, wait){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn.apply(null,a), wait); } }
+</script>
+{% endblock %}

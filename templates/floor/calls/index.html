@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}Call List{% endblock %}
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8" x-data="callsUI()">
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-xl font-semibold">Call List</h1>
+    <div class="flex items-center gap-2">
+      <button class="soft-btn" @click="openCreate()">New Call</button>
+    </div>
+  </div>
+
+  <div class="soft-card p-3">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <input id="q" type="text" class="soft-input" placeholder="Search by student/discussion/outcome" @input="debouncedFilter">
+      <input id="date" type="date" class="soft-input" value="{{ selected_date.isoformat() }}" @change="applyFilter">
+      <select id="reason" class="soft-input" @change="applyFilter">
+        <option value="">All reasons</option>
+        {% for r in reasons %}
+        <option value="{{ r }}" {% if selected_reason==r %}selected{% endif %}>{{ r.title() }}</option>
+        {% endfor %}
+      </select>
+      <select id="called_by" class="soft-input" @change="applyFilter">
+        <option value="">Called by</option>
+        {% for u in staff_opts %}
+        <option value="{{ u.id }}" {% if selected_called_by==u.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+      <select id="student" class="soft-input" @change="applyFilter">
+        <option value="">Student</option>
+        {% for s in students %}
+        <option value="{{ s.id }}" {% if selected_student==s.id %}selected{% endif %}>{{ s.student_id }} — {{ s.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="soft-btn" @click="resetFilters">Reset</button>
+    </div>
+
+    <div class="overflow-auto">
+      <table id="tbl_calls" data-sortable data-paginate data-page-size="25" class="min-w-full divide-y divide-gray-200 dark:divide-white/10">
+        <thead class="bg-gray-50 dark:bg-slate-800/50">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Time</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Called by</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Student</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Reason</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Outcome</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Submitted</th>
+            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 no-sort">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-white/10">
+          {% for r in records %}
+          <tr>
+            <td class="px-3 py-2 text-sm"><time datetime="{{ r.date.isoformat() }}">{{ r.date.strftime('%d-%m-%Y') }}</time></td>
+            <td class="px-3 py-2 text-sm">{{ r.time_label() }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.created_by.name if r.created_by else '' }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.student.student_id if r.student else '' }} — {{ r.student.name if r.student else '' }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.reason.title() }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.outcome or '' }}</td>
+            {% set ts = r.created_at %}
+            <td class="px-3 py-2 text-sm"><time datetime="{{ ts.strftime('%Y-%m-%dT%H:%M') }}">{{ ts.strftime('%d-%m-%Y %H:%M') }}</time></td>
+            <td class="px-3 py-2 text-sm text-right">
+              <a class="soft-btn" href="#" @click.prevent="openEdit({{ r.id }})">Edit</a>
+              <form method="post" action="{{ url_for('floor_call_list_delete', cid=r.id) }}" class="inline" onsubmit="return confirm('Delete this call? This cannot be undone.')">
+                <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+                <button type="submit" class="soft-btn">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-3 flex items-center justify-end gap-2">
+      <a class="soft-btn" href="{{ url_for('floor_call_list_print') }}?user={{ current_user.id }}&date={{ selected_date.isoformat() }}" target="_blank">Print</a>
+      <a class="soft-btn" href="{{ url_for('floor_call_list_pdf') }}?user={{ current_user.id }}&date={{ selected_date.isoformat() }}">Download PDF</a>
+    </div>
+  </div>
+
+  <!-- Modal container -->
+  <div x-show="showModal" class="fixed inset-0 z-40" style="display:none;">
+    <div class="absolute inset-0 bg-black/40" @click="closeModal"></div>
+    <div class="relative z-50 mx-auto mt-10 w-full max-w-2xl rounded-lg bg-white dark:bg-slate-900 shadow-lg border border-gray-200 dark:border-white/10">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-white/10">
+        <h3 class="text-sm font-medium" x-text="modalTitle"></h3>
+        <button class="text-gray-500 hover:text-gray-700" @click="closeModal">✕</button>
+      </div>
+  <div class="p-4" x-ref="modalBox" x-html="modalBody"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function callsUI(){
+  return {
+    showModal: false,
+    modalTitle: '',
+    modalBody: '',
+    debouncedFilter: debounce(function(){ this.applyFilter(); },300),
+    openCreate(){ this.loadModal('{{ url_for('floor_call_list_new') }}', 'New Call'); },
+    openEdit(id){ this.loadModal(`/floor/call-list/${id}/edit`, 'Edit Call'); },
+    closeModal(){ this.showModal=false; this.modalTitle=''; this.modalBody=''; },
+    async loadModal(url, title){
+      this.modalTitle = title; this.showModal = true; this.modalBody = '<div class="p-3 text-sm text-slate-500">Loading…</div>';
+      const res = await fetch(url); const html = await res.text(); this.modalBody = html;
+      // Initialize Alpine on injected content and enhance student lookup with async search
+      this.$nextTick(()=>{
+        try{ if(window.Alpine && this.$refs.modalBox){ window.Alpine.initTree(this.$refs.modalBox); } }catch(_e){}
+        const input = document.querySelector('form input[placeholder="Search by name or ID"]');
+        const select = document.querySelector('form select[name="student_id"]');
+        if(!input || !select) return;
+        let timer;
+        input.addEventListener('input', ()=>{
+          clearTimeout(timer);
+          const q = input.value.trim();
+          if(!q){ return; }
+          timer = setTimeout(async ()=>{
+            try{
+              const r = await fetch(`/api/students/search?q=${encodeURIComponent(q)}`);
+              const items = await r.json();
+              // Replace options
+              const currentVal = select.value;
+              select.innerHTML = '<option value="">Select student</option>' + items.map(s=>`<option value="${s.id}">${s.student_id} — ${s.name}</option>`).join('');
+              // Keep value if still present
+              const hasPrev = Array.from(select.options).some(o=>o.value===currentVal);
+              if(hasPrev) select.value = currentVal;
+            }catch(e){ console.warn('student search failed', e); }
+          }, 300);
+        });
+      });
+    },
+    applyFilter(){
+      const params = new URLSearchParams();
+      const q = document.getElementById('q').value.trim(); if(q) params.set('q', q);
+      const d = document.getElementById('date').value; if(d) params.set('date', d);
+      const r = document.getElementById('reason').value; if(r) params.set('reason', r);
+      const cb = document.getElementById('called_by').value; if(cb) params.set('called_by', cb);
+      const s = document.getElementById('student').value; if(s) params.set('student', s);
+      window.location = `${location.pathname}?${params.toString()}`;
+    },
+    resetFilters(){ window.location = location.pathname; }
+  }
+}
+function debounce(fn, wait){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn.apply(null,a), wait); } }
+</script>
+{% endblock %}

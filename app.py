@@ -44,10 +44,11 @@ from forms import (AppointmentBookingActionForm, AppointmentBookingForm,
                    RegisterForm, StaffForm, StudentForm, TodoForm,
                    UserProfileForm)
 from models import (AppointmentBooking, AppointmentSlot, Availability, Book,
-                    BookOrder, BookOrderItem, Company, ErrorReport, Invoice,
-                    Issue, IssueChange, Meeting, Observation, ObservationCycle,
-                    Permission, PermissionAudit, RolePermission, Staff,
-                    Student, StudentChange, Todo, User, UserPermission, db)
+                    BookOrder, BookOrderItem, Company, EndOfDayChecklist,
+                    ErrorReport, Invoice, Issue, IssueChange, Meeting,
+                    Observation, ObservationCycle, Permission, PermissionAudit,
+                    RolePermission, Staff, Student, StudentChange, Todo, User,
+                    UserPermission, db)
 from utils import (BRANCH_CHOICES, allowed_file, get_setting,
                    normalize_staff_dataframe, parse_preferred_contact,
                    parse_schedule_message, set_setting)
@@ -313,7 +314,14 @@ app.config.update(
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     UPLOAD_EXTENSIONS=[".xlsx", ".xls", ".csv"],
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,
+    TEMPLATES_AUTO_RELOAD=True,
 )
+
+# Ensure Jinja picks up template edits during development even if debug is off
+try:
+    app.jinja_env.auto_reload = True
+except Exception:
+    pass
 
 # Initialize CSRF protection (applies to all modifying requests). For API style
 # fetch POSTs we will expose the token via a context processor/meta tag.
@@ -815,6 +823,30 @@ def create_tables_and_superadmin():
                 pass
             # Observation detail extended table
             conn.execute(text("CREATE TABLE IF NOT EXISTS observation_detail (id INTEGER PRIMARY KEY, observation_id INTEGER NOT NULL UNIQUE, timeslot VARCHAR(20), weekly_test TEXT, weekly_test_comment TEXT, homework TEXT, homework_comment TEXT, classwork TEXT, classwork_comment TEXT, org_mgmt TEXT, org_mgmt_comment TEXT, positives TEXT, improvements TEXT, target_set TEXT, actions_taken TEXT, notes TEXT, next_review_date DATE, FOREIGN KEY(observation_id) REFERENCES observation(id))"))
+            # Floor Management: Shift table and backfill new columns
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS shift (
+                id INTEGER PRIMARY KEY,
+                staff_user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                day VARCHAR(20) NOT NULL,
+                timeslots TEXT NOT NULL,
+                branch VARCHAR(120),
+                floors TEXT,
+                notes TEXT,
+                created_at DATETIME,
+                updated_at DATETIME,
+                FOREIGN KEY(staff_user_id) REFERENCES user(id)
+            )
+            """))
+            try:
+                shift_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(shift)"))}
+                if 'branch' not in shift_cols:
+                    conn.execute(text("ALTER TABLE shift ADD COLUMN branch VARCHAR(120)"))
+                if 'floors' not in shift_cols:
+                    conn.execute(text("ALTER TABLE shift ADD COLUMN floors TEXT"))
+            except Exception:
+                pass
             # Permissions tables (0.9.0) if not present
             conn.execute(text("CREATE TABLE IF NOT EXISTS permission (key VARCHAR(120) PRIMARY KEY, description VARCHAR(255))"))
             conn.execute(text("CREATE TABLE IF NOT EXISTS role_permission (id INTEGER PRIMARY KEY, role VARCHAR(80) NOT NULL, permission_key VARCHAR(120) NOT NULL, UNIQUE(role, permission_key))"))
@@ -894,6 +926,12 @@ def create_tables_and_superadmin():
             ('manage_books','Manage book catalog'),
             ('order_books','Place book print orders'),
             ('manage_pricing','Manage tuition pricing & fees'),
+            # Floor Management
+            ('floor_dashboard','Access floor dashboard'),
+            ('manage_shifts','Manage floor shifts'),
+            ('manage_eod_checklist','Manage end-of-day checklists'),
+            ('manage_floor_reports','Manage floor print reports'),
+            ('manage_call_list','Manage floor call list'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -908,8 +946,10 @@ def create_tables_and_superadmin():
         role_defaults = {
             'staff': {'view_dashboard','manage_tasks','view_reports'},
             'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books'},
-            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_books','order_books','manage_pricing'},
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing',
+                               'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_books','order_books','manage_pricing',
+                      'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
         }
         # Admin should also manage students (append if not present for backward runs)
         role_defaults['admin'].add('manage_students')
@@ -994,6 +1034,1106 @@ def _bootstrap_booking_scheduler():  # pragma: no cover - trivial guard
         except Exception as exc:
             print(f"[WARN] Failed to prime booking reminders: {exc}")
         _BOOKING_SCHEDULER_PRIMED = True
+
+
+# ---------------- Floor Management (scaffold) ---------------- #
+@app.route('/floor')
+@login_required
+@permission_required('floor_dashboard')
+def floor_dashboard():
+    # Filters: date (YYYY-MM-DD or DD-MM-YYYY); optional branch for shifts/print reports
+    raw_date = (request.args.get('date') or '').strip()
+    selected_date = None
+    for fmt in ('%Y-%m-%d', '%d-%m-%Y'):
+        try:
+            if raw_date:
+                selected_date = datetime.strptime(raw_date, fmt).date(); break
+        except Exception:
+            pass
+    if not selected_date:
+        selected_date = date.today()
+
+    selected_branch = (request.args.get('branch') or '').strip()
+    if selected_branch and selected_branch not in BRANCH_CHOICES:
+        selected_branch = ''
+
+    # Data loads and KPIs
+    from models import (CallRecord, EndOfDayChecklist, Meeting, PrintReport,
+                        Shift, Todo, User)
+
+    # Shifts for selected date (optionally branch-scoped)
+    shifts_q = Shift.query.filter(Shift.date == selected_date)
+    if selected_branch:
+        shifts_q = shifts_q.filter(Shift.branch == selected_branch)
+    shifts_for_day = shifts_q.order_by(Shift.branch.asc().nullsfirst(), Shift.day.asc(), Shift.staff_user_id.asc()).all()
+    shifts_today_count = len(shifts_for_day)
+    # Distinct staff with shifts
+    staff_ids_with_shifts = sorted({sh.staff_user_id for sh in shifts_for_day})
+    staff_today_count = len(staff_ids_with_shifts)
+
+    # EOD Checklists for selected date (only relevant to staff with shifts if branch specified)
+    eod_q = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == selected_date)
+    if staff_today_count:
+        eod_q = eod_q.filter(EndOfDayChecklist.staff_user_id.in_(staff_ids_with_shifts))
+    eod_for_day = eod_q.order_by(EndOfDayChecklist.created_at.desc()).all()
+    staff_ids_with_eod = {cl.staff_user_id for cl in eod_for_day}
+    pending_eod_count = max(0, staff_today_count - len(staff_ids_with_eod))
+    missing_eod_staff = []
+    if pending_eod_count:
+        missing_ids = [sid for sid in staff_ids_with_shifts if sid not in staff_ids_with_eod]
+        missing_eod_staff = User.query.filter(User.id.in_(missing_ids)).order_by(User.name.asc()).all()
+
+    # Print Reports for selected date (optionally branch-scoped)
+    pr_q = PrintReport.query.filter(PrintReport.date == selected_date)
+    if selected_branch:
+        pr_q = pr_q.filter(PrintReport.branch == selected_branch)
+    print_reports_for_day = pr_q.order_by(PrintReport.created_at.desc()).all()
+    staff_ids_with_pr = {pr.staff_user_id for pr in print_reports_for_day}
+    pending_print_reports = max(0, staff_today_count - len(staff_ids_with_pr))
+    missing_pr_staff = []
+    if pending_print_reports:
+        missing_ids_pr = [sid for sid in staff_ids_with_shifts if sid not in staff_ids_with_pr]
+        missing_pr_staff = User.query.filter(User.id.in_(missing_ids_pr)).order_by(User.name.asc()).all()
+    unapproved_prints_today = sum(1 for pr in print_reports_for_day if bool(pr.has_unapproved))
+
+    # Calls for selected date (no branch on calls; show overall for the day)
+    calls_for_day = CallRecord.query.filter(CallRecord.date == selected_date).order_by(CallRecord.created_at.desc()).all()
+    from sqlalchemy import or_ as _or
+    calls_queued_today = len([c for c in calls_for_day if (c.outcome is None or (str(c.outcome or '').strip() == ''))])
+    # Reason breakdown
+    reason_counts = {}
+    for c in calls_for_day:
+        key = (c.reason or 'other').strip().lower()
+        reason_counts[key] =  (reason_counts.get(key, 0) + 1)
+
+    # Upcoming meetings (next 7 days)
+    upcoming_meetings = Meeting.query.filter(Meeting.date >= selected_date, Meeting.date <= (selected_date + timedelta(days=7))).count()
+
+    # My pending todos
+    my_pending_todos = Todo.query.filter(Todo.assigned_to_id == current_user.id, (Todo.status.is_(None)) | (Todo.status != 'Done')).count()
+
+    return render_template(
+        'floor/dashboard.html',
+        # Filters
+        selected_date=selected_date,
+        selected_branch=selected_branch,
+        branch_choices=BRANCH_CHOICES,
+        # KPIs
+        shifts_today_count=shifts_today_count,
+        pending_eod_count=pending_eod_count,
+        calls_queued_today=calls_queued_today,
+        pending_print_reports=pending_print_reports,
+        unapproved_prints_today=unapproved_prints_today,
+        upcoming_meetings=upcoming_meetings,
+        my_pending_todos=my_pending_todos,
+        # Lists
+        shifts_for_day=shifts_for_day,
+        eod_for_day=eod_for_day,
+        missing_eod_staff=missing_eod_staff,
+        print_reports_for_day=print_reports_for_day,
+        missing_pr_staff=missing_pr_staff,
+        calls_for_day=calls_for_day[:15],  # recent slice for dashboard
+        reason_counts=reason_counts,
+    )
+
+
+from calendar import day_name
+# Shifts
+from datetime import datetime as _dt
+
+from email_utils import send_email
+from models import Shift
+
+TIMESLOT_OPTIONS = ['9-11','11-1','2-4','4-6','5-7']
+
+def _shift_day_for(d):
+    try:
+        return day_name[d.weekday()]
+    except Exception:
+        return ''
+
+def _is_weekday(d):
+    try:
+        return d.weekday() < 5
+    except Exception:
+        return False
+
+def _users_for_shifts():
+    # Staff dropdown: users whose role in admin/staff (and approved/active)
+    roles = ['admin','staff']
+    return User.query.filter(User.is_approved.is_(True), User.is_active.is_(True), User.role.in_(roles)).order_by(User.name.asc()).all()
+
+
+def _build_shift_email(shift: Shift, staff_user: User) -> tuple[str, str]:
+        date_label = shift.date.strftime('%A, %d %B %Y') if shift.date else ''
+        times = ', '.join(shift.timeslot_list())
+        floors = ', '.join(shift.floor_list()) if shift.floors else '—'
+        branch = shift.branch or '—'
+        subject = f"Your assigned shift – {date_label} ({times})"
+        body_rows = [
+                ("Staff", staff_user.name or ''),
+                ("Date", date_label),
+                ("Day", shift.day or ''),
+                ("Timeslots", times or ''),
+                ("Branch", branch),
+                ("Floor(s)", floors),
+                ("Notes", (shift.notes or '').replace('\n','<br/>') or '<em>None</em>'),
+        ]
+        table = ["<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>"]
+        for label, value in body_rows:
+                table.append(
+                        "<tr>"+
+                        f"<td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td>"+
+                        f"<td style='padding:6px 0;color:#0f172a;'>{value}</td>"+
+                        "</tr>"
+                )
+        table.append("</table>")
+        intro = f"Hello {staff_user.name},<br/><br/>You have been assigned a new shift. The details are below."  # simple branded copy
+        shell = """
+<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'/><title>{title}</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
+    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#f1f5f9;padding:24px 0;'>
+        <tr><td align='center'>
+            <table role='presentation' width='640' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;'>
+                <tr>
+                    <td style='background:#0f172a;padding:24px 32px;'>
+                        <h1 style='margin:0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;'>Excel Tutors</h1>
+                        <p style='margin:6px 0 0;font-size:13px;color:#cbd5f5;'>Shift assignment</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style='padding:32px;'>
+                        <p style='margin:0 0 16px;font-size:15px;color:#0f172a;'>{intro}</p>
+                        {table}
+                    </td>
+                </tr>
+                <tr>
+                    <td style='background:#f8fafc;padding:18px 32px;text-align:center;font-size:11px;color:#94a3b8;'>
+                        &copy; {year} Excel Tutors. All rights reserved.
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+    </body>
+    </html>
+        """.format(title=subject, intro=intro, table=''.join(table), year=date.today().year)
+        return subject, shell
+
+
+@app.route('/floor/shifts')
+@login_required
+@permission_required('manage_shifts')
+def floor_shifts_index():
+    # Filters
+    q = (request.args.get('q') or '').strip().lower()
+    staff_id = request.args.get('staff', type=int)
+    day = (request.args.get('day') or '').strip()
+    status = (request.args.get('status') or '').strip().lower()  # upcoming | past
+    date_from = request.args.get('from')
+    date_to = request.args.get('to')
+    sort = (request.args.get('sort') or 'date').lower()  # date|staff|day
+    direction = (request.args.get('direction') or 'desc').lower()  # asc|desc
+
+    query = Shift.query
+    today = date.today()
+    if staff_id:
+        query = query.filter(Shift.staff_user_id == staff_id)
+    if day:
+        query = query.filter(Shift.day == day)
+    if status == 'upcoming':
+        query = query.filter(Shift.date >= today)
+    elif status == 'past':
+        query = query.filter(Shift.date < today)
+    if date_from:
+        try:
+            # Expecting YYYY-MM-DD from filter UI; list shows DD-MM-YYYY
+            df = _dt.strptime(date_from, '%Y-%m-%d').date()
+            query = query.filter(Shift.date >= df)
+        except Exception:
+            pass
+    if date_to:
+        try:
+            dt = _dt.strptime(date_to, '%Y-%m-%d').date()
+            query = query.filter(Shift.date <= dt)
+        except Exception:
+            pass
+    if q:
+        # naive search on staff name or notes
+        query = query.join(User, Shift.staff_user_id == User.id).filter(
+            (User.name.ilike(f"%{q}%")) | (Shift.notes.ilike(f"%{q}%"))
+        )
+
+    if sort == 'staff':
+        query = query.join(User, Shift.staff_user_id == User.id).order_by(User.name.asc())
+    elif sort == 'day':
+        query = query.order_by(Shift.day.asc(), Shift.date.desc())
+    else:
+        query = query.order_by(Shift.date.desc())
+    if direction == 'asc':
+        # Reapply ascending by date if chosen
+        if sort == 'date':
+            query = query.order_by(Shift.date.asc())
+
+    records = query.all()
+    staff_list = _users_for_shifts()
+    days = list(day_name)
+    return render_template(
+        'floor/shifts/index.html',
+        records=records,
+        staff_list=staff_list,
+        days=days,
+        TIMESLOT_OPTIONS=TIMESLOT_OPTIONS,
+        today=today,
+        BRANCH_CHOICES=BRANCH_CHOICES,
+    )
+
+
+@app.route('/floor/shifts/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_shifts')
+def floor_shifts_new():
+    if request.method == 'POST':
+        try:
+            staff_user_id = int(request.form.get('staff_user_id'))
+        except Exception:
+            flash('Invalid staff', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        try:
+            # Date input expected DD-MM-YYYY from modal; accept YYYY-MM-DD too
+            raw = (request.form.get('date') or '').strip()
+            dt = None
+            for fmt in ('%d-%m-%Y','%Y-%m-%d'):
+                try:
+                    dt = _dt.strptime(raw, fmt).date(); break
+                except Exception: pass
+            if not dt:
+                raise ValueError('Invalid date')
+        except Exception:
+            flash('Invalid date format', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        # Timeslots: multi-select values as list, default for weekday if none
+        slots = request.form.getlist('timeslots')
+        if not slots and _is_weekday(dt):
+            slots = ['5-7']
+        slots = [s for s in slots if s in TIMESLOT_OPTIONS]
+        if not slots:
+            flash('Please choose at least one timeslot', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        # Branch & floors
+        branch = (request.form.get('branch') or '').strip()
+        if branch and branch not in BRANCH_CHOICES:
+            flash('Invalid branch', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        floors = request.form.getlist('floors')
+        valid_floor_opts = ['Basement','Ground Floor','First Floor','Second Floor','Third Floor']
+        floors = [f for f in floors if f in valid_floor_opts]
+        notes = (request.form.get('notes') or '').strip() or None
+        sh = Shift(staff_user_id=staff_user_id, date=dt, day=_shift_day_for(dt), timeslots=','.join(slots), branch=branch or None, floors=(','.join(floors) if floors else None), notes=notes)
+        db.session.add(sh)
+        db.session.commit()
+        # Send email to staff
+        try:
+            staff_user = db.session.get(User, staff_user_id)
+            if staff_user and staff_user.email:
+                subj, html = _build_shift_email(sh, staff_user)
+                send_email(staff_user.email, subj, html)
+        except Exception as _exc:
+            print(f"[WARN] Shift email send failed: {_exc}")
+        flash('Shift created', 'success')
+        return redirect(url_for('floor_shifts_index'))
+    # For GET, render empty modal content if needed
+    staff_list = _users_for_shifts()
+    return render_template('floor/shifts/form.html', record=None, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
+
+
+@app.route('/floor/shifts/<int:shift_id>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_shifts')
+def floor_shifts_edit(shift_id: int):
+    sh = Shift.query.get_or_404(shift_id)
+    if sh.date < date.today():
+        flash('Cannot edit past shifts', 'warning')
+        return redirect(url_for('floor_shifts_index'))
+    if request.method == 'POST':
+        try:
+            staff_user_id = int(request.form.get('staff_user_id'))
+        except Exception:
+            flash('Invalid staff', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        # Date
+        raw = (request.form.get('date') or '').strip()
+        nd = None
+        for fmt in ('%d-%m-%Y','%Y-%m-%d'):
+            try:
+                nd = _dt.strptime(raw, fmt).date(); break
+            except Exception: pass
+        if not nd:
+            flash('Invalid date format', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        slots = request.form.getlist('timeslots')
+        if not slots and _is_weekday(nd):
+            slots = ['5-7']
+        slots = [s for s in slots if s in TIMESLOT_OPTIONS]
+        if not slots:
+            flash('Please choose at least one timeslot', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        # Branch & floors
+        branch = (request.form.get('branch') or '').strip()
+        if branch and branch not in BRANCH_CHOICES:
+            flash('Invalid branch', 'danger')
+            return redirect(url_for('floor_shifts_index'))
+        floors = request.form.getlist('floors')
+        valid_floor_opts = ['Basement','Ground Floor','First Floor','Second Floor','Third Floor']
+        floors = [f for f in floors if f in valid_floor_opts]
+        sh.staff_user_id = staff_user_id
+        sh.date = nd
+        sh.day = _shift_day_for(nd)
+        sh.timeslots = ','.join(slots)
+        sh.branch = branch or None
+        sh.floors = (','.join(floors) if floors else None)
+        sh.notes = (request.form.get('notes') or '').strip() or None
+        db.session.commit()
+        flash('Shift updated', 'success')
+        return redirect(url_for('floor_shifts_index'))
+    staff_list = _users_for_shifts()
+    return render_template('floor/shifts/form.html', record=sh, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
+
+
+@app.route('/api/floor/shifts/<int:shift_id>')
+@login_required
+@permission_required('manage_shifts')
+def api_floor_shift(shift_id: int):
+    """Return JSON details for a single shift to prefill the edit modal."""
+    sh = Shift.query.get_or_404(shift_id)
+    payload = {
+        'id': sh.id,
+        'staff_user_id': sh.staff_user_id,
+        'date': sh.date.strftime('%Y-%m-%d') if sh.date else None,
+        'day': sh.day,
+        'timeslots': sh.timeslot_list(),
+        'branch': sh.branch,
+        'floors': sh.floor_list(),
+        'notes': sh.notes or '',
+        'is_past': bool(sh.date < date.today()) if sh.date else False,
+    }
+    return jsonify(payload)
+
+
+@app.route('/floor/shifts/<int:shift_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_shifts')
+def floor_shifts_delete(shift_id: int):
+    """Delete a future shift. Past shifts are protected from deletion."""
+    sh = Shift.query.get_or_404(shift_id)
+    if sh.date and sh.date < date.today():
+        flash('Cannot delete past shifts', 'warning')
+        return redirect(url_for('floor_shifts_index'))
+    try:
+        db.session.delete(sh)
+        db.session.commit()
+        flash('Shift deleted', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete shift: {exc}', 'danger')
+    return redirect(url_for('floor_shifts_index'))
+
+
+# End of Day Checklist
+@app.route('/floor/checklists')
+@login_required
+@permission_required('manage_eod_checklist')
+def floor_checklists_index():
+    # Filters: date (YYYY-MM-DD), floor, staff (completed by), q (search by staff name/floor)
+    raw_date = (request.args.get('date') or '').strip()
+    selected_date = None
+    for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+        try:
+            if raw_date:
+                selected_date = _dt.strptime(raw_date, fmt).date(); break
+        except Exception:
+            pass
+    if not selected_date:
+        selected_date = date.today()
+
+    floor_filter = (request.args.get('floor') or '').strip()
+    staff_filter = request.args.get('staff', type=int)
+    q = (request.args.get('q') or '').strip()
+
+    # Base query scoped by date and role
+    query = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == selected_date)
+    is_admin = bool(getattr(current_user, 'is_superadmin', False) or current_user.role in ('admin','centre_manager'))
+    if not is_admin:
+        query = query.filter(EndOfDayChecklist.staff_user_id == current_user.id)
+        staff_filter = current_user.id  # lock to self for non-admins
+
+    if staff_filter:
+        query = query.filter(EndOfDayChecklist.staff_user_id == staff_filter)
+    if floor_filter:
+        query = query.filter(EndOfDayChecklist.floor == floor_filter)
+    if q:
+        # naive search: staff name or floor contains
+        try:
+            query = query.join(User, EndOfDayChecklist.staff_user_id == User.id).filter(
+                (User.name.ilike(f"%{q}%")) | (EndOfDayChecklist.floor.ilike(f"%{q}%"))
+            )
+        except Exception:
+            pass
+
+    checklists = query.order_by(EndOfDayChecklist.created_at.desc()).all()
+    # Shifts for selected date for the current user (used for dynamic create visibility)
+    my_shifts = Shift.query.filter(Shift.date == selected_date, Shift.staff_user_id == current_user.id).all()
+    floor_opts = ['Basement','Ground Floor','First Floor','Second Floor','Third Floor']
+    staff_list = _users_for_shifts() if is_admin else []
+    return render_template('floor/checklists/index.html', checklists=checklists, my_shifts=my_shifts, selected_date=selected_date, floor_opts=floor_opts, staff_list=staff_list, selected_floor=floor_filter, selected_staff=staff_filter, q=q)
+
+
+@app.route('/floor/checklists/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_eod_checklist')
+def floor_checklists_new():
+    # Creation via modal (POST) or modal content (GET)
+    if request.method == 'POST':
+        try:
+            shift_id = request.form.get('shift_id', type=int)
+            staff_user_id = int(request.form.get('staff_user_id') or current_user.id)
+            raw_date = (request.form.get('date') or '').strip()
+            d = None
+            for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+                try:
+                    d = _dt.strptime(raw_date, fmt).date(); break
+                except Exception:
+                    pass
+            if not d:
+                d = date.today()
+            floor = (request.form.get('floor') or '').strip()
+            # Items: prefer JSON if provided; otherwise parse item_{i} + item_{i}_val (checkbox or yes/no)
+            items_raw = request.form.get('items')
+            import json
+            import re
+            if items_raw:
+                try:
+                    items = json.loads(items_raw)
+                except Exception:
+                    items = []
+            else:
+                labels: dict[int, str] = {}
+                pat = re.compile(r'^item_(\d+)$')
+                for k, v in request.form.items():
+                    m = pat.match(k)
+                    if m and v and v.strip():
+                        labels[int(m.group(1))] = v.strip()
+                items = []
+                for idx in sorted(labels.keys()):
+                    label = labels[idx]
+                    raw_val = (request.form.get(f'item_{idx}_val') or '').strip().lower()
+                    # checkbox posts 'on'; select may post 'yes'|'no'; normalize to yes/no
+                    val = 'yes' if raw_val in ('yes','on','true','1') else 'no'
+                    items.append({'todo': label, 'value': val})
+            checklist = EndOfDayChecklist(
+                shift_id=shift_id or None,
+                staff_user_id=staff_user_id,
+                date=d,
+                floor=floor or None,
+                items=json.dumps(items),
+                completed=True,
+                completed_at=datetime.utcnow(),
+                created_by_id=current_user.id
+            )
+            db.session.add(checklist)
+            db.session.commit()
+            flash('End of Day Checklist saved', 'success')
+            return redirect(url_for('floor_checklists_index'))
+        except Exception as exc:
+            db.session.rollback()
+            flash(f'Failed to save checklist: {exc}', 'danger')
+            return redirect(url_for('floor_checklists_index'))
+    # GET: return modal fragment
+    # Provide today's shifts for current user to preselect
+    today = date.today()
+    my_shifts = Shift.query.filter(Shift.date == today, Shift.staff_user_id == current_user.id).all()
+    floor_opts = ['Basement','Ground Floor','First Floor','Second Floor','Third Floor']
+    return render_template('floor/checklists/form.html', record=None, my_shifts=my_shifts, floor_opts=floor_opts, today=today)
+
+
+@app.route('/floor/checklists/<int:cid>/print')
+@login_required
+@permission_required('manage_eod_checklist')
+def floor_checklist_print(cid: int):
+    cl = EndOfDayChecklist.query.get_or_404(cid)
+    # Only allow owner or admins to print
+    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or cl.staff_user_id == current_user.id):
+        abort(403)
+    return render_template('floor/checklists/print.html', cl=cl)
+
+
+@app.route('/floor/checklists/<int:cid>/pdf')
+@login_required
+@permission_required('manage_eod_checklist')
+def floor_checklist_pdf(cid: int):
+    from xhtml2pdf import pisa
+    cl = EndOfDayChecklist.query.get_or_404(cid)
+    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or cl.staff_user_id == current_user.id):
+        abort(403)
+    # Render the same print template to HTML and convert to PDF
+    html = render_template('floor/checklists/print.html', cl=cl)
+    pdf_io = io.BytesIO()
+    try:
+        pisa.CreatePDF(io.StringIO(html), dest=pdf_io)  # type: ignore[arg-type]
+    except Exception as exc:
+        flash(f'PDF generation failed: {exc}', 'danger')
+        return redirect(url_for('floor_checklists_index'))
+    pdf_io.seek(0)
+    fname = f"eod_checklist_{cl.id}.pdf"
+    return send_file(pdf_io, as_attachment=True, download_name=fname, mimetype='application/pdf')
+
+
+@app.route('/floor/checklists/<int:cid>/delete', methods=['POST'])
+@login_required
+def floor_checklists_delete(cid: int):
+    """Allow superadmin to delete an End of Day Checklist (irreversible)."""
+    if not getattr(current_user, 'is_superadmin', False):
+        abort(403)
+    cl = EndOfDayChecklist.query.get_or_404(cid)
+    try:
+        db.session.delete(cl)
+        db.session.commit()
+        flash('Checklist deleted', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete checklist: {exc}', 'danger')
+    return redirect(url_for('floor_checklists_index'))
+
+
+@app.route('/api/floor/checklists/today')
+@login_required
+def api_floor_checklists_today():
+    today = date.today()
+    q = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == today)
+    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager')):
+        q = q.filter(EndOfDayChecklist.staff_user_id == current_user.id)
+    rows = [c.serialize() for c in q.all()]
+    return jsonify(rows)
+
+
+@app.route('/api/floor/reports/today')
+@login_required
+def api_floor_reports_today():
+    from models import PrintReport
+    raw_date = (request.args.get('date') or '').strip()
+    d = None
+    for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+        try:
+            if raw_date:
+                d = _dt.strptime(raw_date, fmt).date(); break
+        except Exception:
+            pass
+    if not d:
+        d = date.today()
+    q = PrintReport.query.filter(PrintReport.date == d)
+    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager')):
+        q = q.filter(PrintReport.staff_user_id == current_user.id)
+    rows = [r.serialize() for r in q.all()]
+    return jsonify(rows)
+
+
+def _send_eod_reminders():
+    # Runs daily at 19:30: find shifts for today where staff hasn't completed checklist and send email
+    today = date.today()
+    # find shifts today
+    shifts = Shift.query.filter(Shift.date == today).all()
+    for sh in shifts:
+        # check if a checklist exists for this shift/staff
+        exists = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == today, EndOfDayChecklist.staff_user_id == sh.staff_user_id).count()
+        if exists == 0:
+            # Send warning
+            try:
+                staff = db.session.get(User, sh.staff_user_id)
+                if staff and staff.email:
+                    subj = f"Reminder: End of Day checklist pending for {today.strftime('%d %b %Y')}"
+                    body = f"Hello {staff.name},<br/><br/>You have an assigned shift today ({sh.date.strftime('%A %d %b %Y')}). Please complete the End of Day checklist by 19:30 to mark the task complete.<br/><br/>Thanks." 
+                    _send_email_safe(staff.email, subj, body, log_prefix='EOD reminder')
+            except Exception as e:
+                print(f"[WARN] Failed to send EOD reminder: {e}")
+
+
+# Schedule EOD reminders at 19:30 daily if APScheduler is available
+if BackgroundScheduler is not None:
+    try:
+        _ensure_scheduler_started()
+        if scheduler:
+            # Remove old job if exists
+            try:
+                scheduler.remove_job('eod-reminder')
+            except Exception:
+                pass
+            try:
+                # schedule at 19:30 local (approx) daily
+                scheduler.add_job(_send_eod_reminders, 'cron', hour=19, minute=30, id='eod-reminder')
+            except Exception as _e:
+                print(f"[WARN] Scheduler: failed to add eod reminder job: {_e}")
+    except Exception:
+        pass
+
+
+# Print Report reminders (similar to EOD): send at 19:30 for staff with a shift and no report
+def _send_print_report_reminders():
+    from models import PrintReport
+    today = date.today()
+    shifts = Shift.query.filter(Shift.date == today).all()
+    for sh in shifts:
+        exists = PrintReport.query.filter(PrintReport.date == today, PrintReport.staff_user_id == sh.staff_user_id).count()
+        if exists == 0:
+            try:
+                staff = db.session.get(User, sh.staff_user_id)
+                if staff and staff.email:
+                    subj = f"Reminder: Print report pending for {today.strftime('%d %b %Y') }"
+                    body = f"Hello {staff.name},<br/><br/>You have an assigned shift today ({sh.date.strftime('%A %d %b %Y')}). Please complete the daily print report by 19:30.<br/><br/>Thanks."
+                    _send_email_safe(staff.email, subj, body, log_prefix='Print report reminder')
+            except Exception as e:
+                print(f"[WARN] Failed to send print report reminder: {e}")
+
+if BackgroundScheduler is not None:
+    try:
+        _ensure_scheduler_started()
+        if scheduler:
+            try:
+                scheduler.remove_job('print-report-reminder')
+            except Exception:
+                pass
+            try:
+                scheduler.add_job(_send_print_report_reminders, 'cron', hour=19, minute=30, id='print-report-reminder')
+            except Exception as _e:
+                print(f"[WARN] Scheduler: failed to add print report reminder job: {_e}")
+    except Exception:
+        pass
+
+
+# Print Reports
+@app.route('/floor/reports')
+@login_required
+@permission_required('manage_floor_reports')
+def floor_reports_index():
+    # Filters similar to EOD: date, floor, branch, staff, q
+    from models import PrintReport
+    raw_date = (request.args.get('date') or '').strip()
+    selected_date = None
+    for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+        try:
+            if raw_date:
+                selected_date = _dt.strptime(raw_date, fmt).date(); break
+        except Exception:
+            pass
+    if not selected_date:
+        selected_date = date.today()
+    floor_filter = (request.args.get('floor') or '').strip()
+    branch_filter = (request.args.get('branch') or '').strip()
+    staff_filter = request.args.get('staff', type=int)
+    q = (request.args.get('q') or '').strip()
+
+    is_admin = bool(getattr(current_user,'is_superadmin',False) or current_user.role in ('admin','centre_manager'))
+    query = PrintReport.query.filter(PrintReport.date == selected_date)
+    if not is_admin:
+        query = query.filter(PrintReport.staff_user_id == current_user.id)
+        staff_filter = current_user.id
+    if floor_filter:
+        query = query.filter(PrintReport.floor == floor_filter)
+    if branch_filter:
+        query = query.filter(PrintReport.branch == branch_filter)
+    if staff_filter:
+        query = query.filter(PrintReport.staff_user_id == staff_filter)
+    if q:
+        try:
+            query = query.join(User, PrintReport.staff_user_id == User.id).filter(
+                (User.name.ilike(f"%{q}%")) | (PrintReport.floor.ilike(f"%{q}%")) | (PrintReport.branch.ilike(f"%{q}%"))
+            )
+        except Exception:
+            pass
+    records = query.order_by(PrintReport.created_at.desc()).all()
+    floor_opts = ['Basement','Ground Floor','First Floor','Second Floor','Third Floor']
+    branches = BRANCH_CHOICES
+    staff_list = _users_for_shifts() if is_admin else []
+    return render_template('floor/reports/index.html', records=records, selected_date=selected_date, floor_opts=floor_opts, branches=branches, staff_list=staff_list, selected_floor=floor_filter, selected_branch=branch_filter, selected_staff=staff_filter, q=q)
+
+
+@app.route('/floor/reports/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_floor_reports')
+def floor_reports_new():
+    # Create via modal
+    from models import PrintReport
+    if request.method == 'POST':
+        try:
+            staff_user_id = int(request.form.get('staff_user_id') or current_user.id)
+            raw_date = (request.form.get('date') or '').strip()
+            d = None
+            for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+                try:
+                    d = _dt.strptime(raw_date, fmt).date(); break
+                except Exception: pass
+            if not d: d = date.today()
+            day = _shift_day_for(d)
+            floor = (request.form.get('floor') or '').strip() or None
+            branch = (request.form.get('branch') or '').strip() or None
+            pages = request.form.get('pages_printed', type=int) or 0
+            has_unapproved = (request.form.get('has_unapproved') in ('yes','on','true','1'))
+            details = (request.form.get('unapproved_details') or '').strip() or None
+            notes = (request.form.get('notes') or '').strip() or None
+            shift_id = request.form.get('shift_id', type=int)
+            pr = PrintReport(shift_id=shift_id or None, staff_user_id=staff_user_id, date=d, day=day, floor=floor, branch=branch, pages_printed=pages, has_unapproved=has_unapproved, unapproved_details=details, notes=notes, created_by_id=current_user.id)
+            db.session.add(pr); db.session.commit()
+            flash('Print report saved','success')
+        except Exception as exc:
+            db.session.rollback(); flash(f'Failed to save report: {exc}','danger')
+        return redirect(url_for('floor_reports_index'))
+    # GET returns modal fragment
+    today = date.today()
+    my_shifts = Shift.query.filter(Shift.date == today, Shift.staff_user_id == current_user.id).all()
+    return render_template('floor/reports/form.html', record=None, my_shifts=my_shifts, floor_opts=['Basement','Ground Floor','First Floor','Second Floor','Third Floor'], branches=BRANCH_CHOICES, today=today)
+
+@app.route('/floor/reports/<int:rid>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_floor_reports')
+def floor_reports_edit(rid: int):
+    from models import PrintReport
+    pr = PrintReport.query.get_or_404(rid)
+    if request.method == 'POST':
+        try:
+            raw_date = (request.form.get('date') or '').strip()
+            d = None
+            for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+                try:
+                    d = _dt.strptime(raw_date, fmt).date(); break
+                except Exception: pass
+            if not d: d = pr.date
+            pr.date = d
+            pr.day = _shift_day_for(d)
+            pr.floor = (request.form.get('floor') or '').strip() or None
+            pr.branch = (request.form.get('branch') or '').strip() or None
+            pr.pages_printed = request.form.get('pages_printed', type=int) or 0
+            pr.has_unapproved = (request.form.get('has_unapproved') in ('yes','on','true','1'))
+            pr.unapproved_details = (request.form.get('unapproved_details') or '').strip() or None
+            pr.notes = (request.form.get('notes') or '').strip() or None
+            db.session.commit(); flash('Report updated','success')
+        except Exception as exc:
+            db.session.rollback(); flash(f'Update failed: {exc}','danger')
+        return redirect(url_for('floor_reports_index'))
+    today = pr.date or date.today()
+    my_shifts = Shift.query.filter(Shift.date == today, Shift.staff_user_id == current_user.id).all()
+    return render_template('floor/reports/form.html', record=pr, my_shifts=my_shifts, floor_opts=['Basement','Ground Floor','First Floor','Second Floor','Third Floor'], branches=BRANCH_CHOICES, today=today)
+
+@app.route('/api/floor/reports/<int:rid>')
+@login_required
+@permission_required('manage_floor_reports')
+def api_floor_report(rid: int):
+    from models import PrintReport
+    pr = PrintReport.query.get_or_404(rid)
+    payload = pr.serialize()
+    return jsonify(payload)
+
+
+@app.route('/floor/reports/<int:rid>/print')
+@login_required
+@permission_required('manage_floor_reports')
+def floor_report_print(rid: int):
+    from models import PrintReport
+    pr = PrintReport.query.get_or_404(rid)
+    # Only allow owner or admins to view
+    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or pr.staff_user_id == current_user.id):
+        abort(403)
+    return render_template('floor/reports/print.html', r=pr)
+
+
+@app.route('/floor/reports/<int:rid>/pdf')
+@login_required
+@permission_required('manage_floor_reports')
+def floor_report_pdf(rid: int):
+    from xhtml2pdf import pisa
+
+    from models import PrintReport
+    pr = PrintReport.query.get_or_404(rid)
+    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or pr.staff_user_id == current_user.id):
+        abort(403)
+    html = render_template('floor/reports/print.html', r=pr)
+    pdf_io = io.BytesIO()
+    try:
+        pisa.CreatePDF(io.StringIO(html), dest=pdf_io)  # type: ignore[arg-type]
+    except Exception as exc:
+        flash(f'PDF generation failed: {exc}', 'danger')
+        return redirect(url_for('floor_reports_index'))
+    pdf_io.seek(0)
+    return send_file(pdf_io, as_attachment=True, download_name=f'print_report_{pr.id}.pdf', mimetype='application/pdf')
+
+
+# --------- API: Student search (async lookup) ---------
+@app.route('/api/students/search')
+@login_required
+def api_students_search():
+    from models import Student
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
+    ilike = f"%{q}%"
+    results = Student.query.filter(
+        (Student.name.ilike(ilike)) | (Student.student_id.ilike(ilike))
+    ).order_by(Student.name.asc()).limit(25).all()
+    payload = [
+        { 'id': s.id, 'student_id': s.student_id, 'name': s.name }
+        for s in results
+    ]
+    return jsonify(payload)
+
+# Call List
+@app.route('/floor/call-list')
+@login_required
+@permission_required('manage_call_list')
+def floor_call_list_index():
+    from models import CallRecord, Student, User
+
+    # Filters: date, reason, called_by, student, q
+    raw_date = (request.args.get('date') or '').strip()
+    selected_date = None
+    for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+        try:
+            if raw_date:
+                selected_date = _dt.strptime(raw_date, fmt).date(); break
+        except Exception:
+            pass
+    if not selected_date:
+        selected_date = date.today()
+    reason = (request.args.get('reason') or '').strip()
+    called_by = request.args.get('called_by', type=int)
+    student_id = request.args.get('student', type=int)
+    q = (request.args.get('q') or '').strip()
+
+    query = CallRecord.query.filter(CallRecord.date == selected_date)
+    if reason:
+        query = query.filter(CallRecord.reason == reason)
+    if called_by:
+        query = query.filter(CallRecord.created_by_id == called_by)
+    if student_id:
+        query = query.filter(CallRecord.student_id == student_id)
+    if q:
+        # simple search across student name/id and discussion/outcome
+        try:
+            query = query.join(Student, CallRecord.student_id == Student.id).filter(
+                (Student.name.ilike(f"%{q}%")) |
+                (Student.student_id.ilike(f"%{q}%")) |
+                (CallRecord.discussion.ilike(f"%{q}%")) |
+                (CallRecord.outcome.ilike(f"%{q}%"))
+            )
+        except Exception:
+            pass
+    records = query.order_by(CallRecord.created_at.desc()).all()
+
+    reasons = ['absence','lateness','payment issue','detention','meeting','event','other']
+    staff_opts = User.query.filter(User.role.in_(['superadmin','centre_manager','supervisor','admin'])).order_by(User.name.asc()).all()
+    students = Student.query.order_by(Student.name.asc()).limit(500).all()
+    return render_template('floor/calls/index.html', records=records, selected_date=selected_date, reasons=reasons, staff_opts=staff_opts, students=students, selected_reason=reason, selected_called_by=called_by, selected_student=student_id, q=q)
+
+
+@app.route('/floor/call-list/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_call_list')
+def floor_call_list_new():
+    from models import CallRecord, Meeting, Student, User
+    if request.method == 'POST':
+        try:
+            student_id = request.form.get('student_id', type=int)
+            reason = (request.form.get('reason') or '').strip()
+            raw_date = (request.form.get('date') or '').strip()
+            d = None
+            for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+                try:
+                    d = _dt.strptime(raw_date, fmt).date(); break
+                except Exception: pass
+            if not d: d = date.today()
+            day = _shift_day_for(d)
+            discussion = (request.form.get('discussion') or '').strip()
+            outcome = (request.form.get('outcome') or '').strip() or None
+
+            appt_date = None
+            appt_with_id = None
+            meeting_ref = None
+            event_att = None
+
+            if reason == 'meeting':
+                raw_appt = (request.form.get('appointment_date') or '').strip()
+                for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+                    try:
+                        if raw_appt:
+                            appt_date = _dt.strptime(raw_appt, fmt).date(); break
+                    except Exception: pass
+                appt_with_id = request.form.get('appointment_with_id', type=int)
+                # Create a Meeting entry
+                if appt_date and appt_with_id:
+                    # Use 00:00 as time by default
+                    m = Meeting(participant_id=appt_with_id, booked_by_id=current_user.id, agenda=discussion or f'Meeting for student {student_id}', date=appt_date, time='00:00')
+                    db.session.add(m); db.session.flush()
+                    meeting_ref = m
+                    # Send notification to the participant (simple)
+                    try:
+                        from email_utils import send_email
+                        participant = User.query.get(appt_with_id)
+                        if participant and participant.email:
+                            subj = f"New meeting scheduled on {appt_date.strftime('%Y-%m-%d')}"
+                            html = f"""
+                                <p>Hello {participant.name},</p>
+                                <p>A new meeting has been scheduled for <strong>{appt_date.strftime('%A, %d %B %Y')}</strong>.</p>
+                                <p><strong>Agenda:</strong> {(discussion or 'N/A')}</p>
+                                <p><strong>Booked by:</strong> {current_user.name}</p>
+                                <p style='font-size:12px;color:#64748b;'>This is an automated notification from Excel Tutors portal.</p>
+                            """
+                            send_email(participant.email, subj, html)
+                    except Exception as _e:
+                        print(f"[WARN] Meeting email failed: {_e}")
+            elif reason == 'event':
+                event_att = (request.form.get('event_attendance') or '').strip() or None
+
+            rec = CallRecord(created_by_id=current_user.id, student_id=student_id, reason=reason, date=d, day=day, discussion=discussion, outcome=outcome, appointment_date=appt_date, appointment_with_id=appt_with_id, meeting_id=(meeting_ref.id if meeting_ref else None), event_attendance=event_att)
+            db.session.add(rec); db.session.commit()
+            flash('Call saved','success')
+        except Exception as exc:
+            db.session.rollback(); flash(f'Failed to save call: {exc}','danger')
+        return redirect(url_for('floor_call_list_index'))
+    # GET -> modal content
+    reasons = ['absence','lateness','payment issue','detention','meeting','event','other']
+    staff_opts = User.query.filter(User.role.in_(['superadmin','centre_manager','supervisor','admin'])).order_by(User.name.asc()).all()
+    students = Student.query.order_by(Student.name.asc()).limit(500).all()
+    return render_template('floor/calls/form.html', record=None, reasons=reasons, staff_opts=staff_opts, students=students, today=date.today())
+
+@app.route('/floor/call-list/<int:cid>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_call_list')
+def floor_call_list_edit(cid: int):
+    from models import CallRecord, Meeting, Student, User
+    rec = CallRecord.query.get_or_404(cid)
+    if request.method == 'POST':
+        try:
+            rec.student_id = request.form.get('student_id', type=int)
+            rec.reason = (request.form.get('reason') or '').strip()
+            raw_date = (request.form.get('date') or '').strip()
+            d = None
+            for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+                try:
+                    d = _dt.strptime(raw_date, fmt).date(); break
+                except Exception: pass
+            if not d: d = rec.date
+            rec.date = d
+            rec.day = _shift_day_for(d)
+            rec.discussion = (request.form.get('discussion') or '').strip()
+            rec.outcome = (request.form.get('outcome') or '').strip() or None
+
+            # Reset special fields
+            rec.appointment_date = None
+            rec.appointment_with_id = None
+            # Keep existing meeting if still meeting; otherwise clear link
+            keep_meeting = False
+
+            if rec.reason == 'meeting':
+                raw_appt = (request.form.get('appointment_date') or '').strip()
+                appt_date = None
+                for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+                    try:
+                        if raw_appt:
+                            appt_date = _dt.strptime(raw_appt, fmt).date(); break
+                    except Exception: pass
+                appt_with_id = request.form.get('appointment_with_id', type=int)
+                rec.appointment_date = appt_date
+                rec.appointment_with_id = appt_with_id
+                keep_meeting = bool(appt_date and appt_with_id)
+                if keep_meeting:
+                    if rec.meeting_id:
+                        m = Meeting.query.get(rec.meeting_id)
+                        if m:
+                            m.participant_id = appt_with_id
+                            m.agenda = rec.discussion or m.agenda
+                            m.date = appt_date
+                            m.time = m.time or '00:00'
+                    else:
+                        m = Meeting(participant_id=appt_with_id, booked_by_id=current_user.id, agenda=rec.discussion or f'Meeting for student {rec.student_id}', date=appt_date, time='00:00')
+                        db.session.add(m); db.session.flush()
+                        rec.meeting_id = m.id
+                else:
+                    rec.meeting_id = None
+            elif rec.reason == 'event':
+                rec.event_attendance = (request.form.get('event_attendance') or '').strip() or None
+                rec.meeting_id = None
+            else:
+                rec.event_attendance = None
+                rec.meeting_id = None
+
+            db.session.commit(); flash('Call updated','success')
+        except Exception as exc:
+            db.session.rollback(); flash(f'Update failed: {exc}','danger')
+        return redirect(url_for('floor_call_list_index'))
+    reasons = ['absence','lateness','payment issue','detention','meeting','event','other']
+    staff_opts = User.query.filter(User.role.in_(['superadmin','centre_manager','supervisor','admin'])).order_by(User.name.asc()).all()
+    students = Student.query.order_by(Student.name.asc()).limit(500).all()
+    return render_template('floor/calls/form.html', record=rec, reasons=reasons, staff_opts=staff_opts, students=students, today=rec.date or date.today())
+
+@app.route('/floor/call-list/<int:cid>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_call_list')
+def floor_call_list_delete(cid: int):
+    from models import CallRecord
+    rec = CallRecord.query.get_or_404(cid)
+    try:
+        db.session.delete(rec); db.session.commit();
+        flash('Call deleted','success')
+    except Exception as exc:
+        db.session.rollback(); flash(f'Delete failed: {exc}','danger')
+    return redirect(url_for('floor_call_list_index'))
+
+@app.route('/floor/call-list/print')
+@login_required
+@permission_required('manage_call_list')
+def floor_call_list_print():
+    # Print view for a given user and date
+    from models import CallRecord, User
+    uid = request.args.get('user', type=int) or current_user.id
+    raw_date = (request.args.get('date') or '').strip()
+    d = None
+    for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+        try:
+            if raw_date:
+                d = _dt.strptime(raw_date, fmt).date(); break
+        except Exception: pass
+    if not d: d = date.today()
+    user = User.query.get(uid)
+    records = CallRecord.query.filter(CallRecord.created_by_id==uid, CallRecord.date==d).order_by(CallRecord.created_at.asc()).all()
+    return render_template('floor/calls/print.html', user=user, selected_date=d, records=records)
+
+@app.route('/floor/call-list/pdf')
+@login_required
+@permission_required('manage_call_list')
+def floor_call_list_pdf():
+    from xhtml2pdf import pisa
+
+    from models import CallRecord, User
+    uid = request.args.get('user', type=int) or current_user.id
+    raw_date = (request.args.get('date') or '').strip()
+    d = None
+    for fmt in ('%Y-%m-%d','%d-%m-%Y'):
+        try:
+            if raw_date:
+                d = _dt.strptime(raw_date, fmt).date(); break
+        except Exception: pass
+    if not d: d = date.today()
+    user = User.query.get(uid)
+    records = CallRecord.query.filter(CallRecord.created_by_id==uid, CallRecord.date==d).order_by(CallRecord.created_at.asc()).all()
+    html = render_template('floor/calls/print.html', user=user, selected_date=d, records=records)
+    pdf_io = io.BytesIO()
+    try:
+        pisa.CreatePDF(io.StringIO(html), dest=pdf_io)  # type: ignore[arg-type]
+    except Exception as exc:
+        flash(f'PDF generation failed: {exc}', 'danger')
+        return redirect(url_for('floor_call_list_index'))
+    pdf_io.seek(0)
+    fname = f"call_list_{uid}_{d.isoformat()}.pdf"
+    return send_file(pdf_io, as_attachment=True, download_name=fname, mimetype='application/pdf')
 
 
 @app.route("/")
@@ -1162,6 +2302,71 @@ def index():
     observer_calibration.sort(key=lambda r: abs(r['deviation']) if r['deviation'] is not None else 0, reverse=True)
     observer_calibration = observer_calibration[:10]
 
+    # ---------------- Floor KPIs (Shifts, Checklists, Calls, Reports, Meetings, Todos) ----------------
+    try:
+        from models import (CallRecord, EndOfDayChecklist, Meeting,
+                            PrintReport, Shift, Todo)
+
+        # Shifts today
+        shifts_today_count = Shift.query.filter(Shift.date == today).count()
+        # Distinct staff with shifts today
+        staff_today_subq = db.session.query(Shift.staff_user_id).filter(Shift.date == today).distinct().subquery()
+        staff_today_count = db.session.query(db.func.count(db.func.distinct(Shift.staff_user_id))).filter(Shift.date == today).scalar() or 0
+        # EOD submitted today by those staff
+        eod_done_count = db.session.query(db.func.count(db.func.distinct(EndOfDayChecklist.staff_user_id))).filter(
+            EndOfDayChecklist.date == today,
+            EndOfDayChecklist.staff_user_id.in_(db.select(staff_today_subq.c.staff_user_id))
+        ).scalar() or 0
+        pending_eod_count = max(0, (staff_today_count or 0) - (eod_done_count or 0))
+        # Build missing EOD staff list (admin views) and my pending flag
+        staff_today_ids = [row[0] for row in db.session.query(Shift.staff_user_id).filter(Shift.date == today).distinct().all()]
+        eod_done_ids = [row[0] for row in db.session.query(EndOfDayChecklist.staff_user_id).filter(EndOfDayChecklist.date == today, EndOfDayChecklist.staff_user_id.in_(staff_today_ids)).distinct().all()]
+        missing_ids = [sid for sid in staff_today_ids if sid not in (eod_done_ids or [])]
+        missing_eod_staff = []
+        if missing_ids:
+            try:
+                missing_eod_staff = User.query.filter(User.id.in_(missing_ids)).order_by(User.name.asc()).all()
+            except Exception:
+                missing_eod_staff = []
+        # Current user pending?
+        my_eod_pending = False
+        if current_user.is_authenticated:
+            try:
+                has_shift = db.session.query(Shift.id).filter(Shift.date == today, Shift.staff_user_id == current_user.id).first() is not None
+                has_eod = db.session.query(EndOfDayChecklist.id).filter(EndOfDayChecklist.date == today, EndOfDayChecklist.staff_user_id == current_user.id).first() is not None
+                my_eod_pending = bool(has_shift and not has_eod)
+            except Exception:
+                my_eod_pending = False
+        # Calls queued today (no outcome)
+        from sqlalchemy import or_
+        calls_queued_today = CallRecord.query.filter(
+            CallRecord.date == today,
+            or_(CallRecord.outcome.is_(None), db.func.length(db.func.trim(CallRecord.outcome)) == 0)
+        ).count()
+        # Print Reports pending for today (by staff with shifts today)
+        pr_done_count = db.session.query(db.func.count(db.func.distinct(PrintReport.staff_user_id))).filter(
+            PrintReport.date == today,
+            PrintReport.staff_user_id.in_(db.select(staff_today_subq.c.staff_user_id))
+        ).scalar() or 0
+        pending_print_reports = max(0, (staff_today_count or 0) - (pr_done_count or 0))
+        # Unapproved print incidents today
+        unapproved_prints_today = PrintReport.query.filter(PrintReport.date == today, PrintReport.has_unapproved.is_(True)).count()
+        # Upcoming meetings (next 7 days)
+        upcoming_window = today + timedelta(days=7)
+        upcoming_meetings = Meeting.query.filter(Meeting.date >= today, Meeting.date <= upcoming_window).count()
+        # My pending todos
+        my_pending_todos = Todo.query.filter(Todo.assigned_to_id == current_user.id, (Todo.status.is_(None)) | (Todo.status != 'Done')).count()
+    except Exception:
+        shifts_today_count = 0
+        pending_eod_count = 0
+        calls_queued_today = 0
+        pending_print_reports = 0
+        unapproved_prints_today = 0
+        upcoming_meetings = 0
+        my_pending_todos = 0
+        missing_eod_staff = []
+        my_eod_pending = False
+
     return render_template(
         'dashboard/index.html',
         total_staff=total_staff,
@@ -1182,6 +2387,17 @@ def index():
         observer_calibration=observer_calibration,
         selected_cycle_ids=selected_cycle_ids,
         all_cycles=all_cycles,
+        # Floor KPIs
+        shifts_today_count=shifts_today_count,
+        pending_eod_count=pending_eod_count,
+        calls_queued_today=calls_queued_today,
+        pending_print_reports=pending_print_reports,
+        unapproved_prints_today=unapproved_prints_today,
+        upcoming_meetings=upcoming_meetings,
+        my_pending_todos=my_pending_todos,
+        missing_eod_staff=missing_eod_staff,
+        my_eod_pending=my_eod_pending,
+        today=today,
     welcome_name=current_user.name if current_user.is_authenticated else None,
     )
 

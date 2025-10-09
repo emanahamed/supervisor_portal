@@ -140,6 +140,151 @@ content %}
     </div>
   </div>
 
+  <!-- SECTION: Floor Operations KPIs -->
+  <div
+    class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold pt-4"
+  >
+    <span>Floor Operations Today</span>
+    <div
+      class="h-px flex-1 bg-gradient-to-r from-slate-300 to-transparent"
+    ></div>
+  </div>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+    <div class="soft-card p-4" title="Shifts scheduled for today">
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        🗓️ Active Shifts
+      </div>
+      <div class="text-2xl font-semibold text-indigo-600">
+        {{ shifts_today_count }}
+      </div>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Staff with a shift today who haven't submitted EOD yet"
+    >
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        ✅ Pending EOD
+      </div>
+      <div class="text-2xl font-semibold text-amber-600">
+        {{ pending_eod_count }}
+      </div>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Calls logged today without an outcome yet"
+    >
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        📞 Calls Queued
+      </div>
+      <div class="text-2xl font-semibold text-fuchsia-600">
+        {{ calls_queued_today }}
+      </div>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Staff with a shift today who haven't submitted a Print Report"
+    >
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        🖨️ Pending Reports
+      </div>
+      <div class="text-2xl font-semibold text-rose-600">
+        {{ pending_print_reports }}
+      </div>
+    </div>
+    <div
+      class="soft-card p-4"
+      title="Number of unapproved prints reported today"
+    >
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        ⚠️ Unapproved Prints
+      </div>
+      <div class="text-2xl font-semibold text-red-600">
+        {{ unapproved_prints_today }}
+      </div>
+    </div>
+    <div class="soft-card p-4" title="Meetings scheduled in the next 7 days">
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+        📅 Upcoming Meetings
+      </div>
+      <div class="text-2xl font-semibold text-emerald-600">
+        {{ upcoming_meetings }}
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1">
+        Your pending todos: <strong>{{ my_pending_todos }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pending EOD Checklist Widget -->
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div class="soft-card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="font-semibold flex items-center gap-2">
+          ✅ End of Day Checklist
+        </h2>
+        <span class="soft-badge">{{ today|fmt_date }}</span>
+      </div>
+      {% if my_eod_pending %}
+      <div class="text-sm bg-amber-50 border border-amber-200 rounded p-3 mb-3">
+        You have a shift today and haven’t submitted your End of Day checklist
+        yet.
+        <a
+          href="{{ url_for('floor_checklists_index', date=today.strftime('%Y-%m-%d')) }}"
+          class="underline"
+          >Complete now</a
+        >.
+      </div>
+      {% endif %} {% if current_user.is_superadmin or current_user.role in
+      ['admin','centre_manager'] %}
+      <div class="text-sm">
+        <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+          Missing ({{ pending_eod_count }})
+        </div>
+        {% if missing_eod_staff %}
+        <ul class="text-sm space-y-1 max-h-40 overflow-auto">
+          {% for u in missing_eod_staff[:10] %}
+          <li
+            class="flex items-center justify-between bg-slate-50 rounded px-2 py-1"
+          >
+            <span class="truncate">{{ u.name }}</span>
+            <a
+              class="text-xs underline"
+              href="{{ url_for('floor_checklists_index', date=today.strftime('%Y-%m-%d')) }}"
+              >Open</a
+            >
+          </li>
+          {% endfor %}
+        </ul>
+        {% if missing_eod_staff|length > 10 %}
+        <div class="mt-2 text-xs">
+          and {{ missing_eod_staff|length - 10 }} more…
+        </div>
+        {% endif %} {% else %}
+        <div class="text-slate-500">All done for today 🎉</div>
+        {% endif %}
+        <div class="mt-3 flex gap-2">
+          <a
+            href="{{ url_for('floor_checklists_index', date=today.strftime('%Y-%m-%d')) }}"
+            class="soft-btn text-xs"
+            >View EODs</a
+          >
+          <a href="{{ url_for('floor_shifts_index') }}" class="soft-btn text-xs"
+            >View Shifts</a
+          >
+        </div>
+      </div>
+      {% else %}
+      <div class="text-sm">
+        <a
+          href="{{ url_for('floor_checklists_index', date=today.strftime('%Y-%m-%d')) }}"
+          class="soft-btn text-xs"
+          >Open EOD Checklist</a
+        >
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
   <!-- SECTION: Engagement & Activity -->
   <div
     class="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500 font-semibold pt-4"

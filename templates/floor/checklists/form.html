@@ -1,0 +1,141 @@
+{# Modal-friendly form partial for End of Day Checklist #}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+  <div class="space-y-3">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium mb-1">Shift (optional)</label>
+        <select name="shift_id" class="soft-input">
+          <option value="">Select your shift</option>
+          {% for s in my_shifts %}
+          <option value="{{ s.id }}">
+            {{ s.day }} {{ s.date.strftime('%d-%m-%Y') }} — {{ s.branch or '' }}
+            {{ ', '.join(s.floor_list()) }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Date</label>
+        <input
+          type="date"
+          class="soft-input"
+          name="date"
+          value="{{ today.isoformat() }}"
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Floor</label>
+        <select name="floor" class="soft-input">
+          <option value="">Select floor</option>
+          {% for f in floor_opts %}
+          <option value="{{ f }}">{{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Your Name</label>
+        <input
+          type="text"
+          class="soft-input"
+          value="{{ current_user.name }}"
+          disabled
+        />
+        <input
+          type="hidden"
+          name="staff_user_id"
+          value="{{ current_user.id }}"
+        />
+      </div>
+    </div>
+
+    <div class="mt-2 space-y-2" x-data="addItemsStandalone()">
+      {% set defaults = [ 'Turned off all the A/C in the floor', 'Turned off all
+      the lights in the floor', 'Turned off all the lights in the toilet',
+      'Turned off the computer', 'Shut all the windows', 'Shut the fire exit at
+      the back', 'Returned the laptop', 'All tables are cleaned for next day
+      classes', 'Stocks for utilities are checked for next day and refilled
+      where necessary' ] %} {% for t in defaults %}
+      <div class="grid grid-cols-12 items-center gap-2">
+        <div class="col-span-1">
+          <span class="soft-badge">{{ loop.index }}</span>
+        </div>
+        <div class="col-span-9">
+          <div class="text-sm">{{ t }}</div>
+          <input type="hidden" name="item_{{ loop.index }}" value="{{ t }}" />
+        </div>
+        <div class="col-span-2 flex items-center gap-2">
+          <label class="inline-flex items-center gap-1 text-xs"
+            ><input
+              type="checkbox"
+              class="soft-checkbox"
+              name="item_{{ loop.index }}_val"
+              value="yes"
+            />
+            Yes</label
+          >
+        </div>
+      </div>
+      {% endfor %}
+
+      <!-- Custom items list -->
+      <template x-for="(it, i) in items" :key="i">
+        <div class="grid grid-cols-12 items-center gap-2">
+          <div class="col-span-1">
+            <span class="soft-badge" x-text="base + i + 1"></span>
+          </div>
+          <div class="col-span-9">
+            <input
+              type="text"
+              class="soft-input"
+              :name="`item_${base + i + 1}`"
+              placeholder="Custom task"
+              x-model="it.label"
+              required
+            />
+          </div>
+          <div class="col-span-2 flex items-center gap-2">
+            <label class="inline-flex items-center gap-1 text-xs"
+              ><input
+                type="checkbox"
+                class="soft-checkbox"
+                :name="`item_${base + i + 1}_val`"
+                value="yes"
+                x-model="it.checked"
+              />
+              Yes</label
+            >
+            <button type="button" class="soft-btn" @click="remove(i)">
+              Remove
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <div class="mt-2 flex items-center gap-2">
+        <button type="button" class="soft-btn" @click="add()">Add item</button>
+      </div>
+    </div>
+    <div class="mt-4 flex items-center justify-end gap-2">
+      <a href="{{ url_for('floor_checklists_index') }}" class="soft-btn"
+        >Cancel</a
+      >
+      <button type="submit" class="soft-btn primary">Save</button>
+    </div>
+  </div>
+</form>
+
+<script>
+  function addItemsStandalone() {
+    return {
+      base: 9,
+      items: [],
+      add() {
+        this.items.push({ label: "", checked: false });
+      },
+      remove(i) {
+        this.items.splice(i, 1);
+      },
+    };
+  }
+</script>

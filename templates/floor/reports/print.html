@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Print Report</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial,
+          sans-serif;
+        color: #0f172a;
+        margin: 24px;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .brand {
+        font-weight: 700;
+        font-size: 18px;
+      }
+      .muted {
+        color: #64748b;
+        font-size: 12px;
+      }
+      .meta {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+      .meta table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .meta th,
+      .meta td {
+        text-align: left;
+        padding: 6px 4px;
+      }
+      .meta th {
+        width: 180px;
+        color: #64748b;
+      }
+      .section {
+        margin-top: 14px;
+      }
+      .section h4 {
+        margin: 0 0 8px;
+        font-size: 14px;
+      }
+      .box {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 13px;
+        min-height: 40px;
+      }
+      .footer {
+        margin-top: 18px;
+        font-size: 11px;
+        color: #64748b;
+        text-align: center;
+      }
+    </style>
+    <script>
+      function autoPrint() {
+        if (typeof window !== "undefined") {
+          window.print();
+        }
+      }
+    </script>
+  </head>
+  <body onload="autoPrint()">
+    <div class="header">
+      <div class="brand">Excel Tutors</div>
+      <div class="muted">Daily Print Report</div>
+    </div>
+
+    <div class="meta">
+      <table>
+        <tr>
+          <th>Date</th>
+          <td>{{ r.date.strftime('%A, %d %B %Y') if r.date else '' }}</td>
+        </tr>
+        <tr>
+          <th>Day</th>
+          <td>{{ r.day or '' }}</td>
+        </tr>
+        <tr>
+          <th>Staff</th>
+          <td>{{ r.staff_user.name if r.staff_user else '' }}</td>
+        </tr>
+        <tr>
+          <th>Branch</th>
+          <td>{{ r.branch or '' }}</td>
+        </tr>
+        <tr>
+          <th>Floor</th>
+          <td>{{ r.floor or '' }}</td>
+        </tr>
+        <tr>
+          <th>Pages printed (today)</th>
+          <td>{{ r.pages_printed or 0 }}</td>
+        </tr>
+        <tr>
+          <th>Unapproved print?</th>
+          <td>{{ 'Yes' if r.has_unapproved else 'No' }}</td>
+        </tr>
+      </table>
+    </div>
+
+    {% if r.has_unapproved %}
+    <div class="section">
+      <h4>Unapproved details</h4>
+      <div class="box">{{ r.unapproved_details or '' }}</div>
+    </div>
+    {% endif %} {% if r.notes %}
+    <div class="section">
+      <h4>Notes</h4>
+      <div class="box">{{ r.notes }}</div>
+    </div>
+    {% endif %}
+
+    <div class="footer">
+      &copy; {{ (r.date.year if r.date else now().year) }} Excel Tutors
+    </div>
+  </body>
+</html>

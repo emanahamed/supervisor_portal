@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Call List</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial,
+          sans-serif;
+        color: #111827;
+      }
+      .wrap {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      .meta {
+        color: #6b7280;
+        font-size: 13px;
+        margin-bottom: 18px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        text-align: left;
+        font-size: 13px;
+        padding: 8px;
+        border-bottom: 1px solid #e5e7eb;
+        vertical-align: top;
+      }
+      th {
+        background: #f9fafb;
+        color: #374151;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Call List</h1>
+      <div class="meta">
+        <div><strong>User:</strong> {{ user.name if user else 'Unknown' }}</div>
+        <div>
+          <strong>Date:</strong> {{ selected_date.strftime('%A, %d %B %Y') }}
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 80px">Time</th>
+            <th>Student</th>
+            <th>Reason</th>
+            <th>Discussion</th>
+            <th>Outcome</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in records %}
+          <tr>
+            <td>{{ r.time_label() }}</td>
+            <td>
+              {{ r.student.student_id if r.student else '' }} — {{
+              r.student.name if r.student else '' }}
+            </td>
+            <td>{{ r.reason.title() }}</td>
+            <td>{{ (r.discussion or '').replace('\n','<br />') | safe }}</td>
+            <td>{{ (r.outcome or '').replace('\n','<br />') | safe }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>

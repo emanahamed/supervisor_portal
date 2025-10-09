@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>End of Day Checklist</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial,
+          sans-serif;
+        color: #0f172a;
+        margin: 24px;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .brand {
+        font-weight: 700;
+        font-size: 18px;
+      }
+      .muted {
+        color: #64748b;
+        font-size: 12px;
+      }
+      .meta {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+      .meta table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .meta th,
+      .meta td {
+        text-align: left;
+        padding: 6px 4px;
+      }
+      .meta th {
+        width: 160px;
+        color: #64748b;
+      }
+      .badge {
+        display: inline-block;
+        border-radius: 12px;
+        padding: 2px 8px;
+        font-size: 11px;
+      }
+      .badge-ok {
+        background: #d1fae5;
+        color: #065f46;
+      }
+      .badge-pending {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .items {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .items th,
+      .items td {
+        border: 1px solid #e2e8f0;
+        padding: 6px 8px;
+      }
+      .items th {
+        background: #f8fafc;
+        text-align: left;
+      }
+      .idx {
+        width: 36px;
+        text-align: center;
+      }
+      .val {
+        width: 90px;
+        text-align: center;
+      }
+      .footer {
+        margin-top: 18px;
+        font-size: 11px;
+        color: #64748b;
+        text-align: center;
+      }
+    </style>
+    <script>
+      function autoPrint() {
+        if (typeof window !== "undefined") {
+          window.print();
+        }
+      }
+    </script>
+  </head>
+  <body onload="autoPrint()">
+    <div class="header">
+      <div class="brand">Excel Tutors</div>
+      <div class="muted">End of Day Checklist</div>
+    </div>
+
+    <div class="meta">
+      <table>
+        <tr>
+          <th>Date</th>
+          <td>{{ cl.date.strftime('%A, %d %B %Y') if cl.date else '' }}</td>
+        </tr>
+        <tr>
+          <th>Staff</th>
+          <td>{{ cl.staff_user.name if cl.staff_user else '' }}</td>
+        </tr>
+        <tr>
+          <th>Floor</th>
+          <td>{{ cl.floor or '' }}</td>
+        </tr>
+        <tr>
+          <th>Status</th>
+          <td>
+            {% if cl.completed %}
+            <span class="badge badge-ok">Completed</span>
+            {% if cl.completed_at %}<span class="muted"
+              >on {{ cl.completed_at.strftime('%d %b %Y %H:%M') }}</span
+            >{% endif %} {% else %}
+            <span class="badge badge-pending">Pending</span>
+            {% endif %}
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <table class="items">
+      <thead>
+        <tr>
+          <th class="idx">#</th>
+          <th>Task</th>
+          <th class="val">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in cl.items_list() %}
+        <tr>
+          <td class="idx">{{ loop.index }}</td>
+          <td>{{ it.todo or it.get('todo','') }}</td>
+          <td class="val">{{ (it.value or it.get('value',''))|title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="footer">
+      &copy; {{ (cl.date.year if cl.date else now().year) }} Excel Tutors
+    </div>
+  </body>
+</html>

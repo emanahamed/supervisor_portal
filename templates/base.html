@@ -4,8 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>
-      {% block title %}Excel Tutors — Observation Tracker{% endblock %}
+      {% block title %}Observation Tracker - Excel Tutors{% endblock %}
     </title>
+    <link rel="icon" href="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}" type="image/png" />
   {% from 'components/forms_macros.html' import csrf_field %}
   {% if CSRF_TOKEN %}<meta name="csrf-token" content="{{ CSRF_TOKEN }}" />{% endif %}
     <script src="https://cdn.tailwindcss.com"></script>
@@ -474,14 +475,28 @@
       (function(){
         const meta=document.querySelector('meta[name="csrf-token"]');
         if(!meta) return; const token=meta.getAttribute('content'); if(!token) return;
-        // Inject into any POST form lacking token
-        document.addEventListener('DOMContentLoaded',()=>{
-          document.querySelectorAll('form[method="post" i]:not([data-no-csrf])').forEach(f=>{
-            if(!f.querySelector('input[name="csrf_token"]')){
+        function ensureFormToken(f){
+          try{
+            if(f.matches('form[method="post" i]:not([data-no-csrf])') && !f.querySelector('input[name="csrf_token"]')){
               const i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value=token; f.appendChild(i);
             }
-          });
+          }catch(_e){}
+        }
+        // Initial pass
+        document.addEventListener('DOMContentLoaded',()=>{
+          document.querySelectorAll('form').forEach(ensureFormToken);
         });
+        // Observe dynamic forms
+        const mo = new MutationObserver((mutations)=>{
+          for(const m of mutations){
+            m.addedNodes && m.addedNodes.forEach(node=>{
+              if(!(node instanceof Element)) return;
+              if(node.tagName==='FORM') ensureFormToken(node);
+              node.querySelectorAll && node.querySelectorAll('form').forEach(ensureFormToken);
+            });
+          }
+        });
+        try{ mo.observe(document.documentElement,{childList:true, subtree:true}); }catch(_e){}
         // Patch fetch to add token automatically for same-origin unsafe verbs
         const _fetch=window.fetch; window.fetch=function(res,init){
           try{init=init||{}; const url= typeof res==='string'?res:res.url; const sameOrigin = !/^https?:\/\//i.test(url) || url.startsWith(location.origin); const method=(init.method||'GET').toUpperCase(); if(sameOrigin && ['POST','PUT','PATCH','DELETE'].includes(method)){ init.headers=init.headers||{}; if(init.headers instanceof Headers){ if(!init.headers.has('X-CSRFToken')) init.headers.set('X-CSRFToken', token);} else { if(!('X-CSRFToken' in init.headers)) init.headers['X-CSRFToken']=token; } } }catch(_e){} return _fetch(res,init); };
