@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from flask_login import UserMixin
@@ -378,6 +378,36 @@ class AppointmentSlot(db.Model):
 
     superadmin = db.relationship('User', foreign_keys=[superadmin_id], lazy=True)
     created_by = db.relationship('User', foreign_keys=[created_by_id], lazy=True)
+
+    # Convenience helpers used by templates and business logic
+    def active_booking(self) -> 'AppointmentBooking | None':
+        """Return the current active booking for this slot, if any."""
+        try:
+            for b in getattr(self, 'bookings', []) or []:
+                if b and getattr(b, 'is_active', None) and b.is_active():
+                    return b
+        except Exception:
+            pass
+        return None
+
+    def is_available(self) -> bool:
+        """Slot availability: active, in the future, and no active booking.
+
+        Handles naive vs timezone-aware datetimes by comparing in a like-for-like manner.
+        """
+        if not bool(self.is_active):
+            return False
+        start = self.start_at
+        if not isinstance(start, datetime):
+            return False
+        # Choose an appropriate "now" matching tz-awareness of start_at
+        now = datetime.now(timezone.utc) if (start.tzinfo and start.tzinfo.utcoffset(start) is not None) else datetime.utcnow()
+        try:
+            in_future = start >= now
+        except Exception:
+            # Fallback: if comparison fails for any reason, treat as not available
+            in_future = False
+        return in_future and (self.active_booking() is None)
 
 
 # ---------------- Student Concerns (Public reporting) ---------------- #
