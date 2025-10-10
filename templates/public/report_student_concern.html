@@ -1,0 +1,370 @@
+{% extends 'public/_public_base.html' %} {% from 'components/forms_macros.html'
+import csrf_field %} {% block title %}Report a Student Concern{% endblock %} {%
+block page_title %}Report a Student Concern{% endblock %} {% block content %}
+<div class="max-w-5xl mx-auto">
+  <div class="soft-card p-4 mb-4">
+    <p class="text-sm text-slate-600">
+      Use this form to report concerns about one or more students. Add a row per
+      student, select applicable reasons, and include details if selecting
+      Other.
+    </p>
+  </div>
+  <form method="post" class="soft-card p-4" x-data="concernForm()">
+    {{ csrf_field() }}
+    <!-- Honeypot field (hidden from users) -->
+    <div class="hidden" aria-hidden="true">
+      <label
+        >Website
+        <input type="text" name="website" tabindex="-1" autocomplete="off"
+      /></label>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold mb-1">Your name</label>
+        <input
+          type="text"
+          name="tutor_name"
+          x-model="tutor_name"
+          class="soft-input w-full"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Default subject</label>
+        <select
+          name="subject"
+          x-model="default_subject"
+          class="soft-input w-full"
+        >
+          <option value="">-- Select subject --</option>
+          {% for s in subjects %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="mt-6">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-medium">Students</h3>
+        <div class="space-x-2">
+          <button type="button" class="soft-btn" @click="addRow()">
+            Add row
+          </button>
+          <button type="button" class="soft-btn" @click="importFromClipboard()">
+            Paste rows
+          </button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="bg-slate-100">
+              <th class="text-left p-2">Student ID</th>
+              <th class="text-left p-2">Student Name</th>
+              <th class="text-left p-2">Year</th>
+              <th class="text-left p-2">Subject</th>
+              <th class="text-left p-2">Reasons</th>
+              <th class="text-left p-2">Other details</th>
+              <th class="text-left p-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(row, idx) in rows" :key="row._k">
+              <tr class="border-b">
+                <td class="p-2 align-top w-40">
+                  <div class="relative">
+                    <input
+                      type="text"
+                      class="soft-input w-full"
+                      placeholder="e.g. S123"
+                      x-model="row.student_id"
+                      @input.debounce.300ms="lookupStudent(idx)"
+                    />
+                    <div
+                      class="absolute z-10 mt-1 w-full bg-white border rounded shadow text-xs"
+                      x-show="row._suggest && row._suggest.length"
+                      @click.outside="row._suggest=[]"
+                    >
+                      <template x-for="s in row._suggest">
+                        <button
+                          type="button"
+                          class="block w-full text-left px-2 py-1 hover:bg-slate-100"
+                          @click="applySuggestion(idx, s)"
+                        >
+                          <span x-text="s.student_id"></span> –
+                          <span x-text="s.name"></span>
+                        </button>
+                      </template>
+                    </div>
+                  </div>
+                </td>
+                <td class="p-2 align-top w-56">
+                  <input
+                    type="text"
+                    class="soft-input w-full"
+                    x-model="row.student_name"
+                    placeholder="Full name"
+                  />
+                </td>
+                <td class="p-2 align-top w-24">
+                  <input
+                    type="text"
+                    class="soft-input w-full"
+                    x-model="row.year_group"
+                    placeholder="e.g. 8"
+                  />
+                </td>
+                <td class="p-2 align-top w-40">
+                  <select class="soft-input w-full" x-model="row.subject">
+                    <option
+                      value=""
+                      x-text="default_subject? ('Use default: '+default_subject): '-- Select --'"
+                    ></option>
+                    {% for s in subjects %}
+                    <option value="{{ s }}">{{ s }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="p-2 align-top min-w-[220px]">
+                  <div class="grid grid-cols-2 gap-1">
+                    <label class="inline-flex gap-1 items-center text-xs"
+                      ><input
+                        type="checkbox"
+                        class="mr-1"
+                        x-model="row._reasons.behaviour"
+                        @change="syncReasons(row)"
+                      />Behaviour Issue</label
+                    >
+                    <label class="inline-flex gap-1 items-center text-xs"
+                      ><input
+                        type="checkbox"
+                        class="mr-1"
+                        x-model="row._reasons.progress"
+                        @change="syncReasons(row)"
+                      />Lack of Progress</label
+                    >
+                    <label class="inline-flex gap-1 items-center text-xs"
+                      ><input
+                        type="checkbox"
+                        class="mr-1"
+                        x-model="row._reasons.sen"
+                        @change="syncReasons(row)"
+                      />Suspected SEN</label
+                    >
+                    <label class="inline-flex gap-1 items-center text-xs"
+                      ><input
+                        type="checkbox"
+                        class="mr-1"
+                        x-model="row._reasons.other"
+                        @change="syncReasons(row)"
+                      />Other</label
+                    >
+                  </div>
+                </td>
+                <td class="p-2 align-top">
+                  <textarea
+                    class="soft-input w-64"
+                    rows="2"
+                    x-model="row.other_details"
+                    :disabled="!row._reasons.other"
+                    placeholder="Provide details if 'Other' selected"
+                  ></textarea>
+                </td>
+                <td class="p-2 align-top w-24">
+                  <button
+                    type="button"
+                    class="soft-btn text-xs"
+                    @click="removeRow(idx)"
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="rows.length===0">
+              <td colspan="7" class="p-4 text-center text-slate-500 text-sm">
+                No rows yet. Click Add row to begin.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <input type="hidden" name="rows" :value="serializeRows()" />
+    <div class="mt-6 flex justify-end gap-2">
+      <button type="submit" class="soft-btn soft-btn-primary">
+        Submit concerns
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  function concernForm() {
+    return {
+      tutor_name: "",
+      default_subject: "",
+      rows: [],
+      canLookup: true,
+      addRow() {
+        this.rows.push({
+          _k: crypto.randomUUID(),
+          student_id: "",
+          student_name: "",
+          year_group: "",
+          subject: "",
+          reasons: [],
+          other_details: "",
+          _reasons: {
+            behaviour: false,
+            progress: false,
+            sen: false,
+            other: false,
+          },
+          _suggest: [],
+        });
+      },
+      removeRow(i) {
+        this.rows.splice(i, 1);
+      },
+      importFromClipboard() {
+        const parse = (txt) => {
+          if (!txt) return [];
+          const rows = [];
+          const lines = txt
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean);
+          for (const line of lines) {
+            // Prefer tab, then comma, then 2+ spaces
+            let parts = line.split(/\t/);
+            if (parts.length === 1)
+              parts = line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/); // naive CSV split (commas outside quotes)
+            if (parts.length === 1) parts = line.split(/\s{2,}/);
+            parts = parts.map((s) => s.replace(/^\"|\"$/g, "").trim());
+            // Heuristic: if first token looks like an ID (e.g., S123), treat as ID, else treat as name-first
+            let student_id = "",
+              student_name = "",
+              year_group = "";
+            if (parts.length >= 3) {
+              // Common pattern: ID, Name, Year
+              student_id = parts[0];
+              student_name = parts[1];
+              year_group = parts[2];
+            } else if (parts.length === 2) {
+              // Try ID + Name, or Name + Year
+              const p0 = parts[0];
+              const p1 = parts[1];
+              if (/^\s*[A-Za-z]?[0-9]{2,}\s*$/.test(p0)) {
+                student_id = p0;
+                student_name = p1;
+              } else {
+                student_name = p0;
+                year_group = p1;
+              }
+            } else if (parts.length === 1) {
+              student_name = parts[0];
+            }
+            rows.push({ student_id, student_name, year_group });
+          }
+          return rows;
+        };
+        const addRows = (items) => {
+          for (const it of items) {
+            const r = {
+              _k: crypto.randomUUID(),
+              student_id: it.student_id || "",
+              student_name: it.student_name || "",
+              year_group: it.year_group || "",
+              subject: this.default_subject || "",
+              reasons: [],
+              other_details: "",
+              _reasons: {
+                behaviour: false,
+                progress: false,
+                sen: false,
+                other: false,
+              },
+              _suggest: [],
+            };
+            this.rows.push(r);
+          }
+        };
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          navigator.clipboard
+            .readText()
+            .then((txt) => addRows(parse(txt)))
+            .catch(() => {
+              const txt = window.prompt(
+                "Paste your rows here (ID, Name, Year per line):"
+              );
+              addRows(parse(txt || ""));
+            });
+        } else {
+          const txt = window.prompt(
+            "Paste your rows here (ID, Name, Year per line):"
+          );
+          addRows(parse(txt || ""));
+        }
+      },
+      lookupStudent(i) {
+        if (!this.canLookup) {
+          return;
+        }
+        const row = this.rows[i];
+        if (!row) return;
+        const q = (row.student_id || "").trim();
+        if (q.length < 2) {
+          row._suggest = [];
+          return;
+        }
+        fetch(`/api/students/search?q=${encodeURIComponent(q)}`)
+          .then((r) => r.json())
+          .then((data) => {
+            row._suggest = data || [];
+          })
+          .catch(() => {
+            row._suggest = [];
+          });
+      },
+      applySuggestion(i, s) {
+        const row = this.rows[i];
+        if (!row) return;
+        row.student_id = s.student_id;
+        row.student_name = s.name;
+        // If API returned year, auto-update year group
+        if (s.year) {
+          row.year_group = s.year;
+        }
+        row._suggest = [];
+      },
+      syncReasons(row) {
+        const out = [];
+        if (row._reasons.behaviour) out.push("Behaviour Issue");
+        if (row._reasons.progress) out.push("Lack of Progress");
+        if (row._reasons.sen) out.push("Suspected SEN");
+        if (row._reasons.other) out.push("Other");
+        row.reasons = out;
+        if (!row._reasons.other) row.other_details = "";
+      },
+      serializeRows() {
+        const rows = this.rows.map((r) => ({
+          student_id: r.student_id,
+          student_name: r.student_name,
+          year_group: r.year_group,
+          subject: r.subject || this.default_subject || "",
+          reasons: r.reasons || [],
+          other_details: r.other_details || "",
+        }));
+        try {
+          return JSON.stringify(rows);
+        } catch (e) {
+          return "[]";
+        }
+      },
+    };
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,106 @@
+{% extends 'base.html' %} {% from 'components/forms_macros.html' import
+csrf_field %} {% block title %}Concern #{{ c.id }}{% endblock %} {% block
+crumb_current %}Concern #{{ c.id }}{% endblock %} {% block page_title %}Concern
+for {{ c.student_name or c.student_id }}{% endblock %} {% block page_actions %}
+<a
+  href="{{ url_for('student_concern_edit', cid=c.id) }}"
+  class="soft-btn text-xs"
+  >Edit</a
+>
+<a href="{{ url_for('student_concerns_index') }}" class="soft-btn text-xs"
+  >Back</a
+>
+{% endblock %} {% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+  <div class="lg:col-span-2 space-y-4">
+    <div class="soft-card p-4">
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <div>
+          <div class="text-slate-500 text-xs">Created</div>
+          <div>
+            {{ c.created_at.strftime('%d-%m-%Y %H:%M') if c.created_at }}
+          </div>
+        </div>
+        <div>
+          <div class="text-slate-500 text-xs">Status</div>
+          <div><span class="soft-badge">{{ c.status }}</span></div>
+        </div>
+        <div>
+          <div class="text-slate-500 text-xs">Student</div>
+          <div>
+            {{ c.student_name or '—' }}
+            <span class="text-slate-500">{{ c.student_id or '' }}</span>
+          </div>
+        </div>
+        <div>
+          <div class="text-slate-500 text-xs">Year</div>
+          <div>{{ c.year_group or '—' }}</div>
+        </div>
+        <div>
+          <div class="text-slate-500 text-xs">Subject</div>
+          <div>{{ c.subject or '—' }}</div>
+        </div>
+        <div>
+          <div class="text-slate-500 text-xs">Tutor</div>
+          <div>{{ c.tutor_name or '—' }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-xs text-slate-500 mb-1">Reasons</div>
+      {% for r in c.reasons() %}<span class="soft-badge mr-1">{{ r }}</span>{%
+      endfor %} {% if c.reasons()|length == 0 %}
+      <div class="text-slate-400">—</div>
+      {% endif %}
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-xs text-slate-500 mb-1">Other details</div>
+      <div class="text-sm">{{ c.other_details or '—' }}</div>
+    </div>
+  </div>
+  <div class="space-y-4">
+    <div class="soft-card p-4">
+      <div class="font-semibold mb-2">Audit history</div>
+      <div class="text-xs divide-y">
+        {% for ch in changes %}
+        <div class="py-2">
+          <div class="flex flex-wrap items-center gap-2 text-slate-600">
+            <span class="soft-badge"
+              >{{ ch.changed_at.strftime('%d-%m-%Y %H:%M') if ch.changed_at
+              }}</span
+            >
+            <span
+              >by
+              <strong
+                >{{ ch.changed_by.name if ch.changed_by else 'Public/System'
+                }}</strong
+              ></span
+            >
+            <span>updated</span>
+            <span class="font-semibold"
+              >{{ ch.field|replace('_',' ')|title }}</span
+            >
+          </div>
+          <div class="mt-1 grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div>
+              <div class="text-slate-400">From</div>
+              <div class="whitespace-pre-wrap bg-slate-50 border rounded p-2">
+                {{ ch.old_value or '—' }}
+              </div>
+            </div>
+            <div>
+              <div class="text-slate-400">To</div>
+              <div class="whitespace-pre-wrap bg-emerald-50 border rounded p-2">
+                {{ ch.new_value or '—' }}
+              </div>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-slate-500">No changes recorded.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

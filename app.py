@@ -359,6 +359,7 @@ with app.app_context():  # pragma: no cover - simple safety patch
             ('access_enrollment_tool','Access enrollment calculator tool'),
             ('access_timetable_main','Access main timetable generator'),
             ('access_timetable_eastham','Access East Ham timetable generator'),
+            ('manage_student_concerns','Manage student concerns reports'),
         ]
         created = False
         for k, desc in needed_perms:
@@ -491,8 +492,6 @@ with app.app_context():  # pragma: no cover - simple safety patch
         pass
 
 # --------------- Permission Helpers (server-side) --------------- #
-
-
 def user_can(perm_key: str) -> bool:
     """Server-side permission check aligned with template helper.
 
@@ -939,6 +938,7 @@ def create_tables_and_superadmin():
             ('manage_eod_checklist','Manage end-of-day checklists'),
             ('manage_floor_reports','Manage floor print reports'),
             ('manage_call_list','Manage floor call list'),
+            ('manage_student_concerns','Manage student concerns reports'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -952,10 +952,10 @@ def create_tables_and_superadmin():
         # Default role permission seeds (updated taxonomy 0.9.3)
         role_defaults = {
             'staff': {'view_dashboard','manage_tasks','view_reports'},
-            'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books'},
-            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing',
-                               'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_books','order_books','manage_pricing',
+            'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books','manage_students'},
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns',
+                               'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list','manage_students'},
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns',
                       'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
         }
         # Admin should also manage students (append if not present for backward runs)
@@ -1022,6 +1022,35 @@ def create_tables_and_superadmin():
                 created_at DATETIME,
                 updated_at DATETIME,
                 FOREIGN KEY(slot_id) REFERENCES appointment_slot(id) ON DELETE CASCADE
+            )
+            """))
+            # Student Concern schema (idempotent)
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS student_concern (
+                id INTEGER PRIMARY KEY,
+                tutor_name VARCHAR(200) NOT NULL,
+                subject VARCHAR(120),
+                student_id VARCHAR(64),
+                student_name VARCHAR(255),
+                year_group VARCHAR(20),
+                reasons_json TEXT,
+                other_details TEXT,
+                status VARCHAR(30) DEFAULT 'Pending',
+                meeting_id INTEGER,
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+            """))
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS student_concern_change (
+                id INTEGER PRIMARY KEY,
+                concern_id INTEGER NOT NULL,
+                field VARCHAR(120) NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                changed_by_id INTEGER,
+                changed_at DATETIME,
+                FOREIGN KEY(concern_id) REFERENCES student_concern(id) ON DELETE CASCADE
             )
             """))
     except Exception as exc:
@@ -1876,7 +1905,6 @@ def floor_report_pdf(rid: int):
 
 # --------- API: Student search (async lookup) ---------
 @app.route('/api/students/search')
-@login_required
 def api_students_search():
     from models import Student
     q = (request.args.get('q') or '').strip()
@@ -1887,7 +1915,7 @@ def api_students_search():
         (Student.name.ilike(ilike)) | (Student.student_id.ilike(ilike))
     ).order_by(Student.name.asc()).limit(25).all()
     payload = [
-        { 'id': s.id, 'student_id': s.student_id, 'name': s.name }
+        { 'id': s.id, 'student_id': s.student_id, 'name': s.name, 'year': s.year }
         for s in results
     ]
     return jsonify(payload)
@@ -5010,11 +5038,20 @@ def availability_index():
             dept = (row.get('Department') or '').strip() or None
             branches_raw = (row.get('Which Branch Take You Take Lesson In?') or '').replace('\n',' ').strip()
             branches_parts = [p.strip() for p in branches_raw.split(',') if p.strip()]
+            # Normalize common branch variants/synonyms to canonical labels
             normal_branches = []
+            synonyms = {
+                'Whitechapel': ['whitechapel','white chapel'],
+                'East Ham': ['east ham','eastham','east-ham'],
+                'Stratford': ['stratford','startford','strat ford'],
+                'Docklands': ['docklands','dock lands','dock-land']
+            }
             for bp in branches_parts:
-                for canonical in ['Whitechapel','East Ham','Stratford','Docklands']:
-                    if canonical.lower() in bp.lower() and canonical not in normal_branches:
-                        normal_branches.append(canonical)
+                low = bp.lower()
+                for canonical, alts in synonyms.items():
+                    if any(alt in low for alt in alts):
+                        if canonical not in normal_branches:
+                            normal_branches.append(canonical)
             branches = ",".join(normal_branches) if normal_branches else None
             days = (row.get('Which Days Are You Available') or '').replace('\n',' ').strip() or None
             subjects = (row.get('Which Subjects Can You Teach') or '').replace('\n',' ').strip() or None
@@ -5047,7 +5084,18 @@ def availability_index():
         q = q.filter(Availability.department.in_(selected_departments))
     selected_branches = [b.strip() for b in request.args.getlist('branch') if b.strip()]
     if selected_branches:
-        q = q.filter(or_(*[Availability.branches.ilike(f"%{b}%") for b in selected_branches]))
+        # Robust token match within CSV branches column to avoid partial mismatches and spacing issues
+        branch_conds = []
+        for b in selected_branches:
+            token = b.strip()
+            # Match exact, start, end, or middle positions in comma-separated string
+            branch_conds.extend([
+                Availability.branches.ilike(f"{token}"),
+                Availability.branches.ilike(f"{token},%"),
+                Availability.branches.ilike(f"%,{token}"),
+                Availability.branches.ilike(f"%,{token},%"),
+            ])
+        q = q.filter(or_(*branch_conds))
     selected_subjects = [s.strip() for s in request.args.getlist('subject') if s.strip()]
     if selected_subjects:
         q = q.filter(or_(*[Availability.subjects.ilike(f"%{s}%") for s in selected_subjects]))
@@ -5076,6 +5124,48 @@ def availability_index():
     if direction == 'desc':
         col = col.desc()
     records = q.order_by(col).all()
+    # --- De-duplicate short-name vs full-name variants per branch & department ---
+    # Goal: Keep per-branch entries distinct, but merge duplicates where one record is just the
+    # first name (e.g., "adit") and another is the full name (e.g., "adit hossain mintu").
+    # Key by (first-name token, canonical-branches, department). Prefer record with the longest
+    # name (most tokens); break ties by most recent timestamp.
+    try:
+        def _timestamp(rec):
+            ts = getattr(rec, 'updated_at', None) or getattr(rec, 'created_at', None)
+            return ts or datetime.min
+        def _canon_branches(s):
+            parts = [p.strip() for p in (s or '').split(',') if p.strip()]
+            parts = sorted(set(parts))
+            return ",".join(parts)
+        best_by_key = {}
+        for rec in records:
+            name = (rec.name or '').strip()
+            tokens = [t for t in name.split() if t]
+            first = tokens[0].lower() if tokens else ''
+            key = (first, _canon_branches(rec.branches), (rec.department or '').lower())
+            prev = best_by_key.get(key)
+            if prev is None:
+                best_by_key[key] = rec
+                continue
+            # Choose the more complete record: more name tokens wins; then newer timestamp
+            prev_tokens = [t for t in (prev.name or '').split() if t]
+            choose_current = False
+            if len(tokens) > len(prev_tokens):
+                choose_current = True
+            elif len(tokens) == len(prev_tokens) and _timestamp(rec) > _timestamp(prev):
+                choose_current = True
+            if choose_current:
+                best_by_key[key] = rec
+        # Preserve selected sort by re-sorting the deduped list by the same column
+        deduped = list(best_by_key.values())
+        if direction == 'desc':
+            deduped.sort(key=lambda r: (getattr(r, sort, None) or '').lower() if sort in ('name','department') else getattr(r, sort, getattr(r, 'name', '')), reverse=True)
+        else:
+            deduped.sort(key=lambda r: (getattr(r, sort, None) or '').lower() if sort in ('name','department') else getattr(r, sort, getattr(r, 'name', '')))
+        records = deduped
+    except Exception:
+        # Fail-safe: if any error occurs in dedupe, show original records
+        pass
     # Distinct departments
     depts = [r[0] for r in db.session.query(Availability.department).distinct().filter(Availability.department.isnot(None)).order_by(Availability.department.asc()).all()]
     # Distinct branches (ensure canonical list always present, e.g. Stratford)
@@ -5115,6 +5205,30 @@ def availability_index():
                 day_values.append(wd)
     # Preserve natural week order
     day_values = [d for d in weekday_tokens if d in day_values]
+
+    # --- Summary stats (counts) ---
+    from collections import Counter
+    dept_counts = Counter()
+    branch_counts = Counter()
+    subject_counts = Counter()
+    day_counts = Counter()
+    for rec in records:
+        dept_counts.update([(rec.department or 'Unknown')])
+        for b in rec.branch_list():
+            branch_counts.update([b])
+        if rec.subjects:
+            for s in [p.strip() for p in rec.subjects.split(',') if p.strip()]:
+                subject_counts.update([s])
+        if rec.days:
+            txt = rec.days
+            for wd in weekday_tokens:
+                if wd in txt:
+                    day_counts.update([wd])
+    # Sorted lists for template (top first)
+    stats_departments = sorted(dept_counts.items(), key=lambda x: (-x[1], (x[0] or '')))
+    stats_branches = sorted(branch_counts.items(), key=lambda x: (-x[1], x[0]))
+    stats_subjects = sorted(subject_counts.items(), key=lambda x: (-x[1], x[0]))
+    stats_days = [(d, day_counts.get(d, 0)) for d in weekday_tokens if d in day_counts]
     return render_template('availability/index.html',
                            records=records,
                            depts=depts,
@@ -5127,7 +5241,11 @@ def availability_index():
                            selected_days=selected_days,
                            sync_count=sync_count,
                            sync_error=sync_error,
-                           synced_at=datetime.now(timezone.utc))
+                           synced_at=datetime.now(timezone.utc),
+                           stats_departments=stats_departments,
+                           stats_branches=stats_branches,
+                           stats_subjects=stats_subjects,
+                           stats_days=stats_days)
 
 @app.route('/availability/new', methods=['GET','POST'])
 @login_required
@@ -7008,6 +7126,372 @@ def error_report_status(rid):
     db.session.commit()
     flash('Status updated','success')
     return redirect(url_for('error_report_detail', rid=rep.id))
+
+# ---------------- Student Concerns (public facing + admin list) ---------------- #
+@csrf.exempt
+@app.route('/report/student-concern', methods=['GET','POST'])
+def report_student_concern():
+    """Public-facing form: no login required.
+
+    Accepts a dynamic list of rows posted as JSON in 'rows' field,
+    with top-level tutor_name and subject default.
+    """
+    from models import Student, StudentConcern
+    if request.method == 'POST':
+        # Honeypot spam protection: silently ignore if hidden field is filled
+        if (request.form.get('website') or '').strip():
+            flash('Thank you for your submission.', 'success')
+            return redirect(url_for('report_student_concern'))
+        tutor_name = (request.form.get('tutor_name') or '').strip()
+        default_subject = (request.form.get('subject') or '').strip() or None
+        # rows[] posted as JSON string
+        raw_rows = request.form.get('rows')
+        try:
+            import json
+            rows = json.loads(raw_rows) if raw_rows else []
+        except Exception:
+            rows = []
+        created = 0
+        for r in rows:
+            sid = (r.get('student_id') or '').strip()
+            sname = (r.get('student_name') or '').strip() or None
+            year = (r.get('year_group') or '').strip() or None
+            subj = (r.get('subject') or '').strip() or default_subject
+            reasons = r.get('reasons') or []
+            other = (r.get('other_details') or '').strip() or None
+            sc = StudentConcern(tutor_name=tutor_name or 'Unknown', subject=subj, student_id=sid or None, student_name=sname, year_group=year, other_details=other)
+            sc.set_reasons(reasons)
+            db.session.add(sc)
+            created += 1
+        if created:
+            db.session.commit()
+            flash(f'Submitted {created} concern(s). Thank you.', 'success')
+        else:
+            flash('No rows were submitted. Please add at least one student.', 'warning')
+        return redirect(url_for('report_student_concern'))
+    # GET: fixed subjects list as requested
+    subjects = ['Maths','English','Science','Computer Science','Economics','Business','Psychology','11+','Physics','Chemistry','Biology']
+    return render_template('public/report_student_concern.html', subjects=subjects)
+
+
+@app.route('/student-concerns')
+@login_required
+@permission_required('manage_student_concerns')
+def student_concerns_index():
+    from models import Staff, StudentConcern
+
+    # Filters
+    q = (request.args.get('q') or '').strip()
+    student = (request.args.get('student') or '').strip()
+    years = [y.strip() for y in request.args.getlist('year') if y.strip()]
+    subjects = [s.strip() for s in request.args.getlist('subject') if s.strip()]
+    tutors = [t.strip() for t in request.args.getlist('tutor') if t.strip()]
+    reasons = [r.strip() for r in request.args.getlist('reason') if r.strip()]
+    statuses = [s.strip() for s in request.args.getlist('status') if s.strip()]
+    sort = (request.args.get('sort') or 'created_at').strip()
+    direction = (request.args.get('direction') or 'desc').strip().lower()
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 25, type=int), 250)
+
+    query = StudentConcern.query
+    if q:
+        like = f"%{q}%"
+        query = query.filter((StudentConcern.student_name.ilike(like)) | (StudentConcern.student_id.ilike(like)) | (StudentConcern.tutor_name.ilike(like)))
+    if student:
+        query = query.filter((StudentConcern.student_id == student) | (StudentConcern.student_name.ilike(f"%{student}%")))
+    if years:
+        query = query.filter(StudentConcern.year_group.in_(years))
+    if subjects:
+        query = query.filter(StudentConcern.subject.in_(subjects))
+    if tutors:
+        query = query.filter(StudentConcern.tutor_name.in_(tutors))
+    if statuses:
+        query = query.filter(StudentConcern.status.in_(statuses))
+    if reasons:
+        from sqlalchemy import or_ as _or
+        query = query.filter(_or(*[StudentConcern.reasons_json.ilike(f'%"{r}"%') for r in reasons]))
+
+    if sort in {'student_id','student_name','subject','tutor_name','status','created_at'}:
+        col = getattr(StudentConcern, sort)
+        query = query.order_by(col.asc() if direction == 'asc' else col.desc())
+    else:
+        query = query.order_by(StudentConcern.created_at.desc())
+
+    # Build options for filters
+    subject_options = [s[0] for s in db.session.query(StudentConcern.subject).filter(StudentConcern.subject.isnot(None)).distinct().order_by(StudentConcern.subject.asc()).all()]
+    year_options = [y[0] for y in db.session.query(StudentConcern.year_group).filter(StudentConcern.year_group.isnot(None)).distinct().order_by(StudentConcern.year_group.asc()).all()]
+    tutor_options = [t[0] for t in db.session.query(StudentConcern.tutor_name).filter(StudentConcern.tutor_name.isnot(None)).distinct().order_by(StudentConcern.tutor_name.asc()).all()]
+    reason_options = ['Behaviour Issue','Lack of Progress','Suspected SEN','Other']
+    status_options = ['Pending','In Progress','Solved']
+
+    # Metrics: overall and filtered
+    from sqlalchemy import func
+    try:
+        since_7 = datetime.now(timezone.utc) - timedelta(days=7)
+    except Exception:
+        # Fallback if timezone not available
+        since_7 = datetime.utcnow() - timedelta(days=7)
+
+    # Overall counts by status
+    overall_total = StudentConcern.query.count()
+    overall_status_rows = db.session.query(StudentConcern.status, func.count())\
+        .group_by(StudentConcern.status).all()
+    overall_status = { (k or 'Pending'): v for k, v in overall_status_rows }
+    overall_last7 = StudentConcern.query.filter(StudentConcern.created_at >= since_7).count()
+    metrics_overall = {
+        'total': overall_total,
+        'pending': overall_status.get('Pending', 0),
+        'in_progress': overall_status.get('In Progress', 0),
+        'solved': overall_status.get('Solved', 0),
+        'last7': overall_last7,
+    }
+
+    # Filtered counts by status (reuse filters from current query)
+    q_base = query.order_by(None)
+    filtered_total = q_base.count()
+    filtered_status_rows = q_base.with_entities(StudentConcern.status, func.count())\
+        .group_by(StudentConcern.status).all()
+    filtered_status = { (k or 'Pending'): v for k, v in filtered_status_rows }
+    filtered_last7 = q_base.filter(StudentConcern.created_at >= since_7).count()
+    metrics_filtered = {
+        'total': filtered_total,
+        'pending': filtered_status.get('Pending', 0),
+        'in_progress': filtered_status.get('In Progress', 0),
+        'solved': filtered_status.get('Solved', 0),
+        'last7': filtered_last7,
+    }
+
+    # Summary Stats (Overall)
+    dept_overall = db.session.query(Staff.department, func.count(StudentConcern.id))\
+        .select_from(StudentConcern)\
+        .join(Staff, Staff.name == StudentConcern.tutor_name, isouter=True)\
+        .group_by(Staff.department)\
+        .order_by(func.count(StudentConcern.id).desc())\
+        .all()
+    tutors_top_overall = db.session.query(StudentConcern.tutor_name, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.tutor_name)\
+        .order_by(func.count(StudentConcern.id).desc())\
+        .limit(5).all()
+    tutors_least_overall = db.session.query(StudentConcern.tutor_name, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.tutor_name)\
+        .order_by(func.count(StudentConcern.id).asc())\
+        .limit(5).all()
+    subjects_top_overall = db.session.query(StudentConcern.subject, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.subject)\
+        .order_by(func.count(StudentConcern.id).desc())\
+        .limit(5).all()
+    subjects_least_overall = db.session.query(StudentConcern.subject, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.subject)\
+        .order_by(func.count(StudentConcern.id).asc())\
+        .limit(5).all()
+
+    # Summary Stats (Filtered using current filters)
+    dept_filtered = q_base.join(Staff, Staff.name == StudentConcern.tutor_name, isouter=True)\
+        .with_entities(Staff.department, func.count(StudentConcern.id))\
+        .group_by(Staff.department)\
+        .order_by(func.count(StudentConcern.id).desc())\
+        .all()
+    tutors_top_filtered = q_base.with_entities(StudentConcern.tutor_name, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.tutor_name)\
+        .order_by(func.count(StudentConcern.id).desc())\
+        .limit(5).all()
+    tutors_least_filtered = q_base.with_entities(StudentConcern.tutor_name, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.tutor_name)\
+        .order_by(func.count(StudentConcern.id).asc())\
+        .limit(5).all()
+    subjects_top_filtered = q_base.with_entities(StudentConcern.subject, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.subject)\
+        .order_by(func.count(StudentConcern.id).desc())\
+        .limit(5).all()
+    subjects_least_filtered = q_base.with_entities(StudentConcern.subject, func.count(StudentConcern.id))\
+        .group_by(StudentConcern.subject)\
+        .order_by(func.count(StudentConcern.id).asc())\
+        .limit(5).all()
+
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    records = pagination.items
+    return render_template('concerns/index.html', records=records, pagination=pagination, q=q, student=student, years=years, subjects_selected=subjects, tutors_selected=tutors, reasons_selected=reasons, statuses_selected=statuses, sort=sort, direction=direction, subject_options=subject_options, year_options=year_options, tutor_options=tutor_options, reason_options=reason_options, status_options=status_options, metrics_overall=metrics_overall, metrics_filtered=metrics_filtered, dept_overall=dept_overall, tutors_top_overall=tutors_top_overall, tutors_least_overall=tutors_least_overall, subjects_top_overall=subjects_top_overall, subjects_least_overall=subjects_least_overall, dept_filtered=dept_filtered, tutors_top_filtered=tutors_top_filtered, tutors_least_filtered=tutors_least_filtered, subjects_top_filtered=subjects_top_filtered, subjects_least_filtered=subjects_least_filtered)
+
+
+@app.route('/student-concerns/export')
+@login_required
+@permission_required('manage_student_concerns')
+def student_concerns_export():
+    # Build the same filtered query as index, then export to XLSX
+    import pandas as pd
+
+    from models import StudentConcern
+
+    # Filters
+    q = (request.args.get('q') or '').strip()
+    student = (request.args.get('student') or '').strip()
+    years = [y.strip() for y in request.args.getlist('year') if y.strip()]
+    subjects = [s.strip() for s in request.args.getlist('subject') if s.strip()]
+    tutors = [t.strip() for t in request.args.getlist('tutor') if t.strip()]
+    reasons = [r.strip() for r in request.args.getlist('reason') if r.strip()]
+    statuses = [s.strip() for s in request.args.getlist('status') if s.strip()]
+    sort = (request.args.get('sort') or 'created_at').strip()
+    direction = (request.args.get('direction') or 'desc').strip().lower()
+
+    query = StudentConcern.query
+    if q:
+        like = f"%{q}%"
+        query = query.filter((StudentConcern.student_name.ilike(like)) | (StudentConcern.student_id.ilike(like)) | (StudentConcern.tutor_name.ilike(like)))
+    if student:
+        query = query.filter((StudentConcern.student_id == student) | (StudentConcern.student_name.ilike(f"%{student}%")))
+    if years:
+        query = query.filter(StudentConcern.year_group.in_(years))
+    if subjects:
+        query = query.filter(StudentConcern.subject.in_(subjects))
+    if tutors:
+        query = query.filter(StudentConcern.tutor_name.in_(tutors))
+    if statuses:
+        query = query.filter(StudentConcern.status.in_(statuses))
+    if reasons:
+        from sqlalchemy import or_ as _or
+        query = query.filter(_or(*[StudentConcern.reasons_json.ilike(f'%"{r}"%') for r in reasons]))
+
+    if sort in {'student_id','student_name','subject','tutor_name','status','created_at'}:
+        col = getattr(StudentConcern, sort)
+        query = query.order_by(col.asc() if direction == 'asc' else col.desc())
+    else:
+        query = query.order_by(StudentConcern.created_at.desc())
+
+    rows = query.all()
+    # Build dataset
+    data = []
+    for sc in rows:
+        reasons_list = []
+        try:
+            reasons_list = sc.reasons()
+        except Exception:
+            pass
+        created = None
+        try:
+            created = sc.created_at.strftime('%Y-%m-%d %H:%M') if sc.created_at else None
+        except Exception:
+            created = str(sc.created_at) if sc.created_at else None
+        data.append({
+            'ID': sc.id,
+            'Created At': created,
+            'Student ID': sc.student_id,
+            'Student Name': sc.student_name,
+            'Year Group': sc.year_group,
+            'Subject': sc.subject,
+            'Tutor Name': sc.tutor_name,
+            'Reasons': ", ".join(reasons_list),
+            'Status': sc.status,
+            'Other Details': sc.other_details,
+        })
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Concerns')
+    out.seek(0)
+    return send_file(out, as_attachment=True, download_name='student_concerns_export.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/student-concerns/<int:cid>')
+@login_required
+@permission_required('manage_student_concerns')
+def student_concern_detail(cid: int):
+    from models import StudentConcern, StudentConcernChange
+    sc = StudentConcern.query.get_or_404(cid)
+    changes = StudentConcernChange.query.filter_by(concern_id=cid).order_by(StudentConcernChange.changed_at.desc()).all()
+    return render_template('concerns/detail.html', c=sc, changes=changes)
+
+
+@app.route('/student-concerns/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_student_concerns')
+def student_concern_new():
+    from models import StudentConcern
+    REASONS = ['Behaviour Issue','Lack of Progress','Suspected SEN','Other']
+    SUBJECTS = ['Maths','English','Science','Computer Science','Economics','Business','Psychology','11+','Physics','Chemistry','Biology']
+    if request.method == 'POST':
+        tutor_name = (request.form.get('tutor_name') or '').strip()
+        student_id = (request.form.get('student_id') or '').strip() or None
+        student_name = (request.form.get('student_name') or '').strip() or None
+        year_group = (request.form.get('year_group') or '').strip() or None
+        subject = (request.form.get('subject') or '').strip() or None
+        other_details = (request.form.get('other_details') or '').strip() or None
+        reasons = request.form.getlist('reasons')
+        sc = StudentConcern(tutor_name=tutor_name, subject=subject, student_id=student_id, student_name=student_name, year_group=year_group, other_details=other_details)
+        sc.set_reasons(reasons)
+        db.session.add(sc); db.session.commit()
+        flash('Concern created','success')
+        return redirect(url_for('student_concern_detail', cid=sc.id))
+    return render_template('concerns/new.html', REASON_CHOICES=REASONS, SUBJECT_CHOICES=SUBJECTS)
+
+
+@app.route('/student-concerns/<int:cid>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_student_concerns')
+def student_concern_edit(cid: int):
+    from models import StudentConcern, StudentConcernChange
+    sc = StudentConcern.query.get_or_404(cid)
+    if request.method == 'POST':
+        fields = ['student_id','student_name','year_group','subject','status','other_details']
+        for f in fields:
+            new_val = (request.form.get(f) or '').strip()
+            old_val = getattr(sc, f) or ''
+            if new_val != (old_val or ''):
+                setattr(sc, f, new_val or None)
+                ch = StudentConcernChange(concern_id=cid, field=f, old_value=old_val, new_value=new_val, changed_by_id=current_user.id)
+                db.session.add(ch)
+        # Update reasons (multi)
+        reasons = request.form.getlist('reasons')
+        old_reasons = sc.reasons()
+        if sorted(reasons) != sorted(old_reasons):
+            sc.set_reasons(reasons)
+            db.session.add(StudentConcernChange(concern_id=cid, field='reasons', old_value=str(old_reasons), new_value=str(reasons), changed_by_id=current_user.id))
+        db.session.commit()
+        flash('Concern updated','success')
+        return redirect(url_for('student_concern_detail', cid=cid))
+    return render_template('concerns/edit.html', c=sc, REASON_CHOICES=['Behaviour Issue','Lack of Progress','Suspected SEN','Other'])
+
+
+@app.route('/student-concerns/<int:cid>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_student_concerns')
+def student_concern_delete(cid: int):
+    from models import StudentConcern
+    sc = StudentConcern.query.get_or_404(cid)
+    try:
+        db.session.delete(sc)
+        db.session.commit()
+        flash('Concern deleted','success')
+    except Exception as exc:
+        db.session.rollback(); flash(f'Delete failed: {exc}','danger')
+    return redirect(url_for('student_concerns_index'))
+
+
+@app.route('/student-concerns/<int:cid>/meeting', methods=['POST'])
+@login_required
+@permission_required('manage_student_concerns', any=True)
+def student_concern_meeting(cid: int):
+    from models import Meeting, StudentConcern, StudentConcernChange
+    sc = StudentConcern.query.get_or_404(cid)
+    # Expect minimal fields: participant_id, date, time, agenda; derive student name
+    participant_id = request.form.get('participant_id', type=int)
+    date_str = (request.form.get('date') or '').strip()
+    time_str = (request.form.get('time') or '').strip()
+    agenda = (request.form.get('agenda') or f"Concern meeting for {sc.student_name or sc.student_id}").strip()
+    try:
+        d = _dt.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+    except Exception:
+        d = date.today()
+    t = time_str or '00:00'
+    m = Meeting(participant_id=participant_id or current_user.id, booked_by_id=current_user.id, agenda=agenda, student_name=sc.student_name, date=d, time=t)
+    db.session.add(m); db.session.flush()
+    old_meeting = sc.meeting_id
+    sc.meeting_id = m.id
+    sc.status = 'In Progress'
+    db.session.add(StudentConcernChange(concern_id=cid, field='meeting_id', old_value=str(old_meeting) if old_meeting else None, new_value=str(m.id), changed_by_id=current_user.id))
+    db.session.add(StudentConcernChange(concern_id=cid, field='status', old_value='Pending', new_value='In Progress', changed_by_id=current_user.id))
+    db.session.commit()
+    flash('Meeting arranged and linked to concern','success')
+    return redirect(url_for('student_concerns_index'))
 
 if __name__ == "__main__":
     # Centralised static configuration (edit config.py to change)

@@ -379,17 +379,51 @@ class AppointmentSlot(db.Model):
     superadmin = db.relationship('User', foreign_keys=[superadmin_id], lazy=True)
     created_by = db.relationship('User', foreign_keys=[created_by_id], lazy=True)
 
-    __table_args__ = (
-        db.CheckConstraint('end_at > start_at', name='ck_slot_duration_positive'),
-    )
 
-    def active_booking(self):
-        return next((b for b in self.bookings if b.is_active()), None)
+# ---------------- Student Concerns (Public reporting) ---------------- #
 
-    def is_available(self):
-        from datetime import datetime as _dt
-        from datetime import timezone as _tz
-        return self.is_active and self.active_booking() is None and self.start_at >= _dt.now(_tz.utc)
+class StudentConcern(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tutor_name = db.Column(db.String(200), nullable=False, index=True)
+    # Subject chosen at top of the form (can be overridden per-row; this stores the final subject for this concern)
+    subject = db.Column(db.String(120), index=True)
+    # Student fields (auto-filled if found, editable by reporter)
+    student_id = db.Column(db.String(64), index=True)
+    student_name = db.Column(db.String(255), index=True)
+    year_group = db.Column(db.String(20), index=True)
+    # Reasons for concern: stored as JSON array in text
+    reasons_json = db.Column(db.Text)
+    other_details = db.Column(db.Text)
+    status = db.Column(db.String(30), default='Pending', index=True)  # Pending, In Progress, Solved
+    meeting_id = db.Column(db.Integer, db.ForeignKey('meeting.id'))  # optional link when arranged
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def reasons(self):
+        try:
+            import json
+            return json.loads(self.reasons_json) if self.reasons_json else []
+        except Exception:
+            return []
+
+    def set_reasons(self, seq):
+        import json
+        self.reasons_json = json.dumps([str(x) for x in (seq or [])])
+
+
+class StudentConcernChange(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    concern_id = db.Column(db.Integer, db.ForeignKey('student_concern.id', ondelete='CASCADE'), nullable=False, index=True)
+    field = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
+    changed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))  # nullable for public edits
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    concern = db.relationship('StudentConcern', lazy=True)
+    changed_by = db.relationship('User', lazy=True)
+
+    # Note: This audit model intentionally has no time-based constraints or appointment-slot methods.
 
 
 class AppointmentBooking(db.Model):

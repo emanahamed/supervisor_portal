@@ -1,0 +1,75 @@
+{% extends 'base.html' %} {% from 'components/forms_macros.html' import
+csrf_field %} {% block title %}New Concern{% endblock %} {% block crumb_current
+%}New Concern{% endblock %} {% block page_title %}Create Student Concern{%
+endblock %} {% block content %}
+<div class="max-w-2xl mx-auto soft-card p-4">
+  <form method="post" class="space-y-3">
+    {{ csrf_field() }}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-semibold mb-1">Tutor Name</label>
+        <input
+          type="text"
+          name="tutor_name"
+          class="soft-input w-full"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Subject</label>
+        <select name="subject" class="soft-input w-full">
+          <option value="">-- Select --</option>
+          {% for s in SUBJECT_CHOICES %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-semibold mb-1">Student ID</label>
+        <input type="text" name="student_id" class="soft-input w-full" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Student Name</label>
+        <input type="text" name="student_name" class="soft-input w-full" />
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-semibold mb-1">Year</label>
+        <input type="text" name="year_group" class="soft-input w-full" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Reasons</label>
+        <div class="grid grid-cols-2 gap-1 text-xs">
+          {% for r in REASON_CHOICES %}
+          <label class="inline-flex items-center gap-1"
+            ><input
+              type="checkbox"
+              name="reasons"
+              value="{{ r }}"
+              class="mr-1"
+            />{{ r }}</label
+          >
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold mb-1">Other details</label>
+      <textarea
+        name="other_details"
+        rows="3"
+        class="soft-input w-full"
+      ></textarea>
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+      <a href="{{ url_for('student_concerns_index') }}" class="soft-btn"
+        >Cancel</a
+      >
+      <button class="soft-btn soft-btn-primary">Create</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

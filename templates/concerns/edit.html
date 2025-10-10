@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% from 'components/forms_macros.html' import csrf_field %}
+
+{% block title %}Edit Concern #{{ c.id }}{% endblock %}
+{% block crumb_current %}Edit Concern{% endblock %}
+{% block page_title %}Edit Concern for {{ c.student_name or c.student_id }}{% endblock %}
+
+{% block content %}
+<form method="post" class="max-w-3xl mx-auto soft-card p-4" x-data="editConcern()">
+  {{ csrf_field() }}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div>
+      <label class="block text-xs font-semibold mb-1">Student ID</label>
+      <input type="text" name="student_id" class="soft-input w-full" value="{{ c.student_id or '' }}" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold mb-1">Student Name</label>
+      <input type="text" name="student_name" class="soft-input w-full" value="{{ c.student_name or '' }}" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold mb-1">Year</label>
+      <input type="text" name="year_group" class="soft-input w-full" value="{{ c.year_group or '' }}" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold mb-1">Subject</label>
+      <input type="text" name="subject" class="soft-input w-full" value="{{ c.subject or '' }}" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold mb-1">Status</label>
+      <select name="status" class="soft-input w-full">
+        {% for s in ['Pending','In Progress','Solved'] %}
+        <option value="{{ s }}" {{ 'selected' if (c.status or '')==s else '' }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <label class="block text-xs font-semibold mb-1">Reasons</label>
+    <div class="grid grid-cols-2 gap-2 text-sm">
+      {% set existing = c.reasons() %}
+      {% for r in REASON_CHOICES %}
+      <label class="inline-flex items-center gap-2">
+        <input type="checkbox" name="reasons" value="{{ r }}" {% if r in existing %}checked{% endif %} />
+        {{ r }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <label class="block text-xs font-semibold mb-1">Other details</label>
+    <textarea name="other_details" rows="4" class="soft-input w-full">{{ c.other_details or '' }}</textarea>
+  </div>
+
+  <div class="mt-6 flex justify-end gap-2">
+    <a href="{{ url_for('student_concern_detail', cid=c.id) }}" class="soft-btn">Cancel</a>
+    <button class="soft-btn soft-btn-primary">Save changes</button>
+  </div>
+</form>
+
+<script>
+  function editConcern(){ return {} }
+</script>
+{% endblock %}

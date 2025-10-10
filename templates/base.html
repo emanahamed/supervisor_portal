@@ -23,6 +23,7 @@
         },
       };
     </script>
+    <script src="{{ url_for('static', filename='js/tables.js') }}" defer></script>
     <style>
       /* Theme Tokens */
       :root {
@@ -82,10 +83,22 @@
         font-weight: 600;
         letter-spacing: 0.5px;
       }
+      .soft-badge.green { background:#dcfce7; color:#166534; }
+      .soft-badge.amber { background:#fef3c7; color:#92400e; }
+      .soft-badge.red { background:#fee2e2; color:#991b1b; }
+      .soft-badge.blue { background:#dbeafe; color:#1e3a8a; }
+      .soft-badge.purple { background:#ede9fe; color:#5b21b6; }
+      .soft-badge.gray { background:#f1f5f9; color:#1f2937; }
       .dark .soft-badge {
         background: #1f1f1f;
         color: #bbb;
       }
+      .dark .soft-badge.green { background:#052e16; color:#86efac; }
+      .dark .soft-badge.amber { background:#451a03; color:#fde68a; }
+      .dark .soft-badge.red { background:#450a0a; color:#fca5a5; }
+      .dark .soft-badge.blue { background:#0a1a3a; color:#93c5fd; }
+      .dark .soft-badge.purple { background:#271052; color:#c4b5fd; }
+      .dark .soft-badge.gray { background:#1f2937; color:#e5e7eb; }
       .soft-input {
         border: 1px solid #cbd5e1;
         border-radius: 0.5rem;
@@ -96,6 +109,21 @@
         outline: 2px solid #6366f1;
         outline-offset: 1px;
       }
+      /* Enhanced multi-select look */
+      .soft-input.soft-multiselect[multiple] {
+        padding: 0.25rem 0.35rem;
+        min-height: 2.5rem;
+        height: auto;
+        overflow-y: auto;
+      }
+      .soft-input.soft-multiselect option {
+        padding: 0.25rem 0.45rem;
+      }
+      /* Selected option styling (browser support varies) */
+      .soft-input.soft-multiselect option:checked {
+        background-color: #e0e7ff;
+        color: #1e293b;
+      }
       .dark .soft-input {
         background: #141414;
         border-color: #2c2c2c;
@@ -103,6 +131,10 @@
       }
       .dark .soft-input:focus {
         outline-color: var(--c-accent-blue);
+      }
+      .dark .soft-input.soft-multiselect option:checked {
+        background-color: #1f2937;
+        color: #c7d2fe;
       }
       .brand-logo-img {
         height: 34px;

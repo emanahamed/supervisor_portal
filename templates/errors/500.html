@@ -1,6 +1,6 @@
 {% extends 'base.html' %} {% block page_title %}Server Error{% endblock %} {%
 block content %}
-<div class="soft-card p-8 max-w-xl mx-auto text-center" x-data="{show:false}">
+<div class="soft-card p-8 max-w-xl mx-auto text-center">
   <div class="text-5xl mb-4">💥</div>
   <h1 class="text-xl font-semibold mb-2">Something went wrong (500)</h1>
   <p class="text-slate-600 mb-6">
@@ -12,8 +12,10 @@ block content %}
       >Back to Dashboard</a
     >
     {% if current_user.is_authenticated %}
-    <button class="soft-btn" @click="show=true">Report this error</button>
-    <template x-if="show">
+    <details class="mt-3 text-left">
+      <summary class="soft-btn inline-block cursor-pointer select-none">
+        Report this error
+      </summary>
       <form
         method="post"
         action="{{ url_for('error_report_create') }}"
@@ -46,15 +48,12 @@ block content %}
         />
         <div class="flex gap-2 pt-2">
           <button class="soft-btn">Send Report</button>
-          <button type="button" class="soft-btn" @click="show=false">
-            Cancel
-          </button>
         </div>
         <p class="text-[10px] text-slate-500">
           Stack trace & request metadata will be attached automatically.
         </p>
       </form>
-    </template>
+    </details>
     {% endif %}
   </div>
 </div>

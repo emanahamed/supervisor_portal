@@ -1,0 +1,327 @@
+{% extends 'base.html' %}
+{% from 'components/forms_macros.html' import csrf_field %}
+
+{% block title %}Student Concerns{% endblock %}
+{% block crumb_current %}Student Concerns{% endblock %}
+{% block page_title %}Student Concerns{% endblock %}
+
+{% block page_actions %}
+<a href="{{ url_for('report_student_concern') }}" class="soft-btn text-xs">Public form</a>
+<a href="{{ url_for('student_concern_new') }}" class="soft-btn soft-btn-accent text-xs">Create</a>
+<a
+  href="{{ url_for('student_concerns_export', q=q, student=student, sort=sort, direction=direction, **{'year': years, 'subject': subjects_selected, 'tutor': tutors_selected or [], 'status': statuses_selected, 'reason': reasons_selected}) }}"
+  class="soft-btn soft-btn-primary text-xs"
+  >Export XLSX</a>
+{% endblock %}
+
+{% block content %}
+<!-- Overview Cards -->
+<div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-4 text-xs">
+  <div class="soft-card p-3">
+    <div class="text-slate-500 mb-1">Total (All)</div>
+    <div class="text-xl font-semibold">{{ metrics_overall.total }}</div>
+    <div class="mt-1 text-[11px] text-slate-500">Last 7d: {{ metrics_overall.last7 }}</div>
+  </div>
+  <div class="soft-card p-3">
+    <div class="text-slate-500 mb-1">Pending (All)</div>
+    <div class="text-xl font-semibold"><span class="soft-badge amber">{{ metrics_overall.pending }}</span></div>
+  </div>
+  <div class="soft-card p-3">
+    <div class="text-slate-500 mb-1">In Progress (All)</div>
+    <div class="text-xl font-semibold"><span class="soft-badge blue">{{ metrics_overall.in_progress }}</span></div>
+  </div>
+  <div class="soft-card p-3">
+    <div class="text-slate-500 mb-1">Solved (All)</div>
+    <div class="text-xl font-semibold"><span class="soft-badge green">{{ metrics_overall.solved }}</span></div>
+  </div>
+  <div class="soft-card p-3">
+    <div class="text-slate-500 mb-1">Total (Filtered)</div>
+    <div class="text-xl font-semibold">{{ metrics_filtered.total }}</div>
+    <div class="mt-1 text-[11px] text-slate-500">Last 7d: {{ metrics_filtered.last7 }}</div>
+  </div>
+</div>
+
+<div class="soft-card p-4 mb-4">
+  <form id="concernFilters" class="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Search</label>
+      <input id="cSearch" value="{{ q }}" class="soft-input" placeholder="Search name/ID/tutor" />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Student</label>
+      <input id="cStudent" value="{{ student }}" class="soft-input" placeholder="Student name/ID" />
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Years</label>
+      <button type="button" id="yearBtn" class="soft-input h-9 w-full flex items-center justify-between cursor-pointer">
+        <span id="yearLabel" class="truncate text-left">Select years</span>
+        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="yearMenu" class="hidden absolute z-30 top-full mt-1 w-56 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1">
+        <div class="px-2 pb-1"><input id="yearFilter" class="soft-input w-full" placeholder="Filter…"/></div>
+        {% for y in year_options %}
+        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"><input type="checkbox" class="yearChk w-4 h-4 text-indigo-600 border-slate-300 rounded" value="{{ y }}" {% if y in years %}checked{% endif %}/><span class="text-sm text-slate-700">{{ y }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Subjects</label>
+      <button type="button" id="subjectBtn" class="soft-input h-9 w-full flex items-center justify-between cursor-pointer">
+        <span id="subjectLabel" class="truncate text-left">Select subjects</span>
+        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="subjectMenu" class="hidden absolute z-30 top-full mt-1 w-72 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 grid grid-cols-1 md:grid-cols-2 gap-1">
+        {% for s in subject_options %}
+        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"><input type="checkbox" class="subjectChk w-4 h-4 text-indigo-600 border-slate-300 rounded" value="{{ s }}" {% if s in subjects_selected %}checked{% endif %}/><span class="text-sm text-slate-700">{{ s }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Tutors</label>
+      <button type="button" id="tutorBtn" class="soft-input h-9 w-full flex items-center justify-between cursor-pointer">
+        <span id="tutorLabel" class="truncate text-left">Select tutors</span>
+        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="tutorMenu" class="hidden absolute z-30 top-full mt-1 w-72 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 grid grid-cols-1 md:grid-cols-2 gap-1">
+        {% for t in tutor_options %}
+        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"><input type="checkbox" class="tutorChk w-4 h-4 text-indigo-600 border-slate-300 rounded" value="{{ t }}" {% if tutors_selected and t in tutors_selected %}checked{% endif %}/><span class="text-sm text-slate-700">{{ t }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Status</label>
+      <button type="button" id="statusBtn" class="soft-input h-9 w-full flex items-center justify-between cursor-pointer">
+        <span id="statusLabel" class="truncate text-left">Select status</span>
+        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="statusMenu" class="hidden absolute z-30 top-full mt-1 w-56 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1">
+        {% for st in status_options %}
+        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"><input type="checkbox" class="statusChk w-4 h-4 text-indigo-600 border-slate-300 rounded" value="{{ st }}" {% if st in statuses_selected %}checked{% endif %}/><span class="text-sm text-slate-700">{{ st }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2 relative">
+      <label class="text-xs font-medium text-slate-500">Reasons</label>
+      <button type="button" id="reasonBtn" class="soft-input h-9 w-full flex items-center justify-between cursor-pointer">
+        <span id="reasonLabel" class="truncate text-left">Select reasons</span>
+        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="reasonMenu" class="hidden absolute z-30 top-full mt-1 w-56 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1">
+        {% for r in reason_options %}
+        <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"><input type="checkbox" class="reasonChk w-4 h-4 text-indigo-600 border-slate-300 rounded" value="{{ r }}" {% if r in reasons_selected %}checked{% endif %}/><span class="text-sm text-slate-700">{{ r }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Sort</label>
+      <select id="cSort" class="soft-input">
+        {% for k in ['created_at','student_id','student_name','subject','tutor_name','status'] %}
+        <option value="{{ k }}" {{ 'selected' if sort==k else '' }}>{{ k|replace('_',' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Direction</label>
+      <select id="cDir" class="soft-input">
+        <option value="desc" {{ 'selected' if direction=='desc' else '' }}>Desc</option>
+        <option value="asc" {{ 'selected' if direction=='asc' else '' }}>Asc</option>
+      </select>
+    </div>
+    <div class="flex items-end">
+      <button type="button" id="cClear" class="soft-btn bg-slate-100 w-full">Clear Filters</button>
+    </div>
+  </form>
+</div>
+
+<div class="soft-card overflow-x-auto">
+  <table class="min-w-full text-xs">
+    <thead class="bg-slate-100">
+      <tr>
+        <th class="text-left p-2">Created</th>
+        <th class="text-left p-2">Student</th>
+        <th class="text-left p-2">Year</th>
+        <th class="text-left p-2">Subject</th>
+        <th class="text-left p-2">Tutor</th>
+        <th class="text-left p-2">Reasons</th>
+        <th class="text-left p-2">Status</th>
+        <th class="text-left p-2">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in records %}
+      <tr class="border-b">
+        <td class="p-2 whitespace-nowrap">{{ c.created_at.strftime('%d-%m-%Y %H:%M') if c.created_at }}</td>
+        <td class="p-2">
+          <div class="font-medium">{{ c.student_name or '—' }}</div>
+          <div class="text-slate-500">{{ c.student_id or '' }}</div>
+        </td>
+        <td class="p-2">{{ c.year_group or '—' }}</td>
+        <td class="p-2">{{ c.subject or '—' }}</td>
+        <td class="p-2">{{ c.tutor_name or '—' }}</td>
+        <td class="p-2">
+          {% set rs = c.reasons() %}
+          {% for r in rs %}
+            {% set klass = 'gray' %}
+            {% if r == 'Behaviour Issue' %}{% set klass = 'red' %}{% endif %}
+            {% if r == 'Lack of Progress' %}{% set klass = 'amber' %}{% endif %}
+            {% if r == 'Suspected SEN' %}{% set klass = 'purple' %}{% endif %}
+            {% if r == 'Other' %}{% set klass = 'gray' %}{% endif %}
+            <span class="soft-badge {{ klass }} mr-1">{{ r }}</span>
+          {% endfor %}
+          {% if rs|length == 0 %}<span class="text-slate-400">—</span>{% endif %}
+        </td>
+        <td class="p-2">
+          {% set s = c.status or 'Pending' %}
+          {% set sClass = 'gray' %}
+          {% if s == 'Pending' %}{% set sClass = 'amber' %}{% endif %}
+          {% if s == 'In Progress' %}{% set sClass = 'blue' %}{% endif %}
+          {% if s == 'Solved' %}{% set sClass = 'green' %}{% endif %}
+          <span class="soft-badge {{ sClass }}">{{ s }}</span>
+        </td>
+        <td class="p-2 whitespace-nowrap">
+          <a href="{{ url_for('student_concern_detail', cid=c.id) }}" class="soft-btn text-xs">View</a>
+          <a href="{{ url_for('student_concern_edit', cid=c.id) }}" class="soft-btn text-xs">Edit</a>
+          <form action="{{ url_for('student_concern_delete', cid=c.id) }}" method="post" class="inline" onsubmit="return confirm('Delete this concern?')">
+            {{ csrf_field() }}
+            <button class="soft-btn text-xs">Delete</button>
+          </form>
+          <button type="button" class="soft-btn text-xs" @click="openMeeting({{ c.id }}, '{{ (c.student_name or c.student_id)|e }}')">Arrange meeting</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8" class="p-4 text-center text-sm text-slate-500">No concerns found.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pagination and pagination.pages > 1 %}
+<div class="mt-4 flex justify-center gap-2 text-xs">
+  {% for p in range(1, pagination.pages + 1) %}
+    {% if p == pagination.page %}
+      <span class="soft-badge">{{ p }}</span>
+    {% else %}
+      <a class="soft-btn" href="{{ url_for('student_concerns_index', page=p, q=q, student=student, sort=sort, direction=direction, **{'year': years, 'subject': subjects_selected, 'tutor': tutors_selected or [], 'status': statuses_selected, 'reason': reasons_selected}) }}">{{ p }}</a>
+    {% endif %}
+  {% endfor %}
+  <span class="ml-2 text-slate-500">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+</div>
+{% endif %}
+
+<!-- Arrange meeting modal -->
+<div x-data="meetingModal()" @open-meeting.window="open($event.detail)" class="fixed inset-0 items-center justify-center z-50" :class="{ 'flex': visible, 'hidden': !visible }">
+  <div class="absolute inset-0 bg-slate-900/60" @click="close()"></div>
+  <div class="relative bg-white rounded-xl shadow-xl w-full max-w-md p-4">
+    <h3 class="font-semibold mb-2">Arrange meeting</h3>
+    <form :action="action" method="post" class="space-y-2">
+      {{ csrf_field() }}
+      <div>
+        <label class="block text-xs font-semibold mb-1">Participant (who will meet)</label>
+        <select name="participant_id" class="soft-input w-full">
+          <option value="{{ current_user.id }}">{{ current_user.name }}</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-xs font-semibold mb-1">Date</label>
+          <input type="date" name="date" class="soft-input w-full" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Time</label>
+          <input type="time" name="time" class="soft-input w-full" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Agenda</label>
+        <input type="text" name="agenda" class="soft-input w-full" :value="agenda" />
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="soft-btn" @click="close()">Cancel</button>
+        <button class="soft-btn soft-btn-primary">Create meeting</button>
+      </div>
+    </form>
+  </div>
+  <script>
+    function meetingModal(){
+      return {
+        visible:false, action:'#', agenda:'',
+        open(d){ this.visible=true; this.action=`/student-concerns/${d.id}/meeting`; this.agenda=`Concern meeting for ${d.student}`; },
+        close(){ this.visible=false; }
+      }
+    }
+  </script>
+</div>
+
+<script>
+  function openMeeting(id, student){ window.dispatchEvent(new CustomEvent('open-meeting', { detail:{ id, student } })); }
+  // Ensure Alpine initializes on this page for the meeting modal even if loaded dynamically
+  document.addEventListener('alpine:init', () => {});
+  if (!window.Alpine) { /* minimal fallback not required as we just toggle classes via events */ }
+</script>
+<script>
+  (function(){
+    const els = {
+      search: document.getElementById('cSearch'),
+      student: document.getElementById('cStudent'),
+      yearBtn: document.getElementById('yearBtn'), yearMenu: document.getElementById('yearMenu'), yearLabel: document.getElementById('yearLabel'), yearFilter: document.getElementById('yearFilter'),
+      subjectBtn: document.getElementById('subjectBtn'), subjectMenu: document.getElementById('subjectMenu'), subjectLabel: document.getElementById('subjectLabel'),
+      tutorBtn: document.getElementById('tutorBtn'), tutorMenu: document.getElementById('tutorMenu'), tutorLabel: document.getElementById('tutorLabel'),
+      statusBtn: document.getElementById('statusBtn'), statusMenu: document.getElementById('statusMenu'), statusLabel: document.getElementById('statusLabel'),
+      reasonBtn: document.getElementById('reasonBtn'), reasonMenu: document.getElementById('reasonMenu'), reasonLabel: document.getElementById('reasonLabel'),
+      sort: document.getElementById('cSort'), dir: document.getElementById('cDir'),
+      clear: document.getElementById('cClear')
+    };
+    function toggle(m){ m.classList.toggle('hidden'); }
+    document.addEventListener('click', (e)=>{
+      [els.yearMenu, els.subjectMenu, els.tutorMenu, els.statusMenu, els.reasonMenu].forEach(m=>{
+        if(!m) return; const btnId = m.id.replace('Menu','Btn'); if(!m.contains(e.target) && !e.target.closest('#'+btnId)) m.classList.add('hidden');
+      });
+    });
+    [['year'],['subject'],['tutor'],['status'],['reason']].forEach(([k])=>{
+      const btn = els[k+'Btn'], menu = els[k+'Menu']; if(btn) btn.addEventListener('click', (e)=>{ e.stopPropagation(); toggle(menu); [els.yearMenu, els.subjectMenu, els.tutorMenu, els.statusMenu, els.reasonMenu].filter(x=>x!==menu).forEach(x=>x.classList.add('hidden')); });
+    });
+    function summarize(menu, labelEl, placeholder){
+      const checked = [...menu.querySelectorAll('input[type=checkbox]:checked')].map(i=>i.value);
+      if(!checked.length){ labelEl.textContent = placeholder; return; }
+      labelEl.textContent = checked.length<=2 ? checked.join(', ') : checked.slice(0,2).join(', ') + ' +' + (checked.length-2);
+    }
+    function updateSummaries(){
+      summarize(els.yearMenu, els.yearLabel, 'Select years');
+      summarize(els.subjectMenu, els.subjectLabel, 'Select subjects');
+      summarize(els.tutorMenu, els.tutorLabel, 'Select tutors');
+      summarize(els.statusMenu, els.statusLabel, 'Select status');
+      summarize(els.reasonMenu, els.reasonLabel, 'Select reasons');
+    }
+    let navTimer=null; function scheduleNavigate(){ if(navTimer) clearTimeout(navTimer); navTimer=setTimeout(applyFilters, 300); }
+    function applyFilters(){
+      const p = new URLSearchParams();
+      const sv = (els.search.value||'').trim(); if(sv) p.set('q', sv);
+      const stu = (els.student.value||'').trim(); if(stu) p.set('student', stu);
+      [...els.yearMenu.querySelectorAll('input:checked')].forEach(c=>p.append('year', c.value));
+      [...els.subjectMenu.querySelectorAll('input:checked')].forEach(c=>p.append('subject', c.value));
+      [...els.tutorMenu.querySelectorAll('input:checked')].forEach(c=>p.append('tutor', c.value));
+      [...els.statusMenu.querySelectorAll('input:checked')].forEach(c=>p.append('status', c.value));
+      [...els.reasonMenu.querySelectorAll('input:checked')].forEach(c=>p.append('reason', c.value));
+      const s = els.sort.value; if(s) p.set('sort', s);
+      const d = els.dir.value; if(d) p.set('direction', d);
+      const newUrl = '?' + p.toString(); if(window.location.search !== newUrl) window.location = newUrl;
+    }
+    ;['yearMenu','subjectMenu','tutorMenu','statusMenu','reasonMenu'].forEach(id=>{
+      const m = els[id]; if(m) m.addEventListener('change', ()=>{ updateSummaries(); scheduleNavigate(); });
+    });
+    els.search.addEventListener('input', ()=> scheduleNavigate());
+    els.search.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); applyFilters(); }});
+    els.student.addEventListener('input', ()=> scheduleNavigate());
+    els.student.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); applyFilters(); }});
+    els.sort.addEventListener('change', applyFilters); els.dir.addEventListener('change', applyFilters);
+    if(els.yearFilter){ els.yearFilter.addEventListener('input', ()=>{
+      const q = els.yearFilter.value.toLowerCase();
+      [...els.yearMenu.querySelectorAll('label')].forEach(l=>{ const v = (l.querySelector('span')?.textContent||'').toLowerCase(); l.style.display = !q || v.includes(q) ? '' : 'none'; });
+    }); }
+    document.getElementById('cClear').addEventListener('click', ()=>{ window.location = window.location.pathname; });
+    updateSummaries();
+  })();
+ </script>
+{% endblock %}

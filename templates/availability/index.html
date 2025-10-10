@@ -33,8 +33,53 @@ page_title %}Availability{% endblock %} {% block content %}
 </div>
 {% endif %}
 
+<!-- Summary Cards -->
+<div class="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4 mb-6">
+  <div class="soft-card p-3">
+    <div class="text-[11px] text-slate-500">Total Tutors</div>
+    <div class="text-2xl font-semibold">{{ records|length }}</div>
+  </div>
+  <div class="soft-card p-3">
+    <div class="text-[11px] text-slate-500">By Department</div>
+    <ul class="mt-1 text-xs space-y-1 max-h-28 overflow-auto">
+      {% for name, cnt in stats_departments %}
+      <li class="flex justify-between">
+        <span>{{ name }}</span><span class="soft-badge gray">{{ cnt }}</span>
+      </li>
+      {% else %}
+      <li class="text-slate-400">No data</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="soft-card p-3">
+    <div class="text-[11px] text-slate-500">By Branch</div>
+    <ul class="mt-1 text-xs space-y-1 max-h-28 overflow-auto">
+      {% for name, cnt in stats_branches %}
+      <li class="flex justify-between">
+        <span>{{ name }}</span><span class="soft-badge gray">{{ cnt }}</span>
+      </li>
+      {% else %}
+      <li class="text-slate-400">No data</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="soft-card p-3">
+    <div class="text-[11px] text-slate-500">By Subject</div>
+    <ul class="mt-1 text-xs space-y-1 max-h-28 overflow-auto">
+      {% for name, cnt in stats_subjects[:8] %}
+      <li class="flex justify-between">
+        <span>{{ name }}</span><span class="soft-badge gray">{{ cnt }}</span>
+      </li>
+      {% else %}
+      <li class="text-slate-400">No data</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+<!-- Filters -->
 <div class="soft-card p-4 mb-6">
-  <form id="availabilityFilters" class="grid gap-4 lg:grid-cols-6">
+  <form id="availabilityFilters" class="grid gap-3 lg:grid-cols-6">
     <div class="lg:col-span-2 flex flex-col gap-2">
       <label class="text-xs font-medium text-slate-500">Search</label>
       <input
@@ -49,7 +94,7 @@ page_title %}Availability{% endblock %} {% block content %}
       <button
         type="button"
         id="deptBtnA"
-        class="soft-input flex items-center justify-between cursor-pointer"
+        class="soft-input h-9 flex items-center justify-between cursor-pointer"
       >
         <span id="deptLabelA" class="truncate text-left"
           >Select departments</span
@@ -101,7 +146,7 @@ page_title %}Availability{% endblock %} {% block content %}
       <button
         type="button"
         id="branchBtnA"
-        class="soft-input flex items-center justify-between cursor-pointer"
+        class="soft-input h-9 flex items-center justify-between cursor-pointer"
       >
         <span id="branchLabelA" class="truncate text-left"
           >Select branches</span
@@ -153,7 +198,7 @@ page_title %}Availability{% endblock %} {% block content %}
       <button
         type="button"
         id="subjectBtnA"
-        class="soft-input flex items-center justify-between cursor-pointer"
+        class="soft-input h-9 flex items-center justify-between cursor-pointer"
       >
         <span id="subjectLabelA" class="truncate text-left"
           >Select subjects</span
@@ -205,7 +250,7 @@ page_title %}Availability{% endblock %} {% block content %}
       <button
         type="button"
         id="dayBtnA"
-        class="soft-input flex items-center justify-between cursor-pointer"
+        class="soft-input h-9 flex items-center justify-between cursor-pointer"
       >
         <span id="dayLabelA" class="truncate text-left">Select days</span>
         <svg
@@ -293,7 +338,7 @@ page_title %}Availability{% endblock %} {% block content %}
           <td class="py-2 px-3 whitespace-nowrap">{{ r.department or '-' }}</td>
           <td class="py-2 px-3">
             {% for b in r.branch_list() %}
-            <span class="soft-badge mb-1 inline-block">{{ b }}</span>
+            <span class="soft-badge blue mb-1 inline-block">{{ b }}</span>
             {% else %}
             <span class="text-xs text-slate-400">—</span>
             {% endfor %}
