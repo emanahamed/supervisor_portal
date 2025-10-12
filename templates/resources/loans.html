@@ -1,0 +1,58 @@
+{% extends 'base.html' %} {% block page_title %}Resource Loans{% endblock %} {%
+block content %}
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">Items on Loan</h2>
+    <span class="text-xs text-slate-400">{{ loans|length }} active</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{{ url_for('resources_dashboard') }}" class="soft-btn"
+      >Dashboard</a
+    >
+    <a href="{{ url_for('resources_index') }}" class="soft-btn"
+      >Back to Resources</a
+    >
+  </div>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="loansTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Resource</th>
+          <th class="py-2 px-3 text-left">Barcode</th>
+          <th class="py-2 px-3 text-left">Staff</th>
+          <th class="py-2 px-3 text-left">Loaned At</th>
+          <th class="py-2 px-3 text-left">Due At</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for ln in loans %}
+        <tr>
+          <td class="py-2 px-3">{{ ln.resource_name }}</td>
+          <td class="py-2 px-3">{{ ln.barcode }}</td>
+          <td class="py-2 px-3">{{ ln.staff_name }}</td>
+          <td class="py-2 px-3">
+            {{ ln.loaned_at|fmt_date }} {{ ln.loaned_at.strftime('%H:%M') if
+            ln.loaned_at else '' }}
+          </td>
+          <td class="py-2 px-3">
+            {{ ln.due_at|fmt_date }} {{ ln.due_at.strftime('%H:%M') if ln.due_at
+            else '' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

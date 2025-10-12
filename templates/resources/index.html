@@ -1,0 +1,423 @@
+{% extends 'base.html' %} {% block page_title %}Resource List{% endblock %} {%
+block content %}
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">Resources</h2>
+    <span class="text-xs text-slate-400">{{ items|length }} total</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <input
+      id="qResource"
+      type="text"
+      placeholder="Search…"
+      class="soft-input !py-1.5 !px-2 text-sm w-48"
+    />
+    <select id="fType" class="soft-input !py-1.5 !px-2 text-sm w-40">
+      <option value="">All Types</option>
+      <option>Laptop</option>
+      <option>Walkie Talkie</option>
+      <option>Tablet</option>
+      <option>Other</option>
+    </select>
+    <select id="fBranch" class="soft-input !py-1.5 !px-2 text-sm w-40">
+      <option value="">All Branches</option>
+      {% for b in branch_choices %}
+      <option value="{{ b }}">{{ b }}</option>
+      {% endfor %}
+    </select>
+    <select id="fStatus" class="soft-input !py-1.5 !px-2 text-sm w-40">
+      <option value="">All Statuses</option>
+      <option value="functional">Functional</option>
+      <option value="need_repair">Need Repair</option>
+      <option value="lost">Lost</option>
+      <option value="archived">Archived</option>
+    </select>
+    <button class="soft-btn soft-btn-primary" id="btnNew">New Resource</button>
+    <button class="soft-btn bg-indigo-100 text-indigo-700" id="btnBulk">
+      Bulk Create
+    </button>
+  </div>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="resourceTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Name</th>
+          <th class="py-2 px-3 text-left">Type</th>
+          <th class="py-2 px-3 text-left">Branch</th>
+          <th class="py-2 px-3 text-left">Resource ID</th>
+          <th class="py-2 px-3 text-left">Status</th>
+          <th class="py-2 px-3 text-left w-40 no-sort"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in items %}
+        <tr
+          data-type="{{ r.type }}"
+          data-branch="{{ r.branch }}"
+          data-status="{{ r.status }}"
+        >
+          <td class="py-2 px-3">{{ r.name }}</td>
+          <td class="py-2 px-3">
+            {{ r.type if r.type != 'Other' else (r.type ~ ' - ' ~ (r.type_other
+            or '')) }}
+          </td>
+          <td class="py-2 px-3">{{ r.branch }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">{{ r.resource_id }}</td>
+          <td class="py-2 px-3 whitespace-nowrap">
+            <span
+              class="soft-badge {% if r.status=='functional' %}!bg-emerald-100 !text-emerald-700{% elif r.status=='need_repair' %}!bg-amber-100 !text-amber-700{% elif r.status=='lost' %}!bg-rose-100 !text-rose-700{% else %}!bg-slate-200 !text-slate-700{% endif %}"
+              >{{ r.status.replace('_',' ')|title }}</span
+            >
+          </td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            <button class="text-indigo-600" data-edit-id="{{ r.id }}">
+              Edit
+            </button>
+            <span class="text-slate-400">·</span>
+            <a
+              class="text-slate-600"
+              href="{{ url_for('resources_barcode_png', rid=r.id) }}"
+              >Barcode</a
+            >
+            <span class="text-slate-400">·</span>
+            <button class="text-rose-600" data-delete-id="{{ r.id }}">
+              Delete
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Bulk Modal -->
+<div
+  id="bulkModal"
+  class="fixed inset-0 hidden items-start md:items-center justify-center z-50 p-4 md:p-8"
+>
+  <div class="absolute inset-0 bg-slate-900/60" data-close></div>
+  <div
+    class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+  >
+    <div class="px-5 py-3 border-b flex items-center gap-3">
+      <h3 class="font-semibold text-sm tracking-wide uppercase text-slate-600">
+        Bulk Create Resources
+      </h3>
+      <span class="ml-auto"></span>
+      <button
+        class="text-slate-500 hover:text-slate-700"
+        data-close
+        aria-label="Close"
+      >
+        ✕
+      </button>
+    </div>
+    <form id="bulkForm" method="post" class="p-5 space-y-3 text-sm">
+      <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+      <div class="grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold mb-1">Resource Type</label>
+          <select name="type" class="soft-input">
+            <option>Laptop</option>
+            <option>Walkie Talkie</option>
+            <option>Tablet</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Branch</label>
+          <select name="branch" class="soft-input">
+            {% for b in branch_choices %}
+            <option value="{{ b }}">{{ b }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="md:col-span-2" id="bulkTypeOtherWrap" style="display: none">
+          <label class="block text-xs font-semibold mb-1"
+            >If Other, specify</label
+          >
+          <input name="type_other" class="soft-input" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Status</label>
+          <select name="status" class="soft-input">
+            <option value="functional">Functional</option>
+            <option value="need_repair">Need Repair</option>
+            <option value="lost">Lost</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Quantity</label>
+          <input
+            type="number"
+            min="1"
+            max="500"
+            value="1"
+            name="quantity"
+            class="soft-input"
+          />
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-2 mt-2">
+        <button type="button" class="soft-btn bg-slate-100" data-close>
+          Cancel
+        </button>
+        <button class="soft-btn soft-btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+<!-- Modal -->
+<div
+  id="resourceModal"
+  class="fixed inset-0 hidden items-start md:items-center justify-center z-50 p-4 md:p-8"
+>
+  <div class="absolute inset-0 bg-slate-900/60" data-close></div>
+  <div
+    class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden"
+  >
+    <div class="px-5 py-3 border-b flex items-center gap-3">
+      <h3
+        class="font-semibold text-sm tracking-wide uppercase text-slate-600"
+        id="modalTitle"
+      >
+        New Resource
+      </h3>
+      <span class="ml-auto"></span>
+      <button
+        class="text-slate-500 hover:text-slate-700"
+        data-close
+        aria-label="Close"
+      >
+        ✕
+      </button>
+    </div>
+    <form id="resourceForm" method="post" class="p-5 space-y-3 text-sm">
+      <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+      <input type="hidden" name="_id" />
+      <div class="grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold mb-1">Resource Type</label>
+          <select name="type" class="soft-input">
+            <option>Laptop</option>
+            <option>Walkie Talkie</option>
+            <option>Tablet</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Branch</label>
+          <select name="branch" class="soft-input">
+            {% for b in branch_choices %}
+            <option value="{{ b }}">{{ b }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="md:col-span-2" id="typeOtherWrap" style="display: none">
+          <label class="block text-xs font-semibold mb-1"
+            >If Other, specify</label
+          >
+          <input name="type_other" class="soft-input" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold mb-1">Resource Name</label>
+          <input
+            name="name"
+            class="soft-input"
+            placeholder="Leave blank to auto-generate"
+          />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold mb-1">Status</label>
+          <select name="status" class="soft-input">
+            <option value="functional">Functional</option>
+            <option value="need_repair">Need Repair</option>
+            <option value="lost">Lost</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-2 mt-2">
+        <button type="button" class="soft-btn bg-slate-100" data-close>
+          Cancel
+        </button>
+        <button class="soft-btn soft-btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modal = document.getElementById("resourceModal");
+    const form = document.getElementById("resourceForm");
+    const title = document.getElementById("modalTitle");
+    const typeSelect = form.querySelector('select[name="type"]');
+    const typeOtherWrap = document.getElementById("typeOtherWrap");
+    const bulkModal = document.getElementById("bulkModal");
+    const bulkForm = document.getElementById("bulkForm");
+    const bulkTypeSelect = bulkForm.querySelector('select[name="type"]');
+    const bulkOtherWrap = document.getElementById("bulkTypeOtherWrap");
+
+    function open() {
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    }
+    function close() {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      form.reset();
+      form._id = null;
+    }
+    function openBulk() {
+      bulkModal.classList.remove("hidden");
+      bulkModal.classList.add("flex");
+    }
+    function closeBulk() {
+      bulkModal.classList.add("hidden");
+      bulkModal.classList.remove("flex");
+      bulkForm.reset();
+    }
+    document.querySelectorAll("[data-close]").forEach((el) =>
+      el.addEventListener("click", () => {
+        close();
+        closeBulk();
+      })
+    );
+
+    document.getElementById("btnNew").addEventListener("click", () => {
+      title.textContent = "New Resource";
+      form.reset();
+      form.querySelector('input[name="_id"]').value = "";
+      open();
+    });
+
+    document.querySelectorAll("[data-edit-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-edit-id");
+        const res = await fetch(`/api/resources/${id}`).then((r) => r.json());
+        if (!res.success) return alert("Failed to load resource");
+        title.textContent = "Edit Resource";
+        form.querySelector('input[name="_id"]').value = id;
+        form.type.value = res.resource.type;
+        form.branch.value = res.resource.branch;
+        form.type_other.value = res.resource.type_other || "";
+        form.name.value = res.resource.name || "";
+        form.status.value = res.resource.status;
+        refreshOther();
+        open();
+      });
+    });
+
+    document.querySelectorAll("[data-delete-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-delete-id");
+        if (!confirm("Delete this resource?")) return;
+        const resp = await fetch(`/api/resources/${id}/delete`, {
+          method: "POST",
+        }).then((r) => r.json());
+        if (!resp.success) return alert("Delete failed");
+        location.reload();
+      });
+    });
+
+    function refreshOther() {
+      typeOtherWrap.style.display = typeSelect.value === "Other" ? "" : "none";
+    }
+    typeSelect.addEventListener("change", refreshOther);
+    refreshOther();
+
+    function refreshBulkOther() {
+      bulkOtherWrap.style.display =
+        bulkTypeSelect.value === "Other" ? "" : "none";
+    }
+    bulkTypeSelect.addEventListener("change", refreshBulkOther);
+    refreshBulkOther();
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = new FormData(form);
+      const id = data.get("_id");
+      const url = id ? `/api/resources/${id}` : "/api/resources";
+      const resp = await fetch(url, {
+        method: "POST",
+        body: data,
+        headers: { Accept: "application/json" },
+      }).then((r) => r.json());
+      if (!resp.success) {
+        return alert("Save failed");
+      }
+      location.reload();
+    });
+
+    document.getElementById("btnBulk").addEventListener("click", () => {
+      openBulk();
+    });
+
+    bulkForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = new FormData(bulkForm);
+      const resp = await fetch("/api/resources/bulk", {
+        method: "POST",
+        body: data,
+        headers: { Accept: "application/json" },
+      }).then((r) => r.json());
+      if (!resp.success) {
+        return alert("Bulk create failed");
+      }
+      location.reload();
+    });
+
+    // Combined search + dropdown filters
+    const q = document.getElementById("qResource");
+    const fType = document.getElementById("fType");
+    const fBranch = document.getElementById("fBranch");
+    const fStatus = document.getElementById("fStatus");
+    const table = document.getElementById("resourceTable");
+    const tbody = table.querySelector("tbody");
+
+    function applyFilters() {
+      const qv = (q?.value || "").toLowerCase();
+      const tv = (fType?.value || "").toLowerCase();
+      const bv = (fBranch?.value || "").toLowerCase();
+      const sv = (fStatus?.value || "").toLowerCase();
+      const rows = Array.from(tbody.querySelectorAll("tr"));
+      rows.forEach((r) => {
+        const text = r.innerText.toLowerCase();
+        const rt = (r.getAttribute("data-type") || "").toLowerCase();
+        const rb = (r.getAttribute("data-branch") || "").toLowerCase();
+        const rs = (r.getAttribute("data-status") || "").toLowerCase();
+        const matchQ = !qv || text.includes(qv);
+        const matchT = !tv || rt === tv;
+        const matchB = !bv || rb === bv;
+        const matchS = !sv || rs === sv;
+        const visible = matchQ && matchT && matchB && matchS;
+        r.classList.toggle("filtered-out", !visible);
+        r.style.display = visible ? "" : "none";
+      });
+      // Notify pagination to recalc
+      table.dispatchEvent(new CustomEvent("filters-changed"));
+    }
+
+    q?.addEventListener("input", applyFilters);
+    fType?.addEventListener("change", applyFilters);
+    fBranch?.addEventListener("change", applyFilters);
+    fStatus?.addEventListener("change", applyFilters);
+    // Initial pass (no filters) to ensure classes are consistent
+    applyFilters();
+  })();
+</script>
+{% endblock %}

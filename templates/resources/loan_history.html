@@ -1,0 +1,157 @@
+{% extends 'base.html' %} {% block page_title %}Resource Loan History{% endblock
+%} {% block content %}
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">
+      Loan History (Last 30 days)
+    </h2>
+    <span class="text-xs text-slate-400">{{ loans|length }} records</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{{ url_for('resources_loans_index') }}" class="soft-btn"
+      >Active Loans</a
+    >
+    <a href="{{ url_for('resources_index') }}" class="soft-btn"
+      >Back to Resources</a
+    >
+  </div>
+</div>
+
+<div class="mb-3 flex items-center gap-2 flex-wrap">
+  <input
+    id="q"
+    type="text"
+    placeholder="Search… (name, ID, barcode)"
+    class="soft-input !py-1.5 !px-2 text-sm w-64"
+  />
+  <select id="fStaff" class="soft-input !py-1.5 !px-2 text-sm w-48">
+    <option value="">All Staff</option>
+    {% for s in staff_list %}
+    <option value="{{ s }}">{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select id="fStatus" class="soft-input !py-1.5 !px-2 text-sm w-44">
+    <option value="">All Status</option>
+    <option value="on_loan">On Loan</option>
+    <option value="returned">Returned</option>
+  </select>
+  <select id="fType" class="soft-input !py-1.5 !px-2 text-sm w-44">
+    <option value="">All Types</option>
+    {% for t in type_list %}
+    <option value="{{ t }}">{{ t }}</option>
+    {% endfor %}
+  </select>
+  <input id="fromDate" type="date" class="soft-input !py-1.5 !px-2 text-sm" />
+  <input id="toDate" type="date" class="soft-input !py-1.5 !px-2 text-sm" />
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="historyTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Resource</th>
+          <th class="py-2 px-3 text-left">Type</th>
+          <th class="py-2 px-3 text-left">Resource ID</th>
+          <th class="py-2 px-3 text-left">Barcode</th>
+          <th class="py-2 px-3 text-left">Staff</th>
+          <th class="py-2 px-3 text-left">Status</th>
+          <th class="py-2 px-3 text-left">Loaned</th>
+          <th class="py-2 px-3 text-left">Due</th>
+          <th class="py-2 px-3 text-left">Returned</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for ln in loans %}
+        <tr
+          data-staff="{{ ln.staff_name }}"
+          data-status="{{ ln.status }}"
+          data-type="{{ ln.resource_type }}"
+          data-date="{{ (ln.loaned_at or ln.returned_at).strftime('%Y-%m-%d') if (ln.loaned_at or ln.returned_at) else '' }}"
+        >
+          <td class="py-2 px-3">{{ ln.resource_name }}</td>
+          <td class="py-2 px-3">{{ ln.resource_type }}</td>
+          <td class="py-2 px-3">{{ ln.resource_id }}</td>
+          <td class="py-2 px-3">{{ ln.barcode }}</td>
+          <td class="py-2 px-3">{{ ln.staff_name }}</td>
+          <td class="py-2 px-3">
+            <span
+              class="soft-badge {{ 'bg-emerald-100 text-emerald-700' if ln.status=='returned' else 'bg-indigo-100 text-indigo-700' }}"
+              >{{ ln.status.replace('_',' ')|title }}</span
+            >
+          </td>
+          <td class="py-2 px-3">
+            {{ ln.loaned_at|fmt_date }} {{ ln.loaned_at.strftime('%H:%M') if
+            ln.loaned_at else '' }}
+          </td>
+          <td class="py-2 px-3">
+            {{ ln.due_at|fmt_date }} {{ ln.due_at.strftime('%H:%M') if ln.due_at
+            else '' }}
+          </td>
+          <td class="py-2 px-3">
+            {{ ln.returned_at|fmt_date }} {{ ln.returned_at.strftime('%H:%M') if
+            ln.returned_at else '' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const q = document.getElementById("q");
+    const fStaff = document.getElementById("fStaff");
+    const fStatus = document.getElementById("fStatus");
+    const fType = document.getElementById("fType");
+    const fromDate = document.getElementById("fromDate");
+    const toDate = document.getElementById("toDate");
+    const table = document.getElementById("historyTable");
+    const tbody = table.querySelector("tbody");
+
+    function applyFilters() {
+      const qv = (q?.value || "").toLowerCase();
+      const sv = (fStaff?.value || "").toLowerCase();
+      const st = (fStatus?.value || "").toLowerCase();
+      const tp = (fType?.value || "").toLowerCase();
+      const fd = fromDate?.value || "";
+      const td = toDate?.value || "";
+      const rows = Array.from(tbody.querySelectorAll("tr"));
+      rows.forEach((r) => {
+        const text = r.innerText.toLowerCase();
+        const rStaff = (r.getAttribute("data-staff") || "").toLowerCase();
+        const rStatus = (r.getAttribute("data-status") || "").toLowerCase();
+        const rType = (r.getAttribute("data-type") || "").toLowerCase();
+        const rDate = r.getAttribute("data-date") || "";
+        const matchQ = !qv || text.includes(qv);
+        const matchS = !sv || rStaff === sv;
+        const matchSt = !st || rStatus === st;
+        const matchT = !tp || rType === tp;
+        const inFrom = !fd || rDate >= fd;
+        const inTo = !td || rDate <= td;
+        const visible = matchQ && matchS && matchSt && matchT && inFrom && inTo;
+        r.classList.toggle("filtered-out", !visible);
+        r.style.display = visible ? "" : "none";
+      });
+      table.dispatchEvent(new CustomEvent("filters-changed"));
+    }
+
+    [q, fStaff, fStatus, fType, fromDate, toDate].forEach(
+      (el) => el && el.addEventListener("input", applyFilters)
+    );
+    [fStaff, fStatus, fType, fromDate, toDate].forEach(
+      (el) => el && el.addEventListener("change", applyFilters)
+    );
+    applyFilters();
+  })();
+</script>
+{% endblock %}

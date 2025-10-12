@@ -419,6 +419,124 @@
         </ul>
       </div>
     </li>
+    {% endif %} {# Resource Management — placed immediately above Staff #} {% if
+    can('manage_resources') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('resources')"
+          :aria-expanded="isOpen('resources')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5 whitespace-nowrap"
+        >
+          <span class="flex items-center gap-2">
+            <svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M4 4h16v6H4z" />
+              <path d="M4 14h16v6H4z" />
+            </svg>
+            Resource Management
+          </span>
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('resources')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('resources')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('resources_dashboard') }}"
+              class="nav-leaf {{ 'active' if endpoint=='resources_dashboard' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 4h16v6H4z" />
+                <path d="M4 14h7v6H4z" />
+                <path d="M13 14h7v6h-7z" />
+              </svg>
+              <span>Resources Dashboard</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('resources_loans_history') }}"
+              class="nav-leaf {{ 'active' if endpoint=='resources_loans_history' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 12h18" />
+                <path d="M8 7h13" />
+                <path d="M8 17h13" />
+              </svg>
+              <span>Loan History</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('resources_loans_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='resources_loans_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 7h18" />
+                <path d="M3 12h12" />
+                <path d="M3 17h8" />
+              </svg>
+              <span>Resource Loans</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('resources_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='resources_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 4h16v6H4z" />
+                <path d="M4 14h16v6H4z" />
+              </svg>
+              <span>Resource Management</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
     {% endif %} {# Staff Management #} {% if can('manage_staff') or
     can('manage_availability') %}
     <li>
@@ -1073,6 +1191,9 @@
     padding: 0.375rem 0.5rem;
     font-weight: 400;
     color: #4b5563;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .dark .nav-leaf,
   .dark .nav-single {

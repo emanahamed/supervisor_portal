@@ -5,12 +5,14 @@ import io
 import json
 import logging
 import os
+import random
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
 from types import SimpleNamespace
 from uuid import uuid4
 
+import click
 import pandas as pd
 from flask import (Flask, abort, flash, jsonify, make_response, redirect,
                    render_template, request, send_file, session, url_for)
@@ -41,14 +43,14 @@ from forms import (AppointmentBookingActionForm, AppointmentBookingForm,
                    AppointmentSlotForm, AvailabilityForm, BookForm,
                    CompanyForm, CycleForm, InvoiceForm, IssueForm, LoginForm,
                    MeetingForm, ObservationForm, PricingConfigForm,
-                   RegisterForm, StaffForm, StudentForm, TodoForm,
-                   UserProfileForm)
+                   RegisterForm, ResourceBulkForm, ResourceForm, StaffForm,
+                   StudentForm, TodoForm, UserProfileForm)
 from models import (AppointmentBooking, AppointmentSlot, Availability, Book,
                     BookOrder, BookOrderItem, Company, EndOfDayChecklist,
                     ErrorReport, Invoice, Issue, IssueChange, Meeting,
                     Observation, ObservationCycle, Permission, PermissionAudit,
-                    RolePermission, Staff, Student, StudentChange, Todo, User,
-                    UserPermission, db)
+                    Resource, ResourceLoan, RolePermission, Staff, Student,
+                    StudentChange, Todo, User, UserPermission, db)
 from utils import (BRANCH_CHOICES, allowed_file, get_setting,
                    normalize_staff_dataframe, parse_preferred_contact,
                    parse_schedule_message, set_setting)
@@ -360,6 +362,7 @@ with app.app_context():  # pragma: no cover - simple safety patch
             ('access_timetable_main','Access main timetable generator'),
             ('access_timetable_eastham','Access East Ham timetable generator'),
             ('manage_student_concerns','Manage student concerns reports'),
+            ('manage_resources','Manage resource inventory'),
         ]
         created = False
         for k, desc in needed_perms:
@@ -385,6 +388,41 @@ with app.app_context():  # pragma: no cover - simple safety patch
                         _conn.execute(_text(stmt))
                     except Exception:
                         pass
+        except Exception:
+            pass
+        # --- Lightweight schema patch for Staff.access_code (Oct 2025) ---
+        try:
+            staff_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(staff)"))}
+            if 'access_code' not in staff_cols:
+                try:
+                    _conn.execute(_text("ALTER TABLE staff ADD COLUMN access_code VARCHAR(6)"))
+                except Exception:
+                    pass
+            # Create unique index if missing (SQLite idempotent name)
+            idx_names = {row[1] for row in _conn.execute(_text("PRAGMA index_list('staff')"))}
+            if 'ix_staff_access_code' not in idx_names:
+                try:
+                    _conn.execute(_text("CREATE UNIQUE INDEX IF NOT EXISTS ix_staff_access_code ON staff(access_code)"))
+                except Exception:
+                    pass
+            # Backfill missing access_code values with unique 6-digit codes
+            try:
+                from models import Staff as _Staff
+                missing = _Staff.query.filter((_Staff.access_code.is_(None)) | (_Staff.access_code == '')).all()
+                if missing:
+                    existing = {c for (c,) in db.session.query(_Staff.access_code).filter(_Staff.access_code.isnot(None)).all()}
+                    def gen_code():
+                        return f"{random.randint(0, 999999):06d}"
+                    for s in missing:
+                        code = gen_code()
+                        tries = 0
+                        while code in existing and tries < 10:
+                            code = gen_code(); tries += 1
+                        s.access_code = code
+                        existing.add(code)
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
         except Exception:
             pass
         # --- Lightweight schema patch for Invoice.created_by_id (Oct 2025) ---
@@ -676,6 +714,10 @@ def load_user(user_id):
 @app.before_request
 def create_tables_and_superadmin():
     db.create_all()
+    # Seed manage_resources permission (idempotent)
+    if not Permission.query.filter_by(key='manage_resources').first():
+        db.session.add(Permission(key='manage_resources', description='Manage resource inventory'))
+        db.session.commit()
     # Ensure newly added Book columns exist even if earlier import-time patch
     # ran before the book table was first created (older DBs or test DB reset).
     try:  # pragma: no cover - defensive migration logic
@@ -800,6 +842,18 @@ def create_tables_and_superadmin():
                 staff_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff)"))}
                 if 'active' not in staff_cols:
                     conn.execute(text("ALTER TABLE staff ADD COLUMN active BOOLEAN DEFAULT 1"))
+                if 'access_code' not in staff_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN access_code VARCHAR(6)"))
+                    except Exception:
+                        pass
+                # Ensure unique index on access_code exists
+                try:
+                    idx_names = {row[1] for row in conn.execute(text("PRAGMA index_list('staff')"))}
+                    if 'ix_staff_access_code' not in idx_names:
+                        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_staff_access_code ON staff(access_code)"))
+                except Exception:
+                    pass
             except Exception:
                 pass
             # Meetings table
@@ -859,6 +913,11 @@ def create_tables_and_superadmin():
             conn.execute(text("CREATE TABLE IF NOT EXISTS user_permission (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, permission_key VARCHAR(120) NOT NULL, allow BOOLEAN NOT NULL DEFAULT 1, UNIQUE(user_id, permission_key))"))
             # Permission audit (since 0.9.2)
             conn.execute(text("CREATE TABLE IF NOT EXISTS permission_audit (id INTEGER PRIMARY KEY, actor_user_id INTEGER NOT NULL, target_user_id INTEGER, role VARCHAR(80), permission_key VARCHAR(120) NOT NULL, action VARCHAR(40) NOT NULL, changed_at DATETIME, FOREIGN KEY(actor_user_id) REFERENCES user(id), FOREIGN KEY(target_user_id) REFERENCES user(id))"))
+            # Ensure at most one active loan per resource (partial unique index)
+            try:
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_active_loan_per_resource ON resource_loan(resource_id) WHERE status='on_loan'"))
+            except Exception:
+                pass
             # Company table column backfill (OFSTED reg no) if table exists from older schema
             try:
                 company_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(company)"))}
@@ -1070,6 +1129,39 @@ def _bootstrap_booking_scheduler():  # pragma: no cover - trivial guard
         except Exception as exc:
             print(f"[WARN] Failed to prime booking reminders: {exc}")
         _BOOKING_SCHEDULER_PRIMED = True
+
+
+# One-time migration: ensure Resource IDs/barcodes are numeric going forward
+_RESOURCE_NUMERIC_MIGRATED = False
+
+@app.before_request
+def _migrate_resource_numeric_ids():  # pragma: no cover - simple data hygiene
+    global _RESOURCE_NUMERIC_MIGRATED
+    if _RESOURCE_NUMERIC_MIGRATED:
+        return
+    try:
+        changed = False
+        rows = Resource.query.all()
+        for r in rows:
+            rid = (r.resource_id or '').strip()
+            bcv = (r.barcode_value or '').strip()
+            if (not rid.isdigit()) or (not bcv.isdigit()):
+                new_id = _resource_next_numeric_id()
+                r.resource_id = new_id
+                r.barcode_value = new_id
+                changed = True
+        if changed:
+            try:
+                db.session.commit()
+                print('[INFO] Normalized Resource IDs/barcodes to numeric format.')
+            except Exception as _exc:
+                db.session.rollback()
+                print(f"[WARN] Failed to commit resource ID normalization: {_exc}")
+    except Exception as _outer:
+        # Non-fatal: continue serving requests
+        print(f"[WARN] Resource ID normalization skipped: { _outer }")
+    finally:
+        _RESOURCE_NUMERIC_MIGRATED = True
 
 
 # ---------------- Floor Management (scaffold) ---------------- #
@@ -1874,6 +1966,10 @@ def api_floor_report(rid: int):
 @login_required
 @permission_required('manage_floor_reports')
 def floor_report_print(rid: int):
+    """Generate a 3x2 inch PNG label (300 DPI) with centered text using Tw Cen MT Bold if available.
+
+    Contents: Resource Name, Resource Type, Code128 barcode, Barcode Number (numeric ID).
+    """
     from models import PrintReport
     pr = PrintReport.query.get_or_404(rid)
     # Only allow owner or admins to view
@@ -1886,45 +1982,22 @@ def floor_report_print(rid: int):
 @login_required
 @permission_required('manage_floor_reports')
 def floor_report_pdf(rid: int):
-    from xhtml2pdf import pisa
+    """Temporary placeholder: reuse print page for PDF download link.
 
+    If needed, integrate real PDF rendering later.
+    """
     from models import PrintReport
     pr = PrintReport.query.get_or_404(rid)
     if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or pr.staff_user_id == current_user.id):
         abort(403)
-    html = render_template('floor/reports/print.html', r=pr)
-    pdf_io = io.BytesIO()
-    try:
-        pisa.CreatePDF(io.StringIO(html), dest=pdf_io)  # type: ignore[arg-type]
-    except Exception as exc:
-        flash(f'PDF generation failed: {exc}', 'danger')
-        return redirect(url_for('floor_reports_index'))
-    pdf_io.seek(0)
-    return send_file(pdf_io, as_attachment=True, download_name=f'print_report_{pr.id}.pdf', mimetype='application/pdf')
+    # For now, return the same printable HTML (browser can print to PDF)
+    return render_template('floor/reports/print.html', r=pr)
 
-
-# --------- API: Student search (async lookup) ---------
-@app.route('/api/students/search')
-def api_students_search():
-    from models import Student
-    q = (request.args.get('q') or '').strip()
-    if not q:
-        return jsonify([])
-    ilike = f"%{q}%"
-    results = Student.query.filter(
-        (Student.name.ilike(ilike)) | (Student.student_id.ilike(ilike))
-    ).order_by(Student.name.asc()).limit(25).all()
-    payload = [
-        { 'id': s.id, 'student_id': s.student_id, 'name': s.name, 'year': s.year }
-        for s in results
-    ]
-    return jsonify(payload)
-
-# Call List
 @app.route('/floor/call-list')
 @login_required
 @permission_required('manage_call_list')
 def floor_call_list_index():
+    """List and filter the daily call list records."""
     from models import CallRecord, Student, User
 
     # Filters: date, reason, called_by, student, q
@@ -2169,6 +2242,15 @@ def floor_call_list_pdf():
     pdf_io.seek(0)
     fname = f"call_list_{uid}_{d.isoformat()}.pdf"
     return send_file(pdf_io, as_attachment=True, download_name=fname, mimetype='application/pdf')
+
+@app.route('/floor/call-list/<int:cid>/view')
+@login_required
+@permission_required('manage_call_list')
+def floor_call_list_view(cid: int):
+    from models import CallRecord
+    rec = CallRecord.query.get_or_404(cid)
+    # Return a lightweight partial for modal consumption
+    return render_template('floor/calls/view.html', record=rec)
 
 
 @app.route("/")
@@ -3461,10 +3543,34 @@ def staff_new():
     form.department.choices = [('', '-- None --')] + [(d, d) for d in dept_rows]
     if form.validate_on_submit():
         branches = ",".join(form.branches.data) if form.branches.data else ""
+        # Validate access code (optional) – must be exactly 6 digits if provided
+        code = (form.access_code.data or '').strip()
+        if code:
+            code = ''.join(ch for ch in code if ch.isdigit())
+            if len(code) != 6:
+                flash("Access Code must be exactly 6 digits.", "warning")
+                return render_template("staff/form.html", form=form, staff=None)
         s = Staff(name=form.name.data, department=form.department.data,
                   email=form.email.data, phone=form.phone.data, branch=branches, active=form.active.data)
-        db.session.add(s)
-        db.session.commit()
+        # Assign code – if not provided, auto-generate a unique one
+        def gen_code():
+            return f"{random.randint(0, 999999):06d}"
+        tries = 0
+        while True:
+            try:
+                s.access_code = code or gen_code()
+                db.session.add(s)
+                db.session.commit()
+                break
+            except IntegrityError:
+                db.session.rollback()
+                if code:
+                    flash("Access Code already in use. Please choose a different one.", "warning")
+                    return render_template("staff/form.html", form=form, staff=None)
+                tries += 1
+                if tries > 5:
+                    flash("Could not generate a unique access code. Please try again.", "danger")
+                    return render_template("staff/form.html", form=form, staff=None)
         flash("Staff saved", "success")
         return redirect(url_for('staff_index'))
     return render_template("staff/form.html", form=form, staff=None)
@@ -3484,6 +3590,7 @@ def staff_edit(sid):
         form.phone.data = s.phone
         form.branches.data = [b for b in (s.branch or '').split(',') if b]
         form.active.data = s.active
+        form.access_code.data = s.access_code or ''
     if form.validate_on_submit():
         s.name = form.name.data
         s.department = form.department.data
@@ -3491,6 +3598,36 @@ def staff_edit(sid):
         s.phone = form.phone.data
         s.branch = ",".join(form.branches.data) if form.branches.data else ""
         s.active = form.active.data
+        # Access code validation and uniqueness enforcement
+        raw = (form.access_code.data or '').strip()
+        if raw:
+            raw = ''.join(ch for ch in raw if ch.isdigit())
+            if len(raw) != 6:
+                flash("Access Code must be exactly 6 digits.", "warning")
+                return render_template("staff/form.html", form=form, staff=s)
+            # If changed, ensure no collision
+            if raw != (s.access_code or ''):
+                other = Staff.query.filter(Staff.id != s.id, Staff.access_code == raw).first()
+                if other:
+                    flash("Access Code already in use by another staff member.", "warning")
+                    return render_template("staff/form.html", form=form, staff=s)
+                s.access_code = raw
+        else:
+            # Auto-generate if cleared
+            def gen_code():
+                return f"{random.randint(0, 999999):06d}"
+            tries = 0
+            while True:
+                try:
+                    s.access_code = gen_code()
+                    db.session.commit()
+                    break
+                except IntegrityError:
+                    db.session.rollback()
+                    tries += 1
+                    if tries > 5:
+                        flash("Could not generate a unique access code. Please try again.", "danger")
+                        return render_template("staff/form.html", form=form, staff=s)
         db.session.commit()
         flash("Staff updated", "success")
         return redirect(url_for('staff_index'))
@@ -3514,6 +3651,96 @@ def staff_toggle_active(sid):
     flash(f"{'Activated' if s.active else 'Deactivated'} {s.name}", 'success')
     # Preserve filters (except pagination) by redirecting back
     return redirect(request.referrer or url_for('staff_index'))
+
+@app.route('/api/staff/<int:sid>/toggle-active', methods=['POST'])
+@login_required
+def staff_toggle_active_api(sid: int):
+    s = Staff.query.get_or_404(sid)
+    s.active = not bool(s.active)
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 500
+    return jsonify({
+        'success': True,
+        'active': bool(s.active),
+        'label': 'Deactivate' if s.active else 'Activate',
+        'badge': 'Active' if s.active else 'Inactive'
+    })
+
+@app.route('/api/staff/<int:sid>/email-access-code', methods=['POST'])
+@login_required
+@permission_required('manage_staff')
+def api_staff_email_access_code(sid: int):
+        s = Staff.query.get_or_404(sid)
+        if not s.email:
+                return jsonify({'success': False, 'error': 'Staff member has no email address.'}), 400
+        code = s.access_code or ''
+        subject = 'Your Excel Tutors portal access code'
+        body = f"""
+<!DOCTYPE html>
+<html><body style="font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:24px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+        <tr>
+            <td style="background:#0f172a;color:#fff;padding:18px 22px;font-weight:600;">Excel Tutors</td>
+        </tr>
+        <tr>
+            <td style="padding:22px;color:#0f172a;">
+                <p style="margin:0 0 12px;">Hello {s.name or 'there'},</p>
+                <p style="margin:0 0 12px;">Here is your staff access code for the Resource Management public loan/return form:</p>
+                <div style="margin:14px 0;">
+                    <span style="display:inline-block;padding:10px 16px;border-radius:10px;background:#e0e7ff;color:#3730a3;font-weight:700;letter-spacing:2px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">{code or 'N/A'}</span>
+                </div>
+                <p style="margin:0 0 12px;">Keep this code private. You can use it to borrow and return resources at the centre.</p>
+                <p style="margin:18px 0 0;font-size:12px;color:#64748b;">If you have any issues, reply to this email.</p>
+            </td>
+        </tr>
+        <tr>
+            <td style="background:#f8fafc;color:#94a3b8;padding:14px 22px;text-align:center;font-size:11px;">&copy; {date.today().year} Excel Tutors</td>
+        </tr>
+    </table>
+    </body></html>
+        """
+        try:
+                send_email(s.email, subject, body)
+        except Exception as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 500
+        return jsonify({'success': True})
+
+@app.route('/api/staff/email-access-codes', methods=['POST'])
+@login_required
+@permission_required('manage_staff')
+def api_staff_email_access_codes_bulk():
+        """Email access codes to a set of staff IDs or all active staff.
+
+        Accepts JSON body: { ids: [1,2,3] } optional. If absent/empty, targets all active staff with an email.
+        """
+        try:
+                payload = request.get_json(silent=True) or {}
+                ids = payload.get('ids') or []
+                q = Staff.query
+                if ids:
+                        q = q.filter(Staff.id.in_(ids))
+                else:
+                        q = q.filter(Staff.active.is_(True))
+                targets = [s for s in q.all() if s.email]
+                sent = 0
+                errors: list[dict] = []
+                for s in targets:
+                        try:
+                                code = s.access_code or ''
+                                subject = 'Your Excel Tutors portal access code'
+                                body = f"""
+<!DOCTYPE html>
+<html><body style=\"font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:24px;\">\n  <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;\">\n    <tr>\n      <td style=\"background:#0f172a;color:#fff;padding:18px 22px;font-weight:600;\">Excel Tutors</td>\n    </tr>\n    <tr>\n      <td style=\"padding:22px;color:#0f172a;\">\n        <p style=\"margin:0 0 12px;\">Hello {s.name or 'there'},</p>\n        <p style=\"margin:0 0 12px;\">Here is your staff access code for the Resource Management public loan/return form:</p>\n        <div style=\"margin:14px 0;\">\n          <span style=\"display:inline-block;padding:10px 16px;border-radius:10px;background:#e0e7ff;color:#3730a3;font-weight:700;letter-spacing:2px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;\">{code or 'N/A'}</span>\n        </div>\n        <p style=\"margin:0 0 12px;\">Keep this code private. You can use it to borrow and return resources at the centre.</p>\n        <p style=\"margin:18px 0 0;font-size:12px;color:#64748b;\">If you have any issues, reply to this email.</p>\n      </td>\n    </tr>\n    <tr>\n      <td style=\"background:#f8fafc;color:#94a3b8;padding:14px 22px;text-align:center;font-size:11px;\">&copy; {date.today().year} Excel Tutors</td>\n    </tr>\n  </table>\n  </body></html>\n                """
+                                send_email(s.email, subject, body)
+                                sent += 1
+                        except Exception as exc:
+                                errors.append({'id': s.id, 'email': s.email, 'error': str(exc)})
+                return jsonify({'success': True, 'sent': sent, 'errors': errors})
+        except Exception as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 500
 
 @app.route('/staff/<int:sid>')
 @login_required
@@ -3622,6 +3849,654 @@ def staff_changes_export(sid: int):
     mem.seek(0)
     fname = f"staff_{staff.id}_changes.csv"
     return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=fname)
+
+
+# ---------------- Resource Management ---------------- #
+def _resource_branch_initials(branch: str) -> str:
+    b = (branch or '').lower()
+    if 'whitechapel' in b:
+        return 'WC'
+    if 'east ham' in b:
+        return 'EH'
+    if 'stratford' in b:
+        return 'ST'
+    if 'docklands' in b:
+        return 'DL'
+    return (branch or '')[:2].upper()
+
+def _resource_next_seq(rtype: str) -> int:
+    from models import Resource
+    latest = (Resource.query.filter_by(type=rtype)
+              .order_by(Resource.type_seq.desc())
+              .first())
+    return (latest.type_seq + 1) if latest and latest.type_seq else 1
+
+def _resource_generate_ids(rtype: str, branch: str) -> tuple[str,str,str,int]:
+    # Legacy helper retained but now delegates numeric ID generation.
+    seq = _resource_next_seq(rtype)
+    type_slug = rtype.strip().replace(' ', '').upper()
+    br_init = _resource_branch_initials(branch)
+    name = f"{type_slug}-{seq}-{br_init}"
+    # Numeric resource ID equals barcode value (Code128 content)
+    rid = _resource_next_numeric_id()
+    return rid, rid, name, seq
+
+def _resource_next_numeric_id(length: int = 10) -> str:
+    """Generate next unique numeric ID for resources, persisted via Setting.
+
+    Stores/reads key 'resource_next_id' using utils.get_setting/set_setting.
+    Ensures uniqueness against Resource.resource_id; returns zero-padded string.
+    """
+    from models import Resource as _Resource
+    from utils import get_setting, set_setting
+
+    # Default starting number (10 digits) if not set
+    default_start = 10 ** (length - 1)
+    try:
+        current_raw = str(get_setting('resource_next_id', str(default_start)))
+        current = int(''.join(ch for ch in current_raw if ch.isdigit()))
+    except Exception:
+        current = default_start
+    # Try up to 50 attempts in case of race/uniqueness issues
+    for _ in range(50):
+        candidate = f"{current:0{length}d}"
+        exists = _Resource.query.filter_by(resource_id=candidate).first()
+        if not exists:
+            # Persist next value
+            try:
+                set_setting('resource_next_id', str(current + 1))
+            except Exception:
+                pass
+            return candidate
+        current += 1
+    # Fallback: random 12-digit if sequential space exhausted (unlikely)
+    import random as _r
+    return f"{_r.randint(10**(length-1), 10**length - 1)}"
+
+@app.route('/resources')
+@login_required
+@permission_required('manage_resources')
+def resources_index():
+    # Data for table rendered server-side, DataTables JS enhances it
+    items = Resource.query.order_by(Resource.created_at.desc()).all()
+    return render_template('resources/index.html', items=items, branch_choices=BRANCH_CHOICES)
+
+@app.route('/resources/loans')
+@login_required
+@permission_required('manage_resources')
+def resources_loans_index():
+    loans = (ResourceLoan.query
+             .filter(ResourceLoan.status == 'on_loan')
+             .order_by(ResourceLoan.loaned_at.desc())
+             .all())
+    # Compose display payload
+    rows = []
+    for ln in loans:
+        rows.append({
+            'id': ln.id,
+            'resource_id': ln.resource_id,
+            'resource_name': ln.resource.name if ln.resource else '',
+            'barcode': ln.resource.barcode_value if ln.resource else '',
+            'staff_name': ln.staff.name if ln.staff else '',
+            'staff_email': getattr(ln.staff, 'email', '') or '',
+            'loaned_at': ln.loaned_at,
+            'due_at': ln.due_at,
+        })
+    return render_template('resources/loans.html', loans=rows)
+
+@app.route('/resources/loans/history')
+@login_required
+@permission_required('manage_resources')
+def resources_loans_history():
+    # Show last 30 days of loan activity (plus any currently active loans)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    q = (ResourceLoan.query
+         .options(joinedload(ResourceLoan.resource), joinedload(ResourceLoan.staff))
+         .order_by(ResourceLoan.loaned_at.desc()))
+    # Include loans where: loaned_at within 30 days OR returned within 30 days OR still on loan
+    q = q.filter(
+        or_(
+            ResourceLoan.loaned_at >= cutoff,
+            and_(ResourceLoan.returned_at.isnot(None), ResourceLoan.returned_at >= cutoff),
+            ResourceLoan.status == 'on_loan'
+        )
+    )
+    loans = q.all()
+    rows = []
+    staff_names = set()
+    types = set()
+    for ln in loans:
+        res = ln.resource
+        st = ln.staff
+        staff_name = st.name if st else ''
+        staff_names.add(staff_name) if staff_name else None
+        rtype = res.type if res else ''
+        if rtype:
+            types.add(rtype)
+        rows.append({
+            'id': ln.id,
+            'resource_name': res.name if res else '',
+            'resource_id': res.resource_id if res else '',
+            'resource_type': rtype,
+            'barcode': res.barcode_value if res else '',
+            'staff_name': staff_name,
+            'status': ln.status,
+            'loaned_at': ln.loaned_at,
+            'due_at': ln.due_at,
+            'returned_at': ln.returned_at,
+        })
+    staff_list = sorted([s for s in staff_names if s])
+    type_list = sorted([t for t in types if t])
+    return render_template('resources/loan_history.html', loans=rows, staff_list=staff_list, type_list=type_list)
+
+@app.route('/resources/dashboard')
+@login_required
+@permission_required('manage_resources')
+def resources_dashboard():
+    from sqlalchemy import func
+
+    from models import Staff
+    now = datetime.now(timezone.utc)
+
+    # Core KPIs
+    total = db.session.query(func.count(Resource.id)).scalar() or 0
+    by_status = dict(db.session.query(Resource.status, func.count(Resource.id)).group_by(Resource.status).all())
+    on_loan = db.session.query(func.count(ResourceLoan.id)).filter(ResourceLoan.status=='on_loan').scalar() or 0
+    overdue = db.session.query(func.count(ResourceLoan.id)).filter(ResourceLoan.status=='on_loan', ResourceLoan.due_at <= now).scalar() or 0
+    available = max(total - on_loan, 0)
+
+    # Distributions
+    by_type = dict(db.session.query(Resource.type, func.count(Resource.id)).group_by(Resource.type).all())
+    by_branch = dict(db.session.query(Resource.branch, func.count(Resource.id)).group_by(Resource.branch).all())
+
+    # Trend: loans over last 14 days (by day)
+    cutoff14 = now - timedelta(days=13)
+    loans_14 = (ResourceLoan.query
+                .filter(ResourceLoan.loaned_at.isnot(None))
+                .filter(ResourceLoan.loaned_at >= cutoff14)
+                .all())
+    # Build a zero-initialized day map for 14 days
+    from datetime import date as _date
+    day_keys = [(_date.fromtimestamp((cutoff14 + timedelta(days=i)).timestamp())) for i in range(14)]
+    trend_map: dict[str, int] = {d.isoformat(): 0 for d in day_keys}
+    for ln in loans_14:
+        try:
+            d = ln.loaned_at.astimezone(timezone.utc).date().isoformat()
+            if d in trend_map:
+                trend_map[d] += 1
+        except Exception:
+            pass
+    loans_trend = [{ 'day': k, 'count': trend_map[k] } for k in sorted(trend_map.keys())]
+
+    # Top borrowers in last 30 days
+    cutoff30 = now - timedelta(days=30)
+    top_rows = (db.session.query(ResourceLoan.staff_id, func.count(ResourceLoan.id).label('c'))
+                .filter(ResourceLoan.loaned_at.isnot(None), ResourceLoan.loaned_at >= cutoff30)
+                .group_by(ResourceLoan.staff_id)
+                .order_by(func.count(ResourceLoan.id).desc())
+                .limit(10)
+                .all())
+    staff_map = {s.id: s.name for s in Staff.query.filter(Staff.id.in_([sid for sid, _ in top_rows if sid])).all()}
+    top_borrowers = [{ 'name': (staff_map.get(sid) or 'Unknown'), 'count': cnt } for sid, cnt in top_rows]
+
+    # Overdue aging buckets for active loans
+    overdue_loans = (ResourceLoan.query
+                     .filter(ResourceLoan.status=='on_loan', ResourceLoan.due_at <= now)
+                     .all())
+    buckets = { '1_3': 0, '4_7': 0, '8_plus': 0 }
+    for ln in overdue_loans:
+        try:
+            days = (now - ln.due_at).days
+            if days <= 3:
+                buckets['1_3'] += 1
+            elif days <= 7:
+                buckets['4_7'] += 1
+            else:
+                buckets['8_plus'] += 1
+        except Exception:
+            pass
+
+    # Longest current loans (oldest loaned_at)
+    longest_current = (ResourceLoan.query
+                       .options(joinedload(ResourceLoan.resource), joinedload(ResourceLoan.staff))
+                       .filter(ResourceLoan.status=='on_loan')
+                       .order_by(ResourceLoan.loaned_at.asc())
+                       .limit(10)
+                       .all())
+    longest_rows = []
+    for ln in longest_current:
+        try:
+            days_on_loan = (now - ln.loaned_at).days if ln.loaned_at else None
+        except Exception:
+            days_on_loan = None
+        longest_rows.append({
+            'resource_name': ln.resource.name if ln.resource else '',
+            'resource_id': ln.resource.resource_id if ln.resource else '',
+            'staff_name': ln.staff.name if ln.staff else '',
+            'loaned_at': ln.loaned_at,
+            'days_on_loan': days_on_loan,
+        })
+
+    # Recent activity (last 15 loan/return events)
+    recent_loans = (ResourceLoan.query
+                    .options(joinedload(ResourceLoan.resource), joinedload(ResourceLoan.staff))
+                    .order_by(ResourceLoan.loaned_at.desc())
+                    .limit(15)
+                    .all())
+    recent_returns = (ResourceLoan.query
+                      .options(joinedload(ResourceLoan.resource), joinedload(ResourceLoan.staff))
+                      .filter(ResourceLoan.returned_at.isnot(None))
+                      .order_by(ResourceLoan.returned_at.desc())
+                      .limit(15)
+                      .all())
+    recent_activity = []
+    for ln in recent_loans:
+        if ln.loaned_at:
+            recent_activity.append({
+                'event': 'loan',
+                'when': ln.loaned_at,
+                'resource_name': ln.resource.name if ln.resource else '',
+                'resource_id': ln.resource.resource_id if ln.resource else '',
+                'staff_name': ln.staff.name if ln.staff else '',
+            })
+    for ln in recent_returns:
+        recent_activity.append({
+            'event': 'return',
+            'when': ln.returned_at,
+            'resource_name': ln.resource.name if ln.resource else '',
+            'resource_id': ln.resource.resource_id if ln.resource else '',
+            'staff_name': ln.staff.name if ln.staff else '',
+        })
+    # Sort combined by time desc and keep top 15
+    recent_activity.sort(key=lambda r: r['when'] or now, reverse=True)
+    recent_activity = recent_activity[:15]
+
+    return render_template(
+        'resources/dashboard.html',
+        total=total,
+        available=available,
+        by_status=by_status,
+        on_loan=on_loan,
+        overdue=overdue,
+        by_type=by_type,
+        by_branch=by_branch,
+        loans_trend=loans_trend,
+        top_borrowers=top_borrowers,
+        overdue_buckets=buckets,
+        longest_rows=longest_rows,
+        recent_activity=recent_activity,
+    )
+
+@app.route('/api/resources', methods=['POST'])
+@login_required
+@permission_required('manage_resources')
+def resources_create():
+    form = ResourceForm()
+    if not form.validate_on_submit():
+        return jsonify({'success': False, 'errors': form.errors}), 400
+    rtype = form.type.data
+    branch = form.branch.data
+    type_other = (form.type_other.data or '').strip() if rtype == 'Other' else None
+    rid, barcode_val, name_default, seq = _resource_generate_ids(rtype, branch)
+    name = (form.name.data or '').strip() or name_default
+    res = Resource(type=rtype, type_other=type_other, branch=branch, type_seq=seq,
+                   resource_id=rid, name=name, barcode_value=barcode_val,
+                   status=form.status.data)
+    db.session.add(res)
+    db.session.commit()
+    return jsonify({'success': True, 'id': res.id})
+
+@app.route('/api/resources/bulk', methods=['POST'])
+@login_required
+@permission_required('manage_resources')
+def resources_bulk_create():
+    form = ResourceBulkForm()
+    if not form.validate_on_submit():
+        return jsonify({'success': False, 'errors': form.errors}), 400
+    rtype = form.type.data
+    branch = form.branch.data
+    qty = form.quantity.data or 1
+    status = form.status.data or 'functional'
+    type_other = (form.type_other.data or '').strip() if rtype == 'Other' else None
+    created_ids: list[int] = []
+    for _ in range(qty):
+        rid, barcode_val, name_default, seq = _resource_generate_ids(rtype, branch)
+        res = Resource(
+            type=rtype,
+            type_other=type_other,
+            branch=branch,
+            type_seq=seq,
+            resource_id=rid,
+            name=name_default,
+            barcode_value=barcode_val,
+            status=status,
+        )
+        db.session.add(res)
+        try:
+            db.session.flush()
+            created_ids.append(res.id)
+        except Exception:
+            db.session.rollback()
+            continue
+    try:
+        db.session.commit()
+    except Exception as _exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'errors': {'_': ['Bulk create failed']}}), 500
+    return jsonify({'success': True, 'count': len(created_ids), 'ids': created_ids})
+
+@app.route('/api/resources/<int:rid>', methods=['GET'])
+@login_required
+@permission_required('manage_resources')
+def resources_get(rid: int):
+    res = Resource.query.get_or_404(rid)
+    payload = {
+        'id': res.id,
+        'type': res.type,
+        'type_other': res.type_other,
+        'branch': res.branch,
+        'name': res.name,
+        'status': res.status,
+        'resource_id': res.resource_id,
+        'barcode_value': res.barcode_value,
+    }
+    return jsonify({'success': True, 'resource': payload})
+
+@app.route('/api/resources/<int:rid>', methods=['POST'])
+@login_required
+@permission_required('manage_resources')
+def resources_update(rid: int):
+    res = Resource.query.get_or_404(rid)
+    form = ResourceForm()
+    if not form.validate_on_submit():
+        return jsonify({'success': False, 'errors': form.errors}), 400
+    rtype = form.type.data
+    branch = form.branch.data
+    type_other = (form.type_other.data or '').strip() if rtype == 'Other' else None
+    # If type or branch changed, regenerate name (and optionally IDs if we want immutability – we'll keep resource_id/barcode stable)
+    res.type = rtype
+    res.type_other = type_other
+    res.branch = branch
+    res.name = (form.name.data or '').strip() or res.name
+    res.status = form.status.data
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/resources/<int:rid>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_resources')
+def resources_delete(rid: int):
+    res = Resource.query.get_or_404(rid)
+    db.session.delete(res)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/resources/<int:rid>/barcode.png')
+@login_required
+@permission_required('manage_resources')
+def resources_barcode_png(rid: int):
+    """Generate a 3x2 inch PNG label (300 DPI) with centered text using Tw Cen MT Bold if available.
+
+    Shows: Resource Name, Resource Type, Code128 barcode, and Barcode Number (numeric ID).
+    """
+    res = Resource.query.get_or_404(rid)
+    try:
+        from io import BytesIO
+
+        from barcode import Code128
+        from barcode.writer import ImageWriter
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        return abort(500, description='Barcode dependencies not installed')
+
+    # Canvas 3x2 inches at 300 DPI
+    DPI = 300
+    width = int(3 * DPI)
+    height = int(2 * DPI)
+    label = Image.new('RGB', (width, height), 'white')
+    draw = ImageDraw.Draw(label)
+
+    # Load Tw Cen MT Bold if available; fallback chain
+    def load_font(size: int):
+        candidates = [
+            'Tw Cen MT Bold.ttf', 'TwCenMT-Bold.ttf', 'TCCB____.TTF',
+            'Tw Cen MT.ttf', 'TwCenMT.ttf',
+            '/Library/Fonts/Tw Cen MT Bold.ttf',
+            '/Library/Fonts/Tw Cen MT.ttf',
+            '/System/Library/Fonts/Supplemental/Tw Cen MT Bold.ttf',
+            '/System/Library/Fonts/Supplemental/Tw Cen MT.ttf',
+            'C\\\Windows\\Fonts\\TCCB____.TTF',
+            'C\\\Windows\\Fonts\\TwCenMT-Bold.ttf',
+            'C\\\Windows\\Fonts\\Tw Cen MT Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        ]
+        for path in candidates:
+            try:
+                return ImageFont.truetype(path, size=size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
+
+    # Draw centered text fitted to width
+    def draw_centered_text(text: str, y: int, max_width: int, base_size: int):
+        if not text:
+            return 0
+        size = base_size
+        font = load_font(size)
+        tw, th = draw.textbbox((0, 0), text, font=font)[2:4]
+        while tw > max_width and size > 8:
+            size -= 1
+            font = load_font(size)
+            tw, th = draw.textbbox((0, 0), text, font=font)[2:4]
+        x = (width - tw) // 2
+        draw.text((x, y), text, fill='black', font=font)
+        return th
+
+    # Generate barcode image without text
+    writer_opts = {
+        # Wider modules yield a naturally landscape barcode; height kept moderate
+        'module_width': 0.55,
+        'module_height': 48.0,
+        'quiet_zone': 6.0,
+        'write_text': False,
+    }
+    try:
+        barcode = Code128(res.barcode_value, writer=ImageWriter())
+    except Exception:
+        return abort(400, description='Invalid barcode content')
+    bio_bc = BytesIO()
+    barcode.write(bio_bc, options=writer_opts)
+    bio_bc.seek(0)
+    bc_img = Image.open(bio_bc).convert('RGB')
+
+    # Layout
+    margin_x = int(width * 0.06)
+    top_y = int(height * 0.10)
+    max_text_width = width - margin_x * 2
+
+    # Header lines
+    name_h = draw_centered_text(res.name or '', top_y, max_text_width, base_size=40)
+    type_y = top_y + name_h + 6
+    type_h = draw_centered_text((res.type or ''), type_y, max_text_width, base_size=28)
+
+    # Barcode placement
+    num_text_h = 28
+    available_h = height - (type_y + type_h + 16) - (num_text_h + 20)
+    target_w = width - margin_x * 2
+    # Prefer filling width first to enforce landscape feel, then cap to height
+    scale_w = target_w / bc_img.width
+    scale_h = available_h / bc_img.height if bc_img.height else 1.0
+    scale = min(scale_w, scale_h)
+    scale = max(scale, 0.5)  # avoid excessive downscaling
+    new_w = max(1, int(bc_img.width * scale))
+    new_h = max(1, int(bc_img.height * scale))
+    # Use NEAREST to keep barcode bars crisp
+    try:
+        from PIL import Image as _Img
+        bc_img = bc_img.resize((new_w, new_h), resample=_Img.NEAREST)
+    except Exception:
+        bc_img = bc_img.resize((new_w, new_h))
+    bc_x = (width - new_w) // 2
+    bc_y = type_y + type_h + 16 + max(0, (available_h - new_h) // 2)
+    label.paste(bc_img, (bc_x, bc_y))
+
+    # Barcode number
+    code_y = bc_y + new_h + 8
+    draw_centered_text(str(res.barcode_value or ''), code_y, max_text_width, base_size=26)
+
+    out = BytesIO()
+    label.save(out, format='PNG', dpi=(DPI, DPI))
+    out.seek(0)
+    return send_file(out, mimetype='image/png', as_attachment=True, download_name=f"{res.resource_id}.png")
+
+ 
+
+
+# ---------------- Public: Resource Loan/Return ---------------- #
+@app.route('/public/resources/loan', methods=['GET','POST'])
+def public_resource_loan():
+    """Public form to loan or return a resource by barcode and staff access code.
+
+    Form fields: action (loan|return), access_code, barcode_value
+    """
+    if request.method == 'GET':
+        from flask import make_response
+
+        # Pass through any status/message from PRG redirect to drive modal
+        status = (request.args.get('status') or '').strip()
+        msg = (request.args.get('msg') or '').strip()
+        resp = make_response(render_template('public/resources_loan.html', status=status, msg=msg))
+        # Disable caching to prevent autofill/back-forward cache
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        resp.headers['Pragma'] = 'no-cache'
+        resp.headers['Expires'] = '0'
+        return resp
+    # POST
+    action = (request.form.get('action') or '').strip().lower()
+    access_code = (request.form.get('access_code') or '').strip()
+    barcode_value = (request.form.get('barcode_value') or '').strip()
+    if action not in ('loan','return'):
+        return redirect(url_for('public_resource_loan', status='error', msg='Invalid action selected.'))
+    # Lookup staff by access_code
+    staff = Staff.query.filter_by(access_code=access_code).first()
+    if not staff:
+        return redirect(url_for('public_resource_loan', status='error', msg='Invalid access code.'))
+    # Lookup resource by barcode
+    res = Resource.query.filter_by(barcode_value=barcode_value).first()
+    if not res:
+        return redirect(url_for('public_resource_loan', status='error', msg='Resource not found for that barcode.'))
+    now = datetime.now(timezone.utc)
+    if action == 'loan':
+        # Only one active loan allowed per resource
+        existing = ResourceLoan.query.filter_by(resource_id=res.id, status='on_loan').first()
+        if existing:
+            return redirect(url_for('public_resource_loan', status='error', msg='Cannot loan: this item is already on loan.'))
+        due = datetime(now.year, now.month, now.day, 19, 30, tzinfo=timezone.utc)  # due today 19:30 UTC
+        loan = ResourceLoan(resource_id=res.id, staff_id=staff.id, loaned_at=now, due_at=due, status='on_loan')
+        db.session.add(loan)
+        try:
+            db.session.commit()
+        except Exception as _exc:
+            db.session.rollback()
+            return redirect(url_for('public_resource_loan', status='error', msg='Cannot loan: this item is already on loan.'))
+        return redirect(url_for('public_resource_loan', status='success', msg=f'Loan recorded for {res.name}. Due by 7:30 PM today.'))
+    else:
+        # Return flow
+        existing = ResourceLoan.query.filter_by(resource_id=res.id, status='on_loan').first()
+        if not existing:
+            return redirect(url_for('public_resource_loan', status='error', msg='Cannot return: this item is not currently on loan.'))
+        existing.status = 'returned'
+        existing.returned_at = now
+    db.session.commit()
+    return redirect(url_for('public_resource_loan', status='success', msg=f'Return recorded for {res.name}. Thank you.'))
+
+
+def _send_overdue_resource_emails():
+    """Send reminder emails to staff with items still on loan past due time (19:30 UTC)."""
+    now = datetime.now(timezone.utc)
+    overdue_loans = (ResourceLoan.query
+                     .filter(ResourceLoan.status=='on_loan')
+                     .filter(ResourceLoan.due_at <= now)
+                     .all())
+    for ln in overdue_loans:
+        try:
+            staff = ln.staff
+            res = ln.resource
+            if staff and getattr(staff, 'email', None):
+                subject = f"Overdue Resource: {res.name if res else 'Item'}"
+                body = (
+                    f"Hello {staff.name},<br/><br/>"
+                    f"This is a reminder that the resource <strong>{res.name if res else ln.resource_id}</strong> is still on loan and was due back by 7:30 PM today. "
+                    f"Please return it as soon as possible.<br/><br/>Thanks."
+                )
+                _send_email_safe(staff.email, subject, body, log_prefix='Resource overdue')
+        except Exception as _exc:
+            print(f"[WARN] Overdue email failed: {_exc}")
+
+# Schedule daily overdue check at 19:30 UTC if scheduler available
+if BackgroundScheduler is not None:
+    try:
+        _ensure_scheduler_started()
+        if scheduler:
+            try:
+                scheduler.remove_job('resource-overdue')
+            except Exception:
+                pass
+            try:
+                scheduler.add_job(_send_overdue_resource_emails, 'cron', hour=19, minute=30, id='resource-overdue')
+            except Exception as _e:
+                print(f"[WARN] Scheduler: failed to add resource overdue job: {_e}")
+    except Exception:
+        pass
+
+
+# ---------------- CLI: Staff Access Codes ---------------- #
+@app.cli.command('gen-staff-codes')
+@click.option('--force', is_flag=True, default=False, help='Regenerate for all staff (overwrites existing codes).')
+def gen_staff_codes(force: bool):
+    """Generate 6-digit unique access codes for staff.
+
+    By default, only fills missing/blank codes. Use --force to regenerate for all.
+    """
+    import random
+
+    from models import Staff
+    updated = 0
+    q = Staff.query
+    if not force:
+        q = q.filter((Staff.access_code.is_(None)) | (Staff.access_code == ''))
+    staff_list = q.all()
+    if not staff_list:
+        click.echo('No staff to update.')
+        return
+    # Build a set of codes to avoid in-memory collisions
+    existing = set()
+    if force:
+        # When forcing, drop all existing codes from the set to allow full regeneration
+        pass
+    else:
+        existing = {c for (c,) in db.session.query(Staff.access_code).filter(Staff.access_code.isnot(None)).all()}
+
+    def gen_code():
+        return f"{random.randint(0, 999999):06d}"
+
+    for s in staff_list:
+        if force:
+            s.access_code = None
+        code = gen_code()
+        tries = 0
+        while code in existing and tries < 20:
+            code = gen_code(); tries += 1
+        s.access_code = code
+        existing.add(code)
+        updated += 1
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        raise click.ClickException(f"Failed to update staff codes: {exc}")
+    click.echo(f"Updated access codes for {updated} staff member(s).")
 
 # ---------------- Students Module ---------------- #
 
@@ -5458,6 +6333,8 @@ def issue_edit(iid):
         flash('Issue updated','success')
         return redirect(url_for('issues_index'))
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        if request.args.get('view'):
+            return render_template('issues/view.html', issue=issue)
         return render_template('issues/partials/_form_inner.html', form=form, issue=issue)
     return render_template('issues/form.html', form=form, issue=issue)
 
@@ -5731,6 +6608,8 @@ def todo_edit(tid):
         flash('Task updated','success')
         return redirect(url_for('todos_index', assigned=t.assigned_to_id))
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        if request.args.get('view'):
+            return render_template('todos/view.html', todo=t)
         return render_template('todos/partials/_form_inner.html', form=form, todo=t)
     return render_template('todos/form.html', form=form, todo=t)
 
@@ -6362,28 +7241,36 @@ def company_json(company_id):
 @app.route('/api/students/suggest')
 @login_required
 def api_student_suggest():
-    """Return up to 20 students matching q in id or name.
+    """Return up to 20 students matching `q` in student_id or name.
 
     Response format: [{id, label, name, student_id}]
     Label is formatted as "<student_id>-<name>" for direct insertion.
+    Note: We do not filter by a non-existent `is_active`; optionally prioritize
+    status == 'Active' in ordering when available.
     """
-    q = (request.args.get('q') or '').strip().lower()
+    q = (request.args.get('q') or '').strip()
     limit = min(int(request.args.get('limit') or 20), 50)
     if not q:
         return jsonify([])
-    students = (Student.query
-                .filter(
-                    and_(
-                        Student.is_active.is_(True),
-                        or_(
-                            Student.name.ilike(f"%{q}%"),
-                            Student.student_id.ilike(f"%{q}%")
-                        )
-                    )
-                )
-                .order_by(Student.name.asc())
-                .limit(limit)
-                .all())
+
+    like = f"%{q}%"
+    # Match by ID or name, case-insensitive
+    base_q = Student.query.filter(
+        or_(Student.name.ilike(like), Student.student_id.ilike(like))
+    )
+
+    # Ordering: exact ID match first, then ID prefix, then 'Active' status, then name
+    try:
+        from sqlalchemy import case, func
+        q_lower = q.lower()
+        exact_id_first = case((func.lower(Student.student_id) == q_lower, 0), else_=1)
+        prefix_id_first = case((func.lower(Student.student_id).like(q_lower + '%'), 0), else_=1)
+        active_first = case((Student.status == 'Active', 0), else_=1)
+        base_q = base_q.order_by(exact_id_first, prefix_id_first, active_first, Student.name.asc())
+    except Exception:
+        base_q = base_q.order_by(Student.name.asc())
+
+    students = base_q.limit(limit).all()
     out = []
     for s in students:
         sid = (s.student_id or '').strip()

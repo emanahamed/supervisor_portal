@@ -1,5 +1,19 @@
 # Version History
 
+## 2.0.7 - 2025-10-12
+
+Navigation width & Staff access-code communications
+
+- Sidebar: increased desktop sidebar width slightly (md:w-72) and adjusted content padding to keep alignment. Ensures main items stay on a single line without wrapping; nav leafs now ellipsize if text is too long.
+- Ordering: kept Resource Management prominent directly under Dashboard as requested; labels are whitespace‑nowrap to avoid multi‑line items.
+- Staff: added per‑user “Email Code” action and bulk email actions (selected or all active) to send staff their 6‑digit access codes.
+  - Endpoints: `POST /api/staff/<id>/email-access-code` and `POST /api/staff/email-access-codes` (optional JSON `{ids:[...]}`), both permission‑gated to `manage_staff`.
+  - UI: multiselect checkboxes + Select All, top‑right bulk action buttons on Staff list.
+  - Status: converted Active/Inactive to an inline color‑coded toggle switch with immediate AJAX update via existing toggle API.
+- Security: CSRF meta/header injector continues to protect POST requests; endpoints return JSON with per‑row error collection on bulk sends.
+
+No schema changes. Safe minor release.
+
 ## 2.0.6 - 2025-10-09
 
 Dashboard: Pending End of Day (EOD) Widget + CSRF hardening for Error Reports

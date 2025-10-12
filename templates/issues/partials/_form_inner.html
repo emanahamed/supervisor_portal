@@ -13,14 +13,14 @@
   </div>
   <div>
     <label class="soft-label">Details</label>
-    {{ form.details(class='soft-input min-h-[140px]') }} {% for e in
-    form.details.errors %}
+    {{ form.details(class='soft-input min-h-[140px] w-full block') }} {% for e
+    in form.details.errors %}
     <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
     {% endfor %}
   </div>
   <div>
     <label class="soft-label">Action Taken (Optional)</label>
-    {{ form.action_taken(class='soft-input min-h-[120px]') }}
+    {{ form.action_taken(class='soft-input min-h-[120px] w-full block') }}
     <div class="text-[11px] text-slate-400 mt-1">
       Describe remediation steps or decisions. Leave blank if none yet.
     </div>

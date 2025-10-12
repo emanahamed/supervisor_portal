@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Resource Loan/Return</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css"
+    />
+    <style>
+      .soft-input {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        width: 100%;
+      }
+      .soft-btn {
+        background: #4f46e5;
+        color: white;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+      }
+      .soft-card {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.75rem;
+      }
+    </style>
+    <meta name="csrf-token" content="{{ CSRF_TOKEN }}" />
+    <script>
+      // Autofocus barcode field on load; handle modal auto-close + refresh
+      window.addEventListener("DOMContentLoaded", () => {
+        const bc = document.getElementById("barcode_value");
+        bc && bc.focus();
+        // Show modal if status provided by server via PRG
+        const status = {{ (status|tojson if status is defined else 'null') }};
+        const msg = {{ (msg|tojson if msg is defined else 'null') }};
+        const modal = document.getElementById('status-modal');
+        const modalMsg = document.getElementById('status-modal-msg');
+        if (modal && status && msg) {
+          modal.classList.remove('hidden');
+          modalMsg.textContent = msg;
+          modal.dataset.type = status;
+          // Auto close after 1.5s then reload to give a clean form state
+          setTimeout(() => {
+            modal.classList.add('hidden');
+            // Use replace to avoid back button resubmission
+            window.location.replace(window.location.pathname);
+          }, 1500);
+        }
+      });
+    </script>
+  </head>
+  <body class="bg-gray-50 min-h-screen">
+    <div class="max-w-xl mx-auto py-10 px-4">
+      <div class="mb-6 flex items-center gap-3">
+        <img
+          src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+          alt="Excel Tutors"
+          class="h-8 w-auto"
+        />
+        <div class="ml-1">
+          <h1 class="text-2xl font-semibold text-gray-800">
+            Resource Loan / Return
+          </h1>
+          <p class="text-sm text-gray-500">
+            Scan the resource barcode and enter your staff access code.
+          </p>
+        </div>
+      </div>
+      <div class="soft-card p-5">
+        <!-- Self-closing modal overlay -->
+        <div
+          id="status-modal"
+          class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+        >
+          <div
+            class="mx-4 w-full max-w-sm rounded-lg bg-white p-4 shadow-lg ring-1 ring-black/5"
+          >
+            <div class="flex items-start gap-3">
+              <div id="status-icon" class="mt-0.5">
+                <!-- Icons styled via status type using inline style -->
+                <svg
+                  id="icon-success"
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5 text-emerald-600 hidden"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                <svg
+                  id="icon-error"
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5 text-red-600 hidden"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </div>
+              <div class="text-sm">
+                <div
+                  id="status-modal-msg"
+                  class="font-medium text-gray-800"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <script>
+          // Toggle icon visibility based on modal type
+          const modalEl = document.getElementById("status-modal");
+          const successIcon = document.getElementById("icon-success");
+          const errorIcon = document.getElementById("icon-error");
+          const observer = new MutationObserver(() => {
+            if (!modalEl) return;
+            const t = modalEl.dataset.type;
+            if (!t) return;
+            if (t === "success") {
+              successIcon && successIcon.classList.remove("hidden");
+              errorIcon && errorIcon.classList.add("hidden");
+            } else {
+              errorIcon && errorIcon.classList.remove("hidden");
+              successIcon && successIcon.classList.add("hidden");
+            }
+          });
+          if (modalEl)
+            observer.observe(modalEl, {
+              attributes: true,
+              attributeFilter: ["data-type"],
+            });
+        </script>
+        <form
+          method="post"
+          class="space-y-3"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+        >
+          <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+          <div>
+            <label class="block text-xs font-semibold mb-1">Action</label>
+            <select name="action" class="soft-input" autocomplete="off">
+              <option value="loan">Loan</option>
+              <option value="return">Return</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1">Barcode</label>
+            <input
+              id="barcode_value"
+              name="barcode_value"
+              class="soft-input"
+              placeholder="Scan or paste barcode"
+              autocomplete="off"
+              inputmode="numeric"
+              enterkeyhint="done"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1"
+              >Staff Access Code</label
+            >
+            <input
+              name="access_code"
+              class="soft-input"
+              placeholder="6-digit code"
+              autocomplete="off"
+              inputmode="numeric"
+              enterkeyhint="done"
+            />
+          </div>
+          <div class="pt-2">
+            <button class="soft-btn">Submit</button>
+          </div>
+        </form>
+        {% if resource %}
+        <div class="mt-4 text-sm text-gray-600">
+          <div>
+            <span class="font-medium">Item:</span> {{ resource.name }} ({{
+            resource.resource_id }})
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </body>
+</html>

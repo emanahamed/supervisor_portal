@@ -12,6 +12,8 @@ ISSUE_STATUS_CHOICES = [("Pending","Pending"),("In Progress","In Progress"),("Re
 ISSUE_CRITICALITY_CHOICES = [("Minor","Minor"),("Significant","Significant"),("Medium","Medium"),("Critical","Critical")]
 ISSUE_URGENCY_CHOICES = [("Low","Low"),("Medium","Medium"),("High","High")]
 TODO_STATUS_CHOICES = [("Pending","Pending"),("Done","Done")]
+RESOURCE_TYPE_CHOICES = [("Laptop","Laptop"),("Walkie Talkie","Walkie Talkie"),("Tablet","Tablet"),("Other","Other")]
+RESOURCE_STATUS_CHOICES = [("functional","Functional"),("need_repair","Need Repair"),("lost","Lost"),("archived","Archived")]
 
 class LoginForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email()])
@@ -33,6 +35,7 @@ class StaffForm(FlaskForm):
     phone = StringField("Phone", validators=[Optional()])
     # Ensure data is always a list (avoids NoneType membership tests in template)
     branches = SelectMultipleField("Branch(es)", choices=BRANCH_CHOICES, validators=[Optional()], default=[])
+    access_code = StringField("Access Code", validators=[Optional(), Length(min=6, max=6)])
     active = BooleanField("Active", default=True)
     submit = SubmitField("Save")
 
@@ -267,3 +270,22 @@ class BookForm(FlaskForm):
     finishing = StringField("Finishing", validators=[Optional(), Length(max=120)])
     active = BooleanField("Active", default=True)
     submit = SubmitField("Save Book")
+
+
+# ---------------- Resource Management ---------------- #
+class ResourceForm(FlaskForm):
+    type = SelectField("Resource Type", choices=RESOURCE_TYPE_CHOICES, validators=[DataRequired()])
+    type_other = StringField("If Other, specify", validators=[Optional(), Length(max=120)])
+    branch = SelectField("Branch", choices=[(b,b) for b,_ in BRANCH_CHOICES], validators=[DataRequired()])
+    name = StringField("Resource Name", validators=[Optional(), Length(max=120)])  # server will auto-generate if blank
+    status = SelectField("Status", choices=RESOURCE_STATUS_CHOICES, validators=[DataRequired()], default='functional')
+    submit = SubmitField("Save")
+
+
+class ResourceBulkForm(FlaskForm):
+    type = SelectField("Resource Type", choices=RESOURCE_TYPE_CHOICES, validators=[DataRequired()])
+    type_other = StringField("If Other, specify", validators=[Optional(), Length(max=120)])
+    branch = SelectField("Branch", choices=[(b,b) for b,_ in BRANCH_CHOICES], validators=[DataRequired()])
+    status = SelectField("Status", choices=RESOURCE_STATUS_CHOICES, validators=[DataRequired()], default='functional')
+    quantity = IntegerField("Quantity", validators=[DataRequired(), NumberRange(min=1, max=500)], default=1)
+    submit = SubmitField("Create Resources")

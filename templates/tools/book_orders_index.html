@@ -14,15 +14,15 @@ block content %} {# tools nav removed #}
     </div>
     <div>
       <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Created From</label>
-      <input type="text" name="from" value="{{ created_from or '' }}" placeholder="DD-MM-YYYY" class="soft-input py-1 text-xs" />
+      <input type="date" name="from" value="{{ created_from or '' }}" class="soft-input py-1 text-xs" />
     </div>
     <div>
       <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Created To</label>
-      <input type="text" name="to" value="{{ created_to or '' }}" placeholder="DD-MM-YYYY" class="soft-input py-1 text-xs" />
+      <input type="date" name="to" value="{{ created_to or '' }}" class="soft-input py-1 text-xs" />
     </div>
     <div>
       <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Delivery Date</label>
-      <input type="text" name="delivery" value="{{ delivery or '' }}" placeholder="DD-MM-YYYY" class="soft-input py-1 text-xs" />
+      <input type="date" name="delivery" value="{{ delivery or '' }}" class="soft-input py-1 text-xs" />
     </div>
     <div>
       <label class="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">Has Delivery</label>

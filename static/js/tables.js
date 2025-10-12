@@ -110,8 +110,10 @@ function setupPagination(table) {
   } catch(e) {}
   const tbody = table.querySelector('tbody');
   if(!tbody) return;
-  const rows = Array.from(tbody.querySelectorAll('tr'));
-  if(rows.length <= perPage) return; // no need
+  let rows = Array.from(tbody.querySelectorAll('tr'));
+  // Function to get current visible (non-filtered) rows
+  const activeRows = () => rows.filter(r => !r.classList.contains('filtered-out'));
+  if(activeRows().length <= perPage) return; // no need when small dataset
   let current = 1;
   let totalPages = Math.ceil(rows.length / perPage);
 
@@ -141,10 +143,13 @@ function setupPagination(table) {
   sizeWrap.appendChild(sizeLabel); sizeWrap.appendChild(sizeSelect);
 
   function renderPage() {
+    const act = activeRows();
     const start = (current-1)*perPage;
     const end = start + perPage;
-    rows.forEach((r,i)=>{ r.style.display = (i>=start && i<end) ? '' : 'none'; });
-    info.textContent = `Showing ${start+1}–${Math.min(end, rows.length)} of ${rows.length}`;
+    // Hide all rows by default, then show slice of active rows
+    rows.forEach(r => { if(!r.classList.contains('filtered-out')) r.style.display = 'none'; });
+    act.forEach((r,i)=>{ r.style.display = (i>=start && i<end) ? '' : 'none'; });
+    info.textContent = `Showing ${act.length === 0 ? 0 : start+1}–${Math.min(end, act.length)} of ${act.length}`;
     controls.querySelectorAll('button.page-btn').forEach(btn => {
       const p = parseInt(btn.getAttribute('data-page'));
       btn.disabled = p === current;
@@ -156,6 +161,8 @@ function setupPagination(table) {
     controls.innerHTML='';
     const maxButtons = 7; // first, last, current +/-
     let pages = [];
+    const actCount = activeRows().length;
+    totalPages = Math.ceil(actCount / perPage) || 1;
     if(totalPages <= maxButtons) {
       for(let i=1;i<=totalPages;i++) pages.push(i);
     } else {
@@ -198,12 +205,21 @@ function setupPagination(table) {
     if(e.target.closest('th.sortable-col')) {
       // After sort, recompute rows array order
       setTimeout(() => {
-        const newRows = Array.from(tbody.querySelectorAll('tr'));
-        newRows.forEach(r=>r.style.display='');
+        rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.forEach(r=>{ if(!r.classList.contains('filtered-out')) r.style.display=''; });
         current = 1;
+        buildControls();
         renderPage();
       }, 0);
     }
+  });
+
+  // Filters changed hook: rebuild pagination for active subset
+  table.addEventListener('filters-changed', () => {
+    rows = Array.from(tbody.querySelectorAll('tr'));
+    current = 1;
+    buildControls();
+    renderPage();
   });
 }
 

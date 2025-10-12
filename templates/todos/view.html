@@ -1,0 +1,36 @@
+<div class="space-y-3 text-sm">
+  <div class="grid grid-cols-2 gap-3">
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Description</div>
+      <div class="font-medium">{{ todo.description }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Status</div>
+      <div>{{ todo.status }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Criticality</div>
+      <div>{{ todo.criticality or '-' }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Urgency</div>
+      <div>{{ todo.urgency or '-' }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Due Date</div>
+      <div>{{ todo.due_date|fmt_date if todo.due_date else '-' }}</div>
+    </div>
+  </div>
+  <div>
+    <div class="text-[11px] uppercase text-slate-500">Notes</div>
+    <div class="soft-card p-3">{{ todo.notes or '-' }}</div>
+  </div>
+  <div>
+    <div class="text-[11px] uppercase text-slate-500">Actions Taken</div>
+    <div class="soft-card p-3">{{ todo.actions_taken or '-' }}</div>
+  </div>
+  <div>
+    <div class="text-[11px] uppercase text-slate-500">Assigned To</div>
+    <div>{{ todo.assigned_to.name if todo.assigned_to else '-' }}</div>
+  </div>
+</div>

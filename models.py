@@ -138,6 +138,67 @@ try:
 except Exception:
     pass
 
+
+# ---------------- Resource Management ---------------- #
+class Resource(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    # Laptop | Walkie Talkie | Tablet | Other
+    type = db.Column(db.String(40), nullable=False, index=True)
+    type_other = db.Column(db.String(120))  # required if type == 'Other'
+    branch = db.Column(db.String(120), nullable=False, index=True)
+    # Per-type sequence to keep stable auto-increment per resource type
+    type_seq = db.Column(db.Integer, nullable=False, default=1)
+    # System generated identifiers
+    resource_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    barcode_value = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    # functional | need_repair | lost | archived
+    status = db.Column(db.String(20), nullable=False, default='functional', index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def type_slug(self):
+        return (self.type or '').strip().replace(' ', '').upper()
+
+    def branch_initials(self):
+        b = (self.branch or '').lower()
+        if 'whitechapel' in b:
+            return 'WC'
+        if 'east ham' in b:
+            return 'EH'
+        if 'stratford' in b:
+            return 'ST'
+        if 'docklands' in b:
+            return 'DL'
+        # default to first two letters upper
+        return (self.branch or '')[:2].upper()
+
+
+class ResourceLoan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    resource_id = db.Column(db.Integer, db.ForeignKey('resource.id', ondelete='CASCADE'), nullable=False, index=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id', ondelete='CASCADE'), nullable=False, index=True)
+    loaned_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    due_at = db.Column(db.DateTime, index=True)
+    returned_at = db.Column(db.DateTime, index=True)
+    status = db.Column(db.String(20), default='on_loan', index=True)  # on_loan | returned
+    notes = db.Column(db.Text)
+
+    resource = db.relationship('Resource', lazy=True)
+    staff = db.relationship('Staff', lazy=True)
+
+    def is_active(self) -> bool:
+        return self.returned_at is None and (self.status or '') == 'on_loan'
+
+    def is_overdue(self) -> bool:
+        try:
+            from datetime import datetime as _dt
+            from datetime import timezone as _tz
+            now = _dt.now(_tz.utc)
+            return self.is_active() and self.due_at is not None and self.due_at <= now
+        except Exception:
+            return False
+
 class Staff(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -145,6 +206,8 @@ class Staff(db.Model):
     email = db.Column(db.String(255))
     phone = db.Column(db.String(50))
     branch = db.Column(db.String(255))  # CSV of branches
+    # Six-digit access code for staff login/identification (added Oct 2025)
+    access_code = db.Column(db.String(6), unique=True, index=True)
     active = db.Column(db.Boolean, default=True, index=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

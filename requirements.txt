@@ -5,7 +5,7 @@
 Flask==3.0.3
 Flask-Login==0.6.3
 Flask-SQLAlchemy==3.1.1
-SQLAlchemy==2.0.30        # Explicit pin (transitive via Flask-SQLAlchemy) for consistent core/ORM behavior
+SQLAlchemy       # Explicit pin (transitive via Flask-SQLAlchemy) for consistent core/ORM behavior
 Flask-WTF==1.2.1
 email-validator==2.2.0
 itsdangerous==2.2.0
@@ -15,6 +15,10 @@ xlrd==2.0.1                # Legacy XLS support (keep while old formats still ap
 requests==2.32.3
 xhtml2pdf==0.2.15          # HTML to PDF for reports/invoices
 APScheduler==3.10.4        # Background scheduling (appointment reminders)
+tzlocal==5.2               # Explicit tz provider for APScheduler (UTC/local time handling)
+qrcode==7.4.2              # QR code generation (legacy; not used for resources anymore)
+Pillow==10.4.0             # Imaging library used to compose barcode PNGs
+python-barcode==0.15.1     # 1D barcode generation (Code128/EAN) for resources
 
 ########################################
 # Development / Testing
@@ -32,7 +36,8 @@ pytest==8.2.2
 # Upgrade Guidance
 # - Bump versions cautiously; run full test suite & manual smoke of:
 #   * Observations extended report (PDF/email rendering)
-#   * Appointment reminder scheduling (APScheduler init)
+#   * Appointment reminder scheduling (APScheduler init; tzlocal installed)
 #   * Invoice print & email flow (xhtml2pdf / HTML generation)
+#   * Student Concerns XLSX export (pandas + openpyxl)
 # - When updating SQLAlchemy / Flask-SQLAlchemy ensure no deprecation warnings for Session/Query patterns.
 ########################################

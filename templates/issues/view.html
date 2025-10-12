@@ -1,0 +1,32 @@
+<div class="space-y-3 text-sm">
+  <div class="grid grid-cols-2 gap-3">
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Title</div>
+      <div class="font-medium">{{ issue.title }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Status</div>
+      <div>{{ issue.status }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Criticality</div>
+      <div>{{ issue.criticality or '-' }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Urgency</div>
+      <div>{{ issue.urgency or '-' }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Branch</div>
+      <div>{{ issue.branch or '-' }}</div>
+    </div>
+  </div>
+  <div>
+    <div class="text-[11px] uppercase text-slate-500">Details</div>
+    <div class="soft-card p-3">{{ issue.details or '-' }}</div>
+  </div>
+  <div>
+    <div class="text-[11px] uppercase text-slate-500">Action Taken</div>
+    <div class="soft-card p-3">{{ issue.action_taken or '-' }}</div>
+  </div>
+</div>

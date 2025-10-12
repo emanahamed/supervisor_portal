@@ -60,6 +60,7 @@
             {% set ts = r.created_at %}
             <td class="px-3 py-2 text-sm"><time datetime="{{ ts.strftime('%Y-%m-%dT%H:%M') }}">{{ ts.strftime('%d-%m-%Y %H:%M') }}</time></td>
             <td class="px-3 py-2 text-sm text-right">
+              <a class="soft-btn" href="#" @click.prevent="openView({{ r.id }})">View</a>
               <a class="soft-btn" href="#" @click.prevent="openEdit({{ r.id }})">Edit</a>
               <form method="post" action="{{ url_for('floor_call_list_delete', cid=r.id) }}" class="inline" onsubmit="return confirm('Delete this call? This cannot be undone.')">
                 <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
@@ -98,6 +99,7 @@ function callsUI(){
     modalBody: '',
     debouncedFilter: debounce(function(){ this.applyFilter(); },300),
     openCreate(){ this.loadModal('{{ url_for('floor_call_list_new') }}', 'New Call'); },
+    openView(id){ this.loadModal(`/floor/call-list/${id}/view`, 'Call Details'); },
     openEdit(id){ this.loadModal(`/floor/call-list/${id}/edit`, 'Edit Call'); },
     closeModal(){ this.showModal=false; this.modalTitle=''; this.modalBody=''; },
     async loadModal(url, title){
@@ -106,8 +108,9 @@ function callsUI(){
       // Initialize Alpine on injected content and enhance student lookup with async search
       this.$nextTick(()=>{
         try{ if(window.Alpine && this.$refs.modalBox){ window.Alpine.initTree(this.$refs.modalBox); } }catch(_e){}
-        const input = document.querySelector('form input[placeholder="Search by name or ID"]');
-        const select = document.querySelector('form select[name="student_id"]');
+        const scope = this.$refs.modalBox; // limit queries to modal box
+        const input = scope.querySelector('form input[placeholder="Search by name or ID"]');
+        const select = scope.querySelector('form select[name="student_id"]');
         if(!input || !select) return;
         let timer;
         input.addEventListener('input', ()=>{

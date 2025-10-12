@@ -16,6 +16,10 @@ content %}
     <a class="soft-btn bg-slate-100" href="{{ url_for('staff_export') }}"
       >Export</a
     >
+    <div class="hidden md:flex items-center gap-2 ml-2">
+      <button id="emailSelected" class="soft-btn">Email selected codes</button>
+      <button id="emailAllActive" class="soft-btn">Email all active</button>
+    </div>
   </div>
 </div>
 
@@ -224,10 +228,14 @@ content %}
         class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
       >
         <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 w-8">
+            <input id="selectAll" type="checkbox" class="w-4 h-4" />
+          </th>
           <th class="py-2 px-3 text-left">Name</th>
           <th class="py-2 px-3 text-left">Dept</th>
           <th class="py-2 px-3 text-left">Email</th>
           <th class="py-2 px-3 text-left">Phone</th>
+          <th class="py-2 px-3 text-left">Access Code</th>
           <th class="py-2 px-3 text-left">Branches</th>
           <th class="py-2 px-3 text-left">Status</th>
           <th class="py-2 px-3 text-left w-32 no-sort"></th>
@@ -236,17 +244,42 @@ content %}
       <tbody class="divide-y divide-slate-100">
         {% for s in staff %}
         <tr class="hover:bg-slate-50">
+          <td class="py-2 px-3">
+            <input type="checkbox" class="rowChk w-4 h-4" value="{{ s.id }}" />
+          </td>
           <td class="py-2 px-3 whitespace-nowrap">{{ s.name }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ s.department }}</td>
           <td class="py-2 px-3">{{ s.email }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ s.phone }}</td>
+          <td class="py-2 px-3">{{ s.access_code or '—' }}</td>
           <td class="py-2 px-3">{{ s.branch }}</td>
           <td class="py-2 px-3 whitespace-nowrap">
-            <span
-              class="soft-badge {% if s.active %}!bg-emerald-100 !text-emerald-700{% else %}!bg-slate-200 !text-slate-600{% endif %}"
-            >
-              {{ 'Active' if s.active else 'Inactive' }}
-            </span>
+            <label class="inline-flex items-center cursor-pointer select-none">
+              <input
+                type="checkbox"
+                data-toggle-id="{{ s.id }}"
+                class="sr-only peer"
+                {%
+                if
+                s.active
+                %}checked{%
+                endif
+                %}
+              />
+              <span
+                class="w-9 h-5 bg-slate-300 rounded-full relative transition-colors peer-checked:bg-emerald-400"
+              >
+                <span
+                  id="dot-{{ s.id }}"
+                  class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-all peer-checked:left-4"
+                ></span>
+              </span>
+              <span
+                id="badge-{{ s.id }}"
+                class="ml-2 text-xs font-semibold {% if s.active %}text-emerald-700{% else %}text-slate-600{% endif %}"
+                >{{ 'Active' if s.active else 'Inactive' }}</span
+              >
+            </label>
           </td>
           <td class="py-2 px-3 text-xs whitespace-nowrap">
             <a
@@ -268,12 +301,9 @@ content %}
               >Delete</a
             >
             <span class="text-slate-400">·</span>
-            <a
-              class="text-slate-600"
-              href="{{ url_for('staff_toggle_active', sid=s.id) }}"
-            >
-              {{ 'Deactivate' if s.active else 'Activate' }}
-            </a>
+            <button class="text-emerald-700" data-email-id="{{ s.id }}">
+              Email Code
+            </button>
           </td>
         </tr>
         {% endfor %}
@@ -367,6 +397,142 @@ content %}
     clearBtn.addEventListener("click", () => {
       window.location = window.location.pathname;
     });
+
+    // Toggle handlers (switch)
+    document.querySelectorAll("[data-toggle-id]").forEach((el) => {
+      el.addEventListener("change", async () => {
+        const id = el.getAttribute("data-toggle-id");
+        el.disabled = true;
+        try {
+          const res = await fetch(`/api/staff/${id}/toggle-active`, {
+            method: "POST",
+            headers: { Accept: "application/json" },
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "Failed");
+          const badge = document.getElementById(`badge-${id}`);
+          if (badge) {
+            badge.textContent = data.badge;
+            badge.classList.remove("text-emerald-700", "text-slate-600");
+            badge.classList.add(
+              data.active ? "text-emerald-700" : "text-slate-600"
+            );
+          }
+          const dot = document.getElementById(`dot-${id}`);
+          if (dot) {
+            /* position handled by peer classes; nothing extra */
+          }
+        } catch (err) {
+          alert("Toggle failed: " + (err?.message || err));
+          el.checked = !el.checked;
+        } finally {
+          el.disabled = false;
+        }
+      });
+    });
+
+    // Email single
+    document.querySelectorAll("[data-email-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-email-id");
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/staff/${id}/email-access-code`, {
+            method: "POST",
+            headers: { Accept: "application/json" },
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "Failed");
+          window.dispatchEvent(
+            new CustomEvent("toast", {
+              detail: { message: "Email sent", type: "success" },
+            })
+          );
+        } catch (err) {
+          alert("Email failed: " + (err?.message || err));
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // Select all
+    const selectAll = document.getElementById("selectAll");
+    const rowChks = () => Array.from(document.querySelectorAll(".rowChk"));
+    if (selectAll) {
+      selectAll.addEventListener("change", () => {
+        rowChks().forEach((c) => (c.checked = selectAll.checked));
+      });
+    }
+
+    // Email selected
+    const emailSelected = document.getElementById("emailSelected");
+    emailSelected &&
+      emailSelected.addEventListener("click", async () => {
+        const ids = rowChks()
+          .filter((c) => c.checked)
+          .map((c) => parseInt(c.value, 10));
+        if (ids.length === 0) {
+          alert("Select at least one row.");
+          return;
+        }
+        emailSelected.disabled = true;
+        try {
+          const res = await fetch("/api/staff/email-access-codes", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ ids }),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "Failed");
+          window.dispatchEvent(
+            new CustomEvent("toast", {
+              detail: {
+                message: `Sent ${data.sent} email(s)`,
+                type: "success",
+              },
+            })
+          );
+          if ((data.errors || []).length) {
+            console.warn("Email errors", data.errors);
+          }
+        } catch (err) {
+          alert("Bulk email failed: " + (err?.message || err));
+        } finally {
+          emailSelected.disabled = false;
+        }
+      });
+
+    // Email all active
+    const emailAllActive = document.getElementById("emailAllActive");
+    emailAllActive &&
+      emailAllActive.addEventListener("click", async () => {
+        if (!confirm("Send access code email to all active staff?")) return;
+        emailAllActive.disabled = true;
+        try {
+          const res = await fetch("/api/staff/email-access-codes", {
+            method: "POST",
+            headers: { Accept: "application/json" },
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "Failed");
+          window.dispatchEvent(
+            new CustomEvent("toast", {
+              detail: {
+                message: `Sent ${data.sent} email(s)`,
+                type: "success",
+              },
+            })
+          );
+        } catch (err) {
+          alert("Bulk email failed: " + (err?.message || err));
+        } finally {
+          emailAllActive.disabled = false;
+        }
+      });
   })();
 </script>
 {% endblock %}

@@ -235,8 +235,8 @@
       </div>
     </div>
 
-    <!-- Desktop sidebar (redesigned) -->
-    <div class="hidden md:flex md:w-64 md:fixed md:inset-y-0">
+  <!-- Desktop sidebar (redesigned) -->
+  <div class="hidden md:flex md:w-72 md:fixed md:inset-y-0">
       <div class="relative flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6 dark:border-white/10 dark:bg-gray-900 dark:before:pointer-events-none dark:before:absolute dark:before:inset-0 dark:before:bg-black/10 nav-scroll">
         <div class="relative flex h-16 shrink-0 items-center">
           <a href="{{ url_for('index') }}" class="flex items-center gap-2">
@@ -256,10 +256,10 @@
     </div>
 
     <!-- Main content area -->
-    <div class="flex flex-col flex-1 md:pl-60">
+  <div class="flex flex-col flex-1 md:pl-72">
       <header class="sticky top-0 z-30 backdrop-blur bg-white/85 dark:bg-[#121212]/90 border-b border-slate-200 dark:border-[#1e1e1e]">
         <!-- Added extra left padding (pl-8) to create more horizontal space from sidebar -->
-        <div class="pl-8 pr-4 h-16 flex items-center gap-4">
+  <div class="pl-8 pr-4 h-16 flex items-center gap-4 whitespace-nowrap">
           <div class="flex flex-col gap-1 min-w-0">
             <div class="flex items-center gap-2">
               <button class="md:hidden soft-btn text-xs" @click="sidebarOpen=true">Menu</button>
@@ -374,6 +374,37 @@
       </div>
     </div>
 
+    <!-- Report Issue Modal -->
+    <div
+      id="reportModal"
+      class="fixed inset-0 hidden items-start md:items-center justify-center z-50 p-4 md:p-8"
+      aria-hidden="true"
+    >
+      <div class="absolute inset-0 bg-slate-900/60" data-r-close></div>
+      <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div class="px-5 py-3 border-b flex items-center gap-3">
+          <h3 class="font-semibold text-sm tracking-wide uppercase text-slate-600">Report an Issue</h3>
+          <span class="ml-auto"></span>
+          <button class="text-slate-500 hover:text-slate-700" data-r-close aria-label="Close report issue">✕</button>
+        </div>
+        <form method="post" action="{{ url_for('error_report_create') }}" enctype="multipart/form-data" class="p-5 space-y-3 text-sm">
+          {{ csrf_field() }}
+          <input type="hidden" name="title" value="User issue on {{ request.path }}" />
+          <label class="block text-xs font-semibold">Comment (optional)</label>
+          <textarea name="comment" rows="4" class="soft-input w-full" placeholder="Describe what happened, steps to reproduce, or add any details..."></textarea>
+          <label class="block text-xs font-semibold">Screenshot (optional)</label>
+          <input type="file" name="screenshot" accept="image/png,image/jpeg" class="soft-input w-full text-xs" />
+          <div class="flex items-center justify-between pt-2 text-[10px] text-slate-500">
+            <span>We’ll include page URL and your account. No stack trace is attached unless reporting from an error page.</span>
+            <div class="flex gap-2">
+              <button type="button" class="px-3 py-1 rounded bg-slate-100 hover:bg-slate-200" data-r-close>Cancel</button>
+              <button class="soft-btn soft-btn-primary">Send Report</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Version Modal -->
     <div
       id="versionModal"
@@ -481,6 +512,19 @@
         function uncloak(){ document.querySelectorAll('[x-cloak]').forEach(el=> el.removeAttribute('x-cloak')); }
         document.addEventListener('alpine:init', ()=> { /* Alpine will remove x-cloak automatically */ });
         window.addEventListener('DOMContentLoaded', ()=> { setTimeout(uncloak, 2000); });
+      })();
+    </script>
+    <script>
+      (function(){
+        // Report Issue Modal wiring
+        const modal=document.getElementById('reportModal');
+        if(modal){
+          function open(){ modal.classList.remove('hidden'); modal.classList.add('flex'); }
+          function close(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
+          window.addEventListener('open-report-modal', open);
+          document.addEventListener('click', (e)=>{ if(e.target.hasAttribute('data-r-close')) close(); });
+          document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !modal.classList.contains('hidden')) close(); });
+        }
       })();
     </script>
     <script>

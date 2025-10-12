@@ -76,27 +76,30 @@
   {{ form.hidden_tag() }}
   <div>
     <label class="soft-label">Meeting With</label>
-    {{ form.participant_id(class='soft-input') }} {% for e in
+    {{ form.participant_id(class='soft-input', required=True) }} {% for e in
     form.participant_id.errors %}
     <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
     {% endfor %}
   </div>
   <div>
     <label class="soft-label">Agenda / Reason</label>
-    {{ form.agenda(class='soft-input') }} {% for e in form.agenda.errors %}
+    {{ form.agenda(class='soft-input', required=True) }} {% for e in
+    form.agenda.errors %}
     <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
     {% endfor %}
   </div>
   <div class="grid md:grid-cols-2 gap-4">
     <div>
       <label class="soft-label">Date</label>
-      {{ form.date(class='soft-input') }} {% for e in form.date.errors %}
+      {{ form.date(class='soft-input', type='date', required=True) }} {% for e
+      in form.date.errors %}
       <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
       {% endfor %}
     </div>
     <div>
       <label class="soft-label">Time (HH:MM)</label>
-      {{ form.time(class='soft-input') }} {% for e in form.time.errors %}
+      {{ form.time(class='soft-input', type='time', required=True) }} {% for e
+      in form.time.errors %}
       <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
       {% endfor %}
     </div>

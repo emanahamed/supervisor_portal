@@ -22,6 +22,19 @@
         <label class="block text-sm mb-1">Phone</label>
         {{ form.phone(class_='soft-input') }}
       </div>
+      <div>
+        <label class="block text-sm mb-1">Access Code</label>
+        <div class="flex gap-2">
+          {{ form.access_code(class_='soft-input', placeholder='6-digit code')
+          }}
+          <button type="button" class="soft-btn bg-slate-100" id="genCodeBtn">
+            Generate
+          </button>
+        </div>
+        <p class="text-xs text-slate-500 mt-1">
+          Exactly 6 digits. Leave blank to auto-generate.
+        </p>
+      </div>
       <div class="md:col-span-2">
         <label class="block text-sm mb-1">Branches</label>
         <div
@@ -132,6 +145,18 @@
     });
     menu.addEventListener("change", syncFromMenu);
     syncFromMenu();
+
+    // Generate 6-digit access code
+    const genBtn = document.getElementById("genCodeBtn");
+    if (genBtn) {
+      genBtn.addEventListener("click", () => {
+        const code = Math.floor(Math.random() * 1000000)
+          .toString()
+          .padStart(6, "0");
+        const input = document.querySelector('input[name="access_code"]');
+        if (input) input.value = code;
+      });
+    }
   })();
 </script>
 {% endblock %}

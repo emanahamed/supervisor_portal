@@ -1,0 +1,48 @@
+<div class="space-y-3 text-sm">
+  <div class="grid grid-cols-2 gap-3">
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Date</div>
+      <div>{{ record.date.strftime('%d-%m-%Y') if record.date else '-' }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">By</div>
+      <div>{{ record.created_by.name if record.created_by else '-' }}</div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Student</div>
+      <div>
+        {{ record.student.student_id if record.student else '' }} — {{
+        record.student.name if record.student else '-' }}
+      </div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Reason</div>
+      <div>{{ record.reason|title }}</div>
+    </div>
+  </div>
+  <div>
+    <div class="text-[11px] uppercase text-slate-500">Discussion</div>
+    <div class="soft-card p-3">{{ record.discussion or '-' }}</div>
+  </div>
+  <div>
+    <div class="text-[11px] uppercase text-slate-500">Outcome</div>
+    <div class="soft-card p-3">{{ record.outcome or '-' }}</div>
+  </div>
+  {% if record.appointment_date or record.appointment_with %}
+  <div class="grid grid-cols-2 gap-3">
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Appt. Date</div>
+      <div>
+        {{ record.appointment_date.strftime('%d-%m-%Y') if
+        record.appointment_date else '-' }}
+      </div>
+    </div>
+    <div>
+      <div class="text-[11px] uppercase text-slate-500">Appt. With</div>
+      <div>
+        {{ record.appointment_with.name if record.appointment_with else '-' }}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>

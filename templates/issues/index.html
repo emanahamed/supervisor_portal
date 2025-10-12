@@ -383,6 +383,13 @@ page_title %}Issues{% endblock %} {% block content %}
           </td>
           <td class="py-2 px-3 text-xs whitespace-nowrap">
             <a
+              class="text-slate-700"
+              data-issue-view
+              href="{{ url_for('issue_edit', iid=i.id) }}?view=1"
+              >View</a
+            >
+            <span class="text-slate-400">·</span>
+            <a
               class="text-indigo-600"
               data-issue-edit
               href="{{ url_for('issue_edit', iid=i.id) }}"
@@ -489,6 +496,10 @@ page_title %}Issues{% endblock %} {% block content %}
     document.addEventListener('click', e=>{
       const link = e.target.closest('a[data-issue-edit]');
       if(link){ e.preventDefault(); fetchIssueForm(link.href); }
+    });
+    document.addEventListener('click', e=>{
+      const v = e.target.closest('a[data-issue-view]');
+      if(v){ e.preventDefault(); fetchIssueForm(v.href); }
     });
     const els = {
       search: document.getElementById("issueSearch"),
