@@ -36,6 +36,13 @@ block content %}
     <button class="soft-btn bg-indigo-100 text-indigo-700" id="btnBulk">
       Bulk Create
     </button>
+    <button
+      class="soft-btn bg-slate-100"
+      id="btnBarcodesPdf"
+      title="Download barcodes PDF (15 per page)"
+    >
+      Barcodes PDF
+    </button>
   </div>
 </div>
 
@@ -418,6 +425,21 @@ block content %}
     fStatus?.addEventListener("change", applyFilters);
     // Initial pass (no filters) to ensure classes are consistent
     applyFilters();
+  })();
+  // Barcodes PDF button
+  (function () {
+    const btnPdf = document.getElementById("btnBarcodesPdf");
+    const typeSel = document.getElementById("fType");
+    if (btnPdf) {
+      btnPdf.addEventListener("click", function () {
+        const t =
+          typeSel && typeSel.value ? encodeURIComponent(typeSel.value) : "";
+        const url = t
+          ? `{{ url_for('resources_barcodes_pdf') }}?type=${t}`
+          : `{{ url_for('resources_barcodes_pdf') }}`;
+        window.location = url;
+      });
+    }
   })();
 </script>
 {% endblock %}

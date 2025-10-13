@@ -1,0 +1,78 @@
+{% set per_page = 15 %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @page {
+        size: A4;
+        margin: 18mm;
+      }
+      body {
+        font-family: DejaVu Sans, sans-serif;
+      }
+      .grid {
+        display: flex;
+        flex-wrap: wrap;
+      }
+      .cell {
+        box-sizing: border-box;
+        width: 33.3333%;
+        padding: 6px;
+        page-break-inside: avoid;
+      }
+      .label {
+        border: 1px solid #000;
+        padding: 6px;
+        text-align: center;
+      }
+      .img-wrap {
+        width: 100%;
+      }
+      .img-wrap img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .meta {
+        font-size: 11px;
+        margin-top: 4px;
+      }
+      .page-break {
+        page-break-after: always;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 8px 0;
+      }
+      .header {
+        margin-bottom: 8px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <strong>Resource Barcodes</strong>
+      {% if selected_type %} — Type: {{ selected_type }}{% endif %}
+    </div>
+    {% for chunk in labels | batch(per_page, fill_with=None) %}
+    <div class="grid">
+      {% for item in chunk %} {% if item %}
+      <div class="cell">
+        <div class="label">
+          <div class="img-wrap">
+            <img src="{{ item.img_data }}" alt="Barcode {{ item.id }}" />
+          </div>
+          <div class="meta">
+            {{ item.id }} · {{ item.name }} · {{ item.type }}
+          </div>
+        </div>
+      </div>
+      {% endif %} {% endfor %}
+    </div>
+    {% if not loop.last %}
+    <div class="page-break"></div>
+    {% endif %} {% endfor %}
+  </body>
+</html>

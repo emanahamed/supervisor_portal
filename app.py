@@ -4293,52 +4293,73 @@ def resources_barcode_png(rid: int):
         draw.text((x, y), text, fill='black', font=font)
         return th
 
-    # Generate barcode image without text
-    writer_opts = {
-        # Wider modules yield a naturally landscape barcode; height kept moderate
-        'module_width': 0.55,
-        'module_height': 48.0,
-        'quiet_zone': 6.0,
-        'write_text': False,
-    }
-    try:
-        barcode = Code128(res.barcode_value, writer=ImageWriter())
-    except Exception:
-        return abort(400, description='Invalid barcode content')
-    bio_bc = BytesIO()
-    barcode.write(bio_bc, options=writer_opts)
-    bio_bc.seek(0)
-    bc_img = Image.open(bio_bc).convert('RGB')
-
-    # Layout
+    # Target area for barcode in px (leave margins for text above/below)
     margin_x = int(width * 0.06)
     top_y = int(height * 0.10)
     max_text_width = width - margin_x * 2
+    name_h = 0  # calculated later when drawing text
+    type_y = 0
+    type_h = 0
+    num_text_h = 28
+    # Estimate available height after headers (recomputed after text draw)
+    available_h_est = int(height * 0.55)
 
-    # Header lines
+    # Generate a crisp Code128 barcode at 300 DPI sized to our target width without resampling.
+    # We adjust module_width (in mm) based on an initial render to fit target width.
+    def _render_barcode(module_width_mm: float, module_height_mm: float, quiet_zone_mm: float):
+        opts = {
+            'module_width': module_width_mm,
+            'module_height': module_height_mm,
+            'quiet_zone': quiet_zone_mm,
+            'write_text': False,
+            'dpi': DPI,
+        }
+        bc = Code128(str(res.barcode_value or ''), writer=ImageWriter())
+        tmp = BytesIO()
+        bc.write(tmp, options=opts)
+        tmp.seek(0)
+        return Image.open(tmp).convert('RGB')
+
+    try:
+        # Initial guess for module sizing (mm)
+        mw = 0.70  # bar width (mm)
+        mh = 22.0  # bar height (mm)
+        qz = max(7.0, mw * 10)  # quiet zone ~10x module width (mm)
+        bc_img = _render_barcode(mw, mh, qz)
+        target_w = width - margin_x * 2
+        # If too wide/narrow, scale module width and re-render (linear relationship)
+        if bc_img.width != 0:
+            scale_factor = target_w / bc_img.width
+            # Only re-render if >15% off to avoid tiny variations
+            if scale_factor < 0.85 or scale_factor > 1.15:
+                mw = max(0.40, min(1.20, mw * scale_factor))
+                qz = max(7.0, mw * 10)
+                bc_img = _render_barcode(mw, mh, qz)
+        # Ensure height fits roughly within available area; tweak height if needed
+        if bc_img.height > available_h_est * 1.1:
+            # Reduce height moderately and re-render (keep width via same mw/qz)
+            mh = max(16.0, mh * (available_h_est / bc_img.height))
+            bc_img = _render_barcode(mw, mh, qz)
+    except Exception:
+        return abort(400, description='Invalid barcode content')
+
+    # Layout text (after barcode sizing decisions)
     name_h = draw_centered_text(res.name or '', top_y, max_text_width, base_size=40)
     type_y = top_y + name_h + 6
     type_h = draw_centered_text((res.type or ''), type_y, max_text_width, base_size=28)
-
-    # Barcode placement
-    num_text_h = 28
     available_h = height - (type_y + type_h + 16) - (num_text_h + 20)
-    target_w = width - margin_x * 2
-    # Prefer filling width first to enforce landscape feel, then cap to height
-    scale_w = target_w / bc_img.width
-    scale_h = available_h / bc_img.height if bc_img.height else 1.0
-    scale = min(scale_w, scale_h)
-    scale = max(scale, 0.5)  # avoid excessive downscaling
-    new_w = max(1, int(bc_img.width * scale))
-    new_h = max(1, int(bc_img.height * scale))
-    # Use NEAREST to keep barcode bars crisp
-    try:
+    # Paste barcode at native size (no resampling) to preserve bar fidelity
+    bc_w, bc_h = bc_img.width, bc_img.height
+    # If still slightly larger than available area, final safeguard: only downscale with NEAREST
+    if bc_w > (width - margin_x * 2) or bc_h > available_h:
         from PIL import Image as _Img
+        scale = min((width - margin_x * 2) / bc_w, available_h / bc_h)
+        new_w = max(1, int(bc_w * scale))
+        new_h = max(1, int(bc_h * scale))
         bc_img = bc_img.resize((new_w, new_h), resample=_Img.NEAREST)
-    except Exception:
-        bc_img = bc_img.resize((new_w, new_h))
-    bc_x = (width - new_w) // 2
-    bc_y = type_y + type_h + 16 + max(0, (available_h - new_h) // 2)
+        bc_w, bc_h = new_w, new_h
+    bc_x = (width - bc_w) // 2
+    bc_y = type_y + type_h + 16 + max(0, (available_h - bc_h) // 2)
     label.paste(bc_img, (bc_x, bc_y))
 
     # Barcode number
@@ -4351,6 +4372,157 @@ def resources_barcode_png(rid: int):
     return send_file(out, mimetype='image/png', as_attachment=True, download_name=f"{res.resource_id}.png")
 
  
+
+@app.route('/resources/barcodes.pdf')
+@login_required
+@permission_required('manage_resources')
+def resources_barcodes_pdf():
+    """Generate a single PDF containing barcode labels for resources.
+
+    Query params:
+    - type: optional resource type filter (exact match on Resource.type)
+
+    Layout: 15 labels per page (3 columns x 5 rows). Each label has a border,
+    and text in the label image is rendered larger for readability.
+    """
+    rtype = (request.args.get('type') or '').strip()
+    q = Resource.query
+    if rtype:
+        q = q.filter(Resource.type == rtype)
+    items = q.order_by(Resource.type.asc(), Resource.branch.asc(), Resource.resource_id.asc()).all()
+
+    # Build PNG labels for each resource and embed as data URIs
+    labels = []
+    try:
+        import base64
+        from io import BytesIO
+
+        from barcode import Code128
+        from barcode.writer import ImageWriter
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        abort(500, description='Barcode dependencies not installed')
+
+    DPI = 300
+    width = int(3 * DPI)
+    height = int(2 * DPI)
+
+    def load_font(size: int):
+        candidates = [
+            'Tw Cen MT Bold.ttf', 'TwCenMT-Bold.ttf', 'TCCB____.TTF',
+            'Tw Cen MT.ttf', 'TwCenMT.ttf',
+            '/Library/Fonts/Tw Cen MT Bold.ttf',
+            '/Library/Fonts/Tw Cen MT.ttf',
+            '/System/Library/Fonts/Supplemental/Tw Cen MT Bold.ttf',
+            '/System/Library/Fonts/Supplemental/Tw Cen MT.ttf',
+            'C\\Windows\\Fonts\\TCCB____.TTF',
+            'C\\Windows\\Fonts\\TwCenMT-Bold.ttf',
+            'C\\Windows\\Fonts\\Tw Cen MT Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        ]
+        for path in candidates:
+            try:
+                return ImageFont.truetype(path, size=size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
+
+    def draw_centered_text(draw: ImageDraw.ImageDraw, text: str, y: int, max_width: int, base_size: int):
+        if not text:
+            return 0
+        size = base_size
+        font = load_font(size)
+        tw, th = draw.textbbox((0, 0), text, font=font)[2:4]
+        while tw > max_width and size > 8:
+            size -= 1
+            font = load_font(size)
+            tw, th = draw.textbbox((0, 0), text, font=font)[2:4]
+        x = (width - tw) // 2
+        draw.text((x, y), text, fill='black', font=font)
+        return th
+
+    def render_label_png(res: Resource) -> bytes:
+        label = Image.new('RGB', (width, height), 'white')
+        draw = ImageDraw.Draw(label)
+        # Text areas
+        margin_x = int(width * 0.06)
+        top_y = int(height * 0.08)
+        max_text_width = width - margin_x * 2
+        # Slightly larger fonts for readability in sheet printing
+        name_h = draw_centered_text(draw, res.name or '', top_y, max_text_width, base_size=46)
+        type_y = top_y + name_h + 8
+        type_h = draw_centered_text(draw, (res.type or ''), type_y, max_text_width, base_size=32)
+
+        # Barcode rendering with dynamic module sizing
+        num_text_h = 32
+        available_h = height - (type_y + type_h + 16) - (num_text_h + 22)
+        target_w = width - margin_x * 2
+
+        def _render_bc(module_width_mm: float, module_height_mm: float, quiet_zone_mm: float) -> Image.Image:
+            opts = {
+                'module_width': module_width_mm,
+                'module_height': module_height_mm,
+                'quiet_zone': quiet_zone_mm,
+                'write_text': False,
+                'dpi': DPI,
+            }
+            bc = Code128(str(res.barcode_value or ''), writer=ImageWriter())
+            tmp = BytesIO(); bc.write(tmp, options=opts); tmp.seek(0)
+            return Image.open(tmp).convert('RGB')
+
+        try:
+            mw = 0.70; mh = 22.0; qz = max(7.0, mw * 10)
+            bc_img = _render_bc(mw, mh, qz)
+            if bc_img.width != 0:
+                scale_factor = target_w / bc_img.width
+                if scale_factor < 0.85 or scale_factor > 1.15:
+                    mw = max(0.40, min(1.20, mw * scale_factor)); qz = max(7.0, mw * 10)
+                    bc_img = _render_bc(mw, mh, qz)
+            if bc_img.height > available_h * 1.1:
+                mh = max(16.0, mh * (available_h / bc_img.height))
+                bc_img = _render_bc(mw, mh, qz)
+        except Exception:
+            # If barcode fails, return a blank label with just texts
+            bc_img = None
+
+        # Paste barcode at native size (downscale only if absolutely needed)
+        if bc_img is not None:
+            bc_w, bc_h = bc_img.width, bc_img.height
+            if bc_w > target_w or bc_h > available_h:
+                from PIL import Image as _Img
+                scale = min(target_w / bc_w, available_h / bc_h)
+                bc_img = bc_img.resize((max(1, int(bc_w * scale)), max(1, int(bc_h * scale))), resample=_Img.NEAREST)
+                bc_w, bc_h = bc_img.width, bc_img.height
+            bc_x = (width - bc_w) // 2
+            bc_y = type_y + type_h + 16 + max(0, (available_h - bc_h) // 2)
+            label.paste(bc_img, (bc_x, bc_y))
+
+        code_y = height - (num_text_h + 8)
+        draw_centered_text(draw, str(res.barcode_value or ''), code_y, max_text_width, base_size=30)
+        out = BytesIO(); label.save(out, format='PNG', dpi=(DPI, DPI)); out.seek(0)
+        return out.read()
+
+    for r in items:
+        try:
+            png_bytes = render_label_png(r)
+            b64 = base64.b64encode(png_bytes).decode('utf-8')
+            labels.append({'img_data': f"data:image/png;base64,{b64}", 'name': r.name, 'type': r.type, 'id': r.resource_id})
+        except Exception:
+            continue
+
+    # Build HTML grid for xhtml2pdf
+    html = render_template('resources/barcodes_pdf.html', labels=labels, selected_type=rtype)
+    try:
+        from io import BytesIO
+
+        from xhtml2pdf import pisa
+        pdf_io = BytesIO(); pisa.CreatePDF(html, dest=pdf_io); pdf_io.seek(0)
+        fname = 'resource_barcodes.pdf' if not rtype else f'resource_barcodes_{rtype.replace(" ","_")}.pdf'
+        return send_file(pdf_io, mimetype='application/pdf', as_attachment=True, download_name=fname)
+    except Exception:
+        # Fallback to HTML if PDF generation fails
+        return html
 
 
 # ---------------- Public: Resource Loan/Return ---------------- #

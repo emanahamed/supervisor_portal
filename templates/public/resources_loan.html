@@ -29,10 +29,10 @@
     </style>
     <meta name="csrf-token" content="{{ CSRF_TOKEN }}" />
     <script>
-      // Autofocus barcode field on load; handle modal auto-close + refresh
+      // Autofocus access code field on load; handle modal auto-close + refresh
       window.addEventListener("DOMContentLoaded", () => {
-        const bc = document.getElementById("barcode_value");
-        bc && bc.focus();
+        const ac = document.getElementById("access_code");
+        if (ac) { ac.focus(); }
         // Show modal if status provided by server via PRG
         const status = {{ (status|tojson if status is defined else 'null') }};
         const msg = {{ (msg|tojson if msg is defined else 'null') }};
@@ -148,9 +148,23 @@
           <div>
             <label class="block text-xs font-semibold mb-1">Action</label>
             <select name="action" class="soft-input" autocomplete="off">
-              <option value="loan">Loan</option>
+              <option value="loan">Take</option>
               <option value="return">Return</option>
             </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1"
+              >Staff Access Code</label
+            >
+            <input
+              id="access_code"
+              name="access_code"
+              class="soft-input"
+              placeholder="6-digit code"
+              autocomplete="off"
+              inputmode="numeric"
+              enterkeyhint="done"
+            />
           </div>
           <div>
             <label class="block text-xs font-semibold mb-1">Barcode</label>
@@ -159,19 +173,6 @@
               name="barcode_value"
               class="soft-input"
               placeholder="Scan or paste barcode"
-              autocomplete="off"
-              inputmode="numeric"
-              enterkeyhint="done"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-semibold mb-1"
-              >Staff Access Code</label
-            >
-            <input
-              name="access_code"
-              class="soft-input"
-              placeholder="6-digit code"
               autocomplete="off"
               inputmode="numeric"
               enterkeyhint="done"
