@@ -1,15 +1,26 @@
 <!DOCTYPE html>
-<html lang="en" x-data="{dark:false}" >
+<html lang="en" x-data="{dark:false}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>
       {% block title %}Observation Tracker - Excel Tutors{% endblock %}
     </title>
-    <link rel="icon" href="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}" type="image/png" />
-  {% from 'components/forms_macros.html' import csrf_field %}
-  {% if CSRF_TOKEN %}<meta name="csrf-token" content="{{ CSRF_TOKEN }}" />{% endif %}
+    <link
+      rel="icon"
+      href="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+      type="image/png"
+    />
+    {% from 'components/forms_macros.html' import csrf_field %} {% if CSRF_TOKEN
+    %}
+    <meta name="csrf-token" content="{{ CSRF_TOKEN }}" />
+    {% endif %}
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind Elements: web components like <el-autocomplete> -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
+      type="module"
+    ></script>
     <script>
       tailwind.config = {
         darkMode: "class",
@@ -23,15 +34,18 @@
         },
       };
     </script>
-    <script src="{{ url_for('static', filename='js/tables.js') }}" defer></script>
+    <script
+      src="{{ url_for('static', filename='js/tables.js') }}"
+      defer
+    ></script>
     <style>
       /* Theme Tokens */
       :root {
-        --c-bg-dark: #0D0D0D; /* almost black */
-        --c-text-primary-dark: #FFFFFF; /* pure white */
-        --c-accent-green: #00FF85; /* neon green */
-        --c-accent-blue: #1E90FF; /* electric blue */
-        --c-hover-pink: #FF0099; /* vivid pink */
+        --c-bg-dark: #0d0d0d; /* almost black */
+        --c-text-primary-dark: #ffffff; /* pure white */
+        --c-accent-green: #00ff85; /* neon green */
+        --c-accent-blue: #1e90ff; /* electric blue */
+        --c-hover-pink: #ff0099; /* vivid pink */
       }
       .soft-card {
         background: #fff;
@@ -60,20 +74,45 @@
       .dark .soft-btn {
         background: #222; /* neutral dark */
         color: var(--c-text-primary-dark);
-        border: 1px solid #2E2E2E;
+        border: 1px solid #2e2e2e;
       }
       .dark .soft-btn:hover {
         background: #2d2d2d;
         color: var(--c-hover-pink);
       }
-      .soft-btn-primary { background: #4f46e5; color:#fff; }
-      .soft-btn-primary:hover { background:#4338ca; }
-      .dark .soft-btn-primary { background: var(--c-accent-blue); color:#000; text-shadow:0 0 4px rgba(255,255,255,0.4); }
-      .dark .soft-btn-primary:hover { background: var(--c-hover-pink); color:#fff; }
-      .soft-btn-accent { background: #10b981; color:#fff; }
-      .soft-btn-accent:hover { background:#059669; }
-      .dark .soft-btn-accent { background: var(--c-accent-green); color:#000; box-shadow:0 0 6px rgba(0,255,133,0.4); }
-      .dark .soft-btn-accent:hover { background: var(--c-hover-pink); color:#fff; box-shadow:0 0 8px rgba(255,0,153,0.45); }
+      .soft-btn-primary {
+        background: #4f46e5;
+        color: #fff;
+      }
+      .soft-btn-primary:hover {
+        background: #4338ca;
+      }
+      .dark .soft-btn-primary {
+        background: var(--c-accent-blue);
+        color: #000;
+        text-shadow: 0 0 4px rgba(255, 255, 255, 0.4);
+      }
+      .dark .soft-btn-primary:hover {
+        background: var(--c-hover-pink);
+        color: #fff;
+      }
+      .soft-btn-accent {
+        background: #10b981;
+        color: #fff;
+      }
+      .soft-btn-accent:hover {
+        background: #059669;
+      }
+      .dark .soft-btn-accent {
+        background: var(--c-accent-green);
+        color: #000;
+        box-shadow: 0 0 6px rgba(0, 255, 133, 0.4);
+      }
+      .dark .soft-btn-accent:hover {
+        background: var(--c-hover-pink);
+        color: #fff;
+        box-shadow: 0 0 8px rgba(255, 0, 153, 0.45);
+      }
       .soft-badge {
         background: #f1f5f9;
         color: #334155;
@@ -83,22 +122,58 @@
         font-weight: 600;
         letter-spacing: 0.5px;
       }
-      .soft-badge.green { background:#dcfce7; color:#166534; }
-      .soft-badge.amber { background:#fef3c7; color:#92400e; }
-      .soft-badge.red { background:#fee2e2; color:#991b1b; }
-      .soft-badge.blue { background:#dbeafe; color:#1e3a8a; }
-      .soft-badge.purple { background:#ede9fe; color:#5b21b6; }
-      .soft-badge.gray { background:#f1f5f9; color:#1f2937; }
+      .soft-badge.green {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .soft-badge.amber {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .soft-badge.red {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .soft-badge.blue {
+        background: #dbeafe;
+        color: #1e3a8a;
+      }
+      .soft-badge.purple {
+        background: #ede9fe;
+        color: #5b21b6;
+      }
+      .soft-badge.gray {
+        background: #f1f5f9;
+        color: #1f2937;
+      }
       .dark .soft-badge {
         background: #1f1f1f;
         color: #bbb;
       }
-      .dark .soft-badge.green { background:#052e16; color:#86efac; }
-      .dark .soft-badge.amber { background:#451a03; color:#fde68a; }
-      .dark .soft-badge.red { background:#450a0a; color:#fca5a5; }
-      .dark .soft-badge.blue { background:#0a1a3a; color:#93c5fd; }
-      .dark .soft-badge.purple { background:#271052; color:#c4b5fd; }
-      .dark .soft-badge.gray { background:#1f2937; color:#e5e7eb; }
+      .dark .soft-badge.green {
+        background: #052e16;
+        color: #86efac;
+      }
+      .dark .soft-badge.amber {
+        background: #451a03;
+        color: #fde68a;
+      }
+      .dark .soft-badge.red {
+        background: #450a0a;
+        color: #fca5a5;
+      }
+      .dark .soft-badge.blue {
+        background: #0a1a3a;
+        color: #93c5fd;
+      }
+      .dark .soft-badge.purple {
+        background: #271052;
+        color: #c4b5fd;
+      }
+      .dark .soft-badge.gray {
+        background: #1f2937;
+        color: #e5e7eb;
+      }
       .soft-input {
         border: 1px solid #cbd5e1;
         border-radius: 0.5rem;
@@ -144,40 +219,136 @@
       [x-cloak] {
         display: none !important;
       }
-      body { color:#1e293b; }
-      .dark body { background: var(--c-bg-dark); color: var(--c-text-primary-dark); }
-      .dark .prose, .dark .text-slate-700, .dark .text-slate-600 { color: var(--c-text-primary-dark) !important; }
+      body {
+        color: #1e293b;
+      }
+      .dark body {
+        background: var(--c-bg-dark);
+        color: var(--c-text-primary-dark);
+      }
+      .dark .prose,
+      .dark .text-slate-700,
+      .dark .text-slate-600 {
+        color: var(--c-text-primary-dark) !important;
+      }
       /* Headings accent line */
-      .page-header { position:relative; padding-left:0.75rem; }
-      .page-header:before { content:""; position:absolute; left:0; top:0.3rem; bottom:0.3rem; width:4px; border-radius:2px; background:linear-gradient(180deg,var(--c-accent-green),var(--c-accent-blue)); }
-      .dark .page-header:before { box-shadow:0 0 6px rgba(0,255,133,0.5),0 0 10px rgba(30,144,255,0.4); }
-      .breadcrumb { font-size:11px; text-transform:uppercase; letter-spacing:0.08em; display:flex; gap:0.5rem; align-items:center; color:#64748b; }
-      .breadcrumb a { color:#475569; }
-      .breadcrumb a:hover { color:#111827; }
-      .dark .breadcrumb { color:#888; }
-      .dark .breadcrumb a { color: var(--c-accent-blue); }
-      .dark .breadcrumb a:hover { color: var(--c-hover-pink); }
-      .hover-accent:hover { color: var(--c-hover-pink) !important; }
-      .theme-icon { width:16px; height:16px; display:block; }
+      .page-header {
+        position: relative;
+        padding-left: 0.75rem;
+      }
+      .page-header:before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.3rem;
+        bottom: 0.3rem;
+        width: 4px;
+        border-radius: 2px;
+        background: linear-gradient(
+          180deg,
+          var(--c-accent-green),
+          var(--c-accent-blue)
+        );
+      }
+      .dark .page-header:before {
+        box-shadow: 0 0 6px rgba(0, 255, 133, 0.5),
+          0 0 10px rgba(30, 144, 255, 0.4);
+      }
+      .breadcrumb {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        color: #64748b;
+      }
+      .breadcrumb a {
+        color: #475569;
+      }
+      .breadcrumb a:hover {
+        color: #111827;
+      }
+      .dark .breadcrumb {
+        color: #888;
+      }
+      .dark .breadcrumb a {
+        color: var(--c-accent-blue);
+      }
+      .dark .breadcrumb a:hover {
+        color: var(--c-hover-pink);
+      }
+      .hover-accent:hover {
+        color: var(--c-hover-pink) !important;
+      }
+      .theme-icon {
+        width: 16px;
+        height: 16px;
+        display: block;
+      }
       /* Slim custom scrollbar (light/dark aware) */
-      .nav-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-      .dark .nav-scroll { scrollbar-color: #475569 transparent; }
-      .nav-scroll::-webkit-scrollbar { width: 6px; }
-      .nav-scroll::-webkit-scrollbar-track { background: transparent; }
-      .nav-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-      .nav-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-      .dark .nav-scroll::-webkit-scrollbar-thumb { background: #475569; }
-      .dark .nav-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+      .nav-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
+      }
+      .dark .nav-scroll {
+        scrollbar-color: #475569 transparent;
+      }
+      .nav-scroll::-webkit-scrollbar {
+        width: 6px;
+      }
+      .nav-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .nav-scroll::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+      }
+      .nav-scroll::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      .dark .nav-scroll::-webkit-scrollbar-thumb {
+        background: #475569;
+      }
+      .dark .nav-scroll::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
       /* Table tweaks for dark mode */
-      .dark table thead { background:#1a1a1a !important; }
-      .dark table tbody tr { border-color:#222; }
-      .dark table tbody tr:hover { background:#111 !important; }
+      .dark table thead {
+        background: #1a1a1a !important;
+      }
+      .dark table tbody tr {
+        border-color: #222;
+      }
+      .dark table tbody tr:hover {
+        background: #111 !important;
+      }
       /* Remove legacy soft-tab (was inline tool nav) */
-      .soft-tab, .soft-tab.active { display:none !important; }
+      .soft-tab,
+      .soft-tab.active {
+        display: none !important;
+      }
       /* Accent link styles */
-      a { transition:color .2s, background-color .2s; }
-      .dark a { color: var(--c-accent-blue); }
-      .dark a:hover { color: var(--c-hover-pink); }
+      a {
+        transition: color 0.2s, background-color 0.2s;
+      }
+      .dark a {
+        color: var(--c-accent-blue);
+      }
+      .dark a:hover {
+        color: var(--c-hover-pink);
+      }
+      /* Fallback display for el-options when Popover API is unavailable */
+      el-autocomplete {
+        position: relative;
+      }
+      el-options.open {
+        display: block !important;
+        position: absolute;
+        z-index: 50;
+        left: 0;
+        top: calc(100% + 4px);
+      }
     </style>
   </head>
   <body
@@ -217,7 +388,9 @@
             ✕
           </button>
         </div>
-        <nav class="flex-1 min-h-0 overflow-y-auto nav-scroll px-3 py-4 space-y-1 text-sm">
+        <nav
+          class="flex-1 min-h-0 overflow-y-auto nav-scroll px-3 py-4 space-y-1 text-sm"
+        >
           {% include 'components/_nav_links.html' %}
         </nav>
         <div class="px-4 py-4 text-[10px] text-slate-400 space-y-1">
@@ -235,34 +408,55 @@
       </div>
     </div>
 
-  <!-- Desktop sidebar (redesigned) -->
-  <div class="hidden md:flex md:w-72 md:fixed md:inset-y-0">
-      <div class="relative flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6 dark:border-white/10 dark:bg-gray-900 dark:before:pointer-events-none dark:before:absolute dark:before:inset-0 dark:before:bg-black/10 nav-scroll">
+    <!-- Desktop sidebar (redesigned) -->
+    <div class="hidden md:flex md:w-72 md:fixed md:inset-y-0">
+      <div
+        class="relative flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6 dark:border-white/10 dark:bg-gray-900 dark:before:pointer-events-none dark:before:absolute dark:before:inset-0 dark:before:bg-black/10 nav-scroll"
+      >
         <div class="relative flex h-16 shrink-0 items-center">
           <a href="{{ url_for('index') }}" class="flex items-center gap-2">
-            <img src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}" alt="Excel Tutors" class="h-10 w-auto" />
+            <img
+              src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
+              alt="Excel Tutors"
+              class="h-10 w-auto"
+            />
           </a>
         </div>
         <nav class="relative flex flex-1 flex-col">
           {% include 'components/_nav_links.html' %}
         </nav>
-        <div class="mt-auto -mx-6 px-6 pb-4 pt-2 flex flex-col gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+        <div
+          class="mt-auto -mx-6 px-6 pb-4 pt-2 flex flex-col gap-2 text-[10px] text-gray-500 dark:text-gray-400"
+        >
           <div class="flex items-center justify-between">
             <span>© {{ 2025 }} Excel Tutors</span>
-            <button id="versionLink" type="button" class="underline text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300">v{{ APP_VERSION }}</button>
+            <button
+              id="versionLink"
+              type="button"
+              class="underline text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
+            >
+              v{{ APP_VERSION }}
+            </button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Main content area -->
-  <div class="flex flex-col flex-1 md:pl-72">
-      <header class="sticky top-0 z-30 backdrop-blur bg-white/85 dark:bg-[#121212]/90 border-b border-slate-200 dark:border-[#1e1e1e]">
+    <div class="flex flex-col flex-1 md:pl-72">
+      <header
+        class="sticky top-0 z-30 backdrop-blur bg-white/85 dark:bg-[#121212]/90 border-b border-slate-200 dark:border-[#1e1e1e]"
+      >
         <!-- Added extra left padding (pl-8) to create more horizontal space from sidebar -->
-  <div class="pl-8 pr-4 h-16 flex items-center gap-4 whitespace-nowrap">
+        <div class="pl-8 pr-4 h-16 flex items-center gap-4 whitespace-nowrap">
           <div class="flex flex-col gap-1 min-w-0">
             <div class="flex items-center gap-2">
-              <button class="md:hidden soft-btn text-xs" @click="sidebarOpen=true">Menu</button>
+              <button
+                class="md:hidden soft-btn text-xs"
+                @click="sidebarOpen=true"
+              >
+                Menu
+              </button>
               <nav class="breadcrumb hidden sm:flex">
                 {% block breadcrumb %}
                 <a href="{{ url_for('index') }}" class="hover-accent">Home</a>
@@ -272,7 +466,9 @@
               </nav>
             </div>
             <div class="flex items-center gap-3 min-w-0">
-              <h1 class="page-header text-sm sm:text-base font-semibold truncate">
+              <h1
+                class="page-header text-sm sm:text-base font-semibold truncate"
+              >
                 {% block page_title %}{% endblock %}
               </h1>
               {% block page_subtitle %}{% endblock %}
@@ -346,32 +542,60 @@
           </div>
         </div>
       </header>
-  <!-- Increased left padding (pl-8) while keeping right padding compact (pr-4) for clearer separation from sidenav -->
-  <main class="flex-1 overflow-y-auto pl-8 pr-4 py-6 bg-slate-50 dark:bg-[#0D0D0D] transition-colors duration-300">
-        <div id="flash-mount" class="hidden" data-flashes='{{ get_flashed_messages(with_categories=true)|tojson|safe }}'></div>
-        <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+      <!-- Increased left padding (pl-8) while keeping right padding compact (pr-4) for clearer separation from sidenav -->
+      <main
+        class="flex-1 overflow-y-auto pl-8 pr-4 py-6 bg-slate-50 dark:bg-[#0D0D0D] transition-colors duration-300"
+      >
+        <div
+          id="flash-mount"
+          class="hidden"
+          data-flashes="{{ get_flashed_messages(with_categories=true)|tojson|safe }}"
+        ></div>
+        <div
+          id="toast-container"
+          class="fixed top-4 right-4 z-50 space-y-2"
+        ></div>
         <script>
-          (function(){
-            const mount=document.getElementById('flash-mount');
-            if(!mount) return; const flashes=mount.getAttribute('data-flashes');
-            let data=[]; try{ data=JSON.parse(flashes)||[]; }catch(e){}
-            function pushToast(msg,type){
-              const wrap=document.createElement('div');
-              wrap.className='soft-card px-4 py-2 text-xs flex items-center gap-2 border-l-4 opacity-0 translate-y-1 transition-all duration-300';
-              const map={success:'border-green-500',danger:'border-red-500',warning:'border-yellow-500',info:'border-indigo-500'};
-              wrap.classList.add(map[type]||map.info);
-              wrap.textContent=msg; document.getElementById('toast-container').appendChild(wrap);
-              requestAnimationFrame(()=>{ wrap.classList.remove('opacity-0','translate-y-1'); });
-              setTimeout(()=>{ wrap.classList.add('opacity-0','translate-y-1'); setTimeout(()=>wrap.remove(),300); },4000);
+          (function () {
+            const mount = document.getElementById("flash-mount");
+            if (!mount) return;
+            const flashes = mount.getAttribute("data-flashes");
+            let data = [];
+            try {
+              data = JSON.parse(flashes) || [];
+            } catch (e) {}
+            function pushToast(msg, type) {
+              const wrap = document.createElement("div");
+              wrap.className =
+                "soft-card px-4 py-2 text-xs flex items-center gap-2 border-l-4 opacity-0 translate-y-1 transition-all duration-300";
+              const map = {
+                success: "border-green-500",
+                danger: "border-red-500",
+                warning: "border-yellow-500",
+                info: "border-indigo-500",
+              };
+              wrap.classList.add(map[type] || map.info);
+              wrap.textContent = msg;
+              document.getElementById("toast-container").appendChild(wrap);
+              requestAnimationFrame(() => {
+                wrap.classList.remove("opacity-0", "translate-y-1");
+              });
+              setTimeout(() => {
+                wrap.classList.add("opacity-0", "translate-y-1");
+                setTimeout(() => wrap.remove(), 300);
+              }, 4000);
             }
-            data.forEach(([cat,msg])=> pushToast(msg,cat));
+            data.forEach(([cat, msg]) => pushToast(msg, cat));
             // Expose global event for on-demand toasts
-            window.addEventListener('toast', e=>{ const d=e.detail||{}; pushToast(d.message||'Notice', d.type||'info'); });
+            window.addEventListener("toast", (e) => {
+              const d = e.detail || {};
+              pushToast(d.message || "Notice", d.type || "info");
+            });
           })();
         </script>
-  {% block content %}{% endblock %}
-  {# Error report inline form removed; reporting now only via dedicated button/modal or error page #}
-      </div>
+        {% block content %}{% endblock %} {# Error report inline form removed;
+        reporting now only via dedicated button/modal or error page #}
+      </main>
     </div>
 
     <!-- Report Issue Modal -->
@@ -381,23 +605,67 @@
       aria-hidden="true"
     >
       <div class="absolute inset-0 bg-slate-900/60" data-r-close></div>
-      <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div
+        class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden"
+      >
         <div class="px-5 py-3 border-b flex items-center gap-3">
-          <h3 class="font-semibold text-sm tracking-wide uppercase text-slate-600">Report an Issue</h3>
+          <h3
+            class="font-semibold text-sm tracking-wide uppercase text-slate-600"
+          >
+            Report an Issue
+          </h3>
           <span class="ml-auto"></span>
-          <button class="text-slate-500 hover:text-slate-700" data-r-close aria-label="Close report issue">✕</button>
+          <button
+            class="text-slate-500 hover:text-slate-700"
+            data-r-close
+            aria-label="Close report issue"
+          >
+            ✕
+          </button>
         </div>
-        <form method="post" action="{{ url_for('error_report_create') }}" enctype="multipart/form-data" class="p-5 space-y-3 text-sm">
+        <form
+          method="post"
+          action="{{ url_for('error_report_create') }}"
+          enctype="multipart/form-data"
+          class="p-5 space-y-3 text-sm"
+        >
           {{ csrf_field() }}
-          <input type="hidden" name="title" value="User issue on {{ request.path }}" />
+          <input
+            type="hidden"
+            name="title"
+            value="User issue on {{ request.path }}"
+          />
           <label class="block text-xs font-semibold">Comment (optional)</label>
-          <textarea name="comment" rows="4" class="soft-input w-full" placeholder="Describe what happened, steps to reproduce, or add any details..."></textarea>
-          <label class="block text-xs font-semibold">Screenshot (optional)</label>
-          <input type="file" name="screenshot" accept="image/png,image/jpeg" class="soft-input w-full text-xs" />
-          <div class="flex items-center justify-between pt-2 text-[10px] text-slate-500">
-            <span>We’ll include page URL and your account. No stack trace is attached unless reporting from an error page.</span>
+          <textarea
+            name="comment"
+            rows="4"
+            class="soft-input w-full"
+            placeholder="Describe what happened, steps to reproduce, or add any details..."
+          ></textarea>
+          <label class="block text-xs font-semibold"
+            >Screenshot (optional)</label
+          >
+          <input
+            type="file"
+            name="screenshot"
+            accept="image/png,image/jpeg"
+            class="soft-input w-full text-xs"
+          />
+          <div
+            class="flex items-center justify-between pt-2 text-[10px] text-slate-500"
+          >
+            <span
+              >We’ll include page URL and your account. No stack trace is
+              attached unless reporting from an error page.</span
+            >
             <div class="flex gap-2">
-              <button type="button" class="px-3 py-1 rounded bg-slate-100 hover:bg-slate-200" data-r-close>Cancel</button>
+              <button
+                type="button"
+                class="px-3 py-1 rounded bg-slate-100 hover:bg-slate-200"
+                data-r-close
+              >
+                Cancel
+              </button>
               <button class="soft-btn soft-btn-primary">Send Report</button>
             </div>
           </div>
@@ -500,30 +768,253 @@
       </div>
     </div>
 
+    <!-- Alpine.js Collapse plugin (must load before Alpine core) -->
     <script
+      defer
+      src="https://unpkg.com/@alpinejs/collapse@3.x.x/dist/cdn.min.js"
+    ></script>
+    <script
+      defer
       src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+    <script>
+      // Ensure plugin is registered even if CDN auto-register fails
+      document.addEventListener("alpine:init", () => {
+        try {
+          if (window.Alpine && window.collapse) {
+            window.Alpine.plugin(window.collapse);
+          }
+        } catch (_e) {}
+      });
+    </script>
+    <script>
+      window.__SERVER_THEME_PREF__ = "{{ user_theme_preference }}";
+    </script>
+    <script
+      src="{{ url_for('static', filename='js/theme.js') }}"
       defer
     ></script>
-    <script>window.__SERVER_THEME_PREF__='{{ user_theme_preference }}';</script>
-    <script src="{{ url_for('static', filename='js/theme.js') }}" defer></script>
+    <script>
+      // Global Alpine controller for student autocomplete. Prefers local JSON list when provided.
+      window.studentAutocomplete = function (root) {
+        return {
+          init() {
+            const input = root.querySelector('input[type="text"]');
+            const hidden = root.querySelector('input[type="hidden"]');
+            const opts = root.querySelector("el-options");
+            const toggleBtn = root.querySelector("button");
+            // Ensure relative positioning for fallback
+            try {
+              if (getComputedStyle(root).position === "static") {
+                root.style.position = "relative";
+              }
+            } catch (_e) {}
+            // Try to get inline student list JSON
+            let local = [];
+            try {
+              const script = root.querySelector(
+                'script[type="application/json"][data-source="students"]'
+              );
+              if (script) {
+                local = JSON.parse(script.textContent || "[]") || [];
+              }
+            } catch (_e) {
+              local = [];
+            }
+            let timer;
+            const forceFallback = root.hasAttribute("data-force-fallback");
+            function canPopover() {
+              return (
+                !forceFallback &&
+                !!(opts && typeof opts.showPopover === "function")
+              );
+            }
+            function setMenuRect() {
+              try {
+                const width = input.offsetWidth;
+                const left = input.offsetLeft;
+                const top = input.offsetTop + input.offsetHeight + 4; // 4px gap
+                // Width of input
+                opts.style.width = width + "px";
+                // Tailwind Elements uses --input-width var when anchoring; apply on root for safety
+                root.style.setProperty("--input-width", width + "px");
+                if (!canPopover()) {
+                  // Position under input within relative container
+                  opts.style.left = left + "px";
+                  opts.style.top = top + "px";
+                }
+              } catch (_e) {}
+            }
+            function renderOptions(data) {
+              opts.innerHTML = (data || [])
+                .map((s) => {
+                  const online =
+                    ((s.status || "") + "").toLowerCase() === "active";
+                  const dot = online ? "bg-green-400" : "bg-red-400";
+                  const sr = online ? " is active" : " is inactive";
+                  const label = `${s.student_id ? s.student_id + " — " : ""}${
+                    s.name || ""
+                  }`;
+                  return `<el-option value="${String(
+                    s.id
+                  )}" class="block px-3 py-2 text-gray-900 select-none aria-selected:bg-indigo-600 aria-selected:text-white dark:text-white dark:aria-selected:bg-indigo-500" data-label="${(
+                    label || ""
+                  ).replace(/"/g, "&quot;")}">
+                  <div class="flex items-center">
+                    <span aria-hidden="true" class="inline-block size-2 shrink-0 rounded-full ${dot} forced-colors:bg-[Highlight]"></span>
+                    <span class="ml-3 truncate">${label}<span class="sr-only">${sr}</span></span>
+                  </div>
+                </el-option>`;
+                })
+                .join("");
+              // Selection wiring
+              opts.querySelectorAll("el-option").forEach((opt) => {
+                opt.addEventListener("pointerdown", (ev) => {
+                  ev.preventDefault();
+                  hidden.value = opt.getAttribute("value") || "";
+                  input.value = opt.getAttribute("data-label") || "";
+                  closePopover();
+                });
+              });
+            }
+            function openIfAny() {
+              try {
+                if (!(opts && opts.children && opts.children.length)) return;
+                setMenuRect();
+                if (canPopover()) {
+                  opts.showPopover();
+                } else {
+                  opts.classList.add("open");
+                }
+              } catch (_e) {}
+            }
+            function closePopover() {
+              try {
+                if (canPopover()) opts.hidePopover();
+                else opts.classList.remove("open");
+              } catch (_e) {}
+            }
+            // On focus, show initial suggestions (from local list) if available
+            input.addEventListener("focus", () => {
+              try {
+                if ((input.value || "").trim()) return;
+                if (Array.isArray(local) && local.length) {
+                  // Show all local entries (scrollable in panel)
+                  renderOptions(local);
+                  openIfAny();
+                }
+              } catch (_e) {}
+            });
+            input.addEventListener("input", () => {
+              const q = (input.value || "").trim();
+              clearTimeout(timer);
+              if (!q) {
+                opts.innerHTML = "";
+                closePopover();
+                return;
+              }
+              timer = setTimeout(async () => {
+                try {
+                  let data = [];
+                  if (Array.isArray(local) && local.length) {
+                    const ql = q.toLowerCase();
+                    // Filter by name or student_id; keep original order
+                    data = local.filter((s) => {
+                      const name = (s.name || "").toLowerCase();
+                      const sid = (s.student_id || "").toLowerCase();
+                      return name.includes(ql) || sid.includes(ql);
+                    });
+                  } else {
+                    const res = await fetch(
+                      `/api/students/suggest?q=${encodeURIComponent(
+                        q
+                      )}&limit=20`
+                    );
+                    data = await res.json();
+                  }
+                  renderOptions(data);
+                  if ((data || []).length) {
+                    openIfAny();
+                  } else {
+                    closePopover();
+                  }
+                } catch (e) {
+                  console.warn("student suggest failed", e);
+                }
+              }, 250);
+            });
+            // Toggle popover from caret button
+            if (toggleBtn) {
+              toggleBtn.addEventListener("click", () => {
+                try {
+                  if (
+                    opts.matches(":popover-open") ||
+                    opts.classList.contains("open")
+                  ) {
+                    closePopover();
+                  } else {
+                    // If empty and local exists, render all local before opening
+                    if (
+                      !opts.children.length &&
+                      Array.isArray(local) &&
+                      local.length
+                    ) {
+                      renderOptions(local);
+                    }
+                    openIfAny();
+                  }
+                } catch (_e) {}
+              });
+            }
+            // Close popover on blur if needed
+            input.addEventListener("blur", () => {
+              setTimeout(closePopover, 120);
+            });
+            // Recompute width/position on resize
+            window.addEventListener("resize", () => {
+              if (opts.classList.contains("open")) setMenuRect();
+            });
+          },
+        };
+      };
+    </script>
     <script>
       // Fallback: if Alpine fails to init within 2s, un-cloak elements to avoid blank page.
-      (function(){
-        function uncloak(){ document.querySelectorAll('[x-cloak]').forEach(el=> el.removeAttribute('x-cloak')); }
-        document.addEventListener('alpine:init', ()=> { /* Alpine will remove x-cloak automatically */ });
-        window.addEventListener('DOMContentLoaded', ()=> { setTimeout(uncloak, 2000); });
+      (function () {
+        function uncloak() {
+          document
+            .querySelectorAll("[x-cloak]")
+            .forEach((el) => el.removeAttribute("x-cloak"));
+        }
+        document.addEventListener("alpine:init", () => {
+          /* Alpine will remove x-cloak automatically */
+        });
+        window.addEventListener("DOMContentLoaded", () => {
+          setTimeout(uncloak, 2000);
+        });
       })();
     </script>
     <script>
-      (function(){
+      (function () {
         // Report Issue Modal wiring
-        const modal=document.getElementById('reportModal');
-        if(modal){
-          function open(){ modal.classList.remove('hidden'); modal.classList.add('flex'); }
-          function close(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
-          window.addEventListener('open-report-modal', open);
-          document.addEventListener('click', (e)=>{ if(e.target.hasAttribute('data-r-close')) close(); });
-          document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !modal.classList.contains('hidden')) close(); });
+        const modal = document.getElementById("reportModal");
+        if (modal) {
+          function open() {
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+          }
+          function close() {
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+          }
+          window.addEventListener("open-report-modal", open);
+          document.addEventListener("click", (e) => {
+            if (e.target.hasAttribute("data-r-close")) close();
+          });
+          document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && !modal.classList.contains("hidden"))
+              close();
+          });
         }
       })();
     </script>
@@ -548,34 +1039,72 @@
       })();
     </script>
     <script>
-      (function(){
-        const meta=document.querySelector('meta[name="csrf-token"]');
-        if(!meta) return; const token=meta.getAttribute('content'); if(!token) return;
-        function ensureFormToken(f){
-          try{
-            if(f.matches('form[method="post" i]:not([data-no-csrf])') && !f.querySelector('input[name="csrf_token"]')){
-              const i=document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value=token; f.appendChild(i);
+      (function () {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (!meta) return;
+        const token = meta.getAttribute("content");
+        if (!token) return;
+        function ensureFormToken(f) {
+          try {
+            if (
+              f.matches('form[method="post" i]:not([data-no-csrf])') &&
+              !f.querySelector('input[name="csrf_token"]')
+            ) {
+              const i = document.createElement("input");
+              i.type = "hidden";
+              i.name = "csrf_token";
+              i.value = token;
+              f.appendChild(i);
             }
-          }catch(_e){}
+          } catch (_e) {}
         }
         // Initial pass
-        document.addEventListener('DOMContentLoaded',()=>{
-          document.querySelectorAll('form').forEach(ensureFormToken);
+        document.addEventListener("DOMContentLoaded", () => {
+          document.querySelectorAll("form").forEach(ensureFormToken);
         });
         // Observe dynamic forms
-        const mo = new MutationObserver((mutations)=>{
-          for(const m of mutations){
-            m.addedNodes && m.addedNodes.forEach(node=>{
-              if(!(node instanceof Element)) return;
-              if(node.tagName==='FORM') ensureFormToken(node);
-              node.querySelectorAll && node.querySelectorAll('form').forEach(ensureFormToken);
-            });
+        const mo = new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            m.addedNodes &&
+              m.addedNodes.forEach((node) => {
+                if (!(node instanceof Element)) return;
+                if (node.tagName === "FORM") ensureFormToken(node);
+                node.querySelectorAll &&
+                  node.querySelectorAll("form").forEach(ensureFormToken);
+              });
           }
         });
-        try{ mo.observe(document.documentElement,{childList:true, subtree:true}); }catch(_e){}
+        try {
+          mo.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+          });
+        } catch (_e) {}
         // Patch fetch to add token automatically for same-origin unsafe verbs
-        const _fetch=window.fetch; window.fetch=function(res,init){
-          try{init=init||{}; const url= typeof res==='string'?res:res.url; const sameOrigin = !/^https?:\/\//i.test(url) || url.startsWith(location.origin); const method=(init.method||'GET').toUpperCase(); if(sameOrigin && ['POST','PUT','PATCH','DELETE'].includes(method)){ init.headers=init.headers||{}; if(init.headers instanceof Headers){ if(!init.headers.has('X-CSRFToken')) init.headers.set('X-CSRFToken', token);} else { if(!('X-CSRFToken' in init.headers)) init.headers['X-CSRFToken']=token; } } }catch(_e){} return _fetch(res,init); };
+        const _fetch = window.fetch;
+        window.fetch = function (res, init) {
+          try {
+            init = init || {};
+            const url = typeof res === "string" ? res : res.url;
+            const sameOrigin =
+              !/^https?:\/\//i.test(url) || url.startsWith(location.origin);
+            const method = (init.method || "GET").toUpperCase();
+            if (
+              sameOrigin &&
+              ["POST", "PUT", "PATCH", "DELETE"].includes(method)
+            ) {
+              init.headers = init.headers || {};
+              if (init.headers instanceof Headers) {
+                if (!init.headers.has("X-CSRFToken"))
+                  init.headers.set("X-CSRFToken", token);
+              } else {
+                if (!("X-CSRFToken" in init.headers))
+                  init.headers["X-CSRFToken"] = token;
+              }
+            }
+          } catch (_e) {}
+          return _fetch(res, init);
+        };
       })();
     </script>
   </body>

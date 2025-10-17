@@ -18,14 +18,16 @@
   <div class="space-y-3">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div>
-        <label class="block text-xs font-medium mb-1">Student</label>
-        <input type="text" class="soft-input" placeholder="Search by name or ID" x-model="studentQuery" @input="filterStudents()">
-        <select name="student_id" class="soft-input mt-1" required>
-          <option value="">Select student</option>
-          {% for s in students %}
-          <option value="{{ s.id }}" {% if record and record.student_id==s.id %}selected{% endif %}>{{ s.student_id }} — {{ s.name }}</option>
-          {% endfor %}
-        </select>
+        {# Provide defaults for prefill #}
+        {% set _sid = record.student_id if record else '' %}
+        {% set _slabel = (record.student.student_id ~ ' — ' ~ record.student.name) if record and record.student else '' %}
+        {% set id = 'calllist-student-autocomplete' %}
+        {% set name = 'student_id' %}
+        {% set label = 'Student' %}
+        {% set placeholder = 'Search by name or ID' %}
+        {% set value_id = _sid %}
+        {% set value_label = _slabel %}
+        {% include 'components/student_autocomplete.html' with context %}
       </div>
       <div>
         <label class="block text-xs font-medium mb-1">Reason</label>

@@ -1,0 +1,81 @@
+{# Reusable student autocomplete component (Tailwind Elements) Params: - id:
+input id (default 'student-autocomplete') - hidden_id: id for hidden input
+(optional) - name: hidden field name (default 'student_id') - label: label text
+(default 'Student') - show_label: whether to render the label (default true) -
+placeholder: input placeholder (default 'Search by name or ID') - input_class:
+class for input width (default w-full, or w-64 if show_label=false) #} {% set
+_show_label = show_label if show_label is defined else true %} {% set
+_wrap_class = 'relative mt-2 block' if _show_label else 'relative inline-block
+align-middle' %} {% set _input_w = input_class if input_class is defined else
+('w-full' if _show_label else 'w-64') %} {% if _show_label %}
+<label
+  for="{{ id or 'student-autocomplete' }}"
+  class="block text-sm/6 font-medium text-gray-900 dark:text-white"
+  >{{ label or 'Student' }}</label
+>
+{% endif %}
+<el-autocomplete
+  class="{{ _wrap_class }}"
+  x-data="studentAutocomplete($el)"
+  {%
+  if
+  force_fallback
+  %}data-force-fallback{%
+  endif
+  %}
+>
+  <input
+    id="{{ id or 'student-autocomplete' }}"
+    type="text"
+    autocomplete="off"
+    class="block {{ _input_w }} rounded-md bg-white py-1.5 pr-12 pl-3 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:text-sm/6 dark:bg-white/5 dark:text-white dark:outline-white/10 dark:placeholder:text-gray-500 dark:focus:outline-indigo-500"
+    placeholder="{{ placeholder or 'Search by name or ID' }}"
+    value="{{ value_label or '' }}"
+  />
+  <input
+    type="hidden"
+    name="{{ name or 'student_id' }}"
+    id="{{ hidden_id if hidden_id is defined else '' }}"
+    x-ref="hid"
+    value="{{ value_id or '' }}"
+  />
+  <button
+    type="button"
+    class="absolute inset-y-0 right-0 flex items-center rounded-r-md px-2"
+  >
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      data-slot="icon"
+      aria-hidden="true"
+      class="size-5 text-gray-400"
+    >
+      <path
+        d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+        clip-rule="evenodd"
+        fill-rule="evenodd"
+      />
+    </svg>
+  </button>
+
+  <el-options
+    anchor="bottom start"
+    popover
+    class="max-h-60 w-(--input-width) overflow-auto rounded-md bg-white py-1 text-base shadow-lg outline outline-black/5 transition-discrete [--anchor-gap:--spacing(1)] data-leave:transition data-leave:duration-100 data-leave:ease-in data-closed:data-leave:opacity-0 sm:text-sm dark:bg-gray-800 dark:shadow-none dark:-outline-offset-1 dark:outline-white/10"
+    x-ref="opts"
+  >
+    <!-- options injected dynamically -->
+  </el-options>
+
+  {# Optional: inline student list to prefer local data over network. Expect a
+  list of objects with id, student_id, name, status. #} {% if students is
+  defined %}
+  <script type="application/json" data-source="students">
+    [
+    {%- for s in students -%}
+      {"id": {{ s.id }}, "student_id": {{ (s.student_id or '')|tojson }}, "name": {{ (s.name or '')|tojson }}, "status": {{ (s.status or '')|tojson }} }{% if not loop.last %},{% endif %}
+    {%- endfor -%}
+    ]
+  </script>
+  {% endif %}
+</el-autocomplete>

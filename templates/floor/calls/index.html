@@ -25,12 +25,26 @@
         <option value="{{ u.id }}" {% if selected_called_by==u.id %}selected{% endif %}>{{ u.name }}</option>
         {% endfor %}
       </select>
-      <select id="student" class="soft-input" @change="applyFilter">
-        <option value="">Student</option>
-        {% for s in students %}
-        <option value="{{ s.id }}" {% if selected_student==s.id %}selected{% endif %}>{{ s.student_id }} — {{ s.name }}</option>
-        {% endfor %}
-      </select>
+      {# Inline student autocomplete for filtering #}
+      {% set show_label = false %}
+      {% set id = 'filter-student-input' %}
+      {% set hidden_id = 'student' %}
+      {% set name = '' %}
+      {% set label = 'Student' %}
+      {% set placeholder = 'Student: type name or ID' %}
+      {% set input_class = 'w-64' %}
+      {% set force_fallback = true %}
+      {% set value_id = selected_student or '' %}
+      {% set value_label = '' %}
+      {% include 'components/student_autocomplete.html' with context %}
+      <button class="soft-btn" @click="applyFilter">Apply</button>
+      <script>
+        // Auto-apply when a student is selected via the combobox
+        (function(){
+          const hid = document.getElementById('student');
+          if(hid){ hid.addEventListener('change', ()=>{ if(hid.value) { const e=new Event('input'); document.getElementById('q')?.dispatchEvent(e); /* trigger debounce */ setTimeout(()=>{ const s=hid.value; if(s){ const params=new URLSearchParams(window.location.search); params.set('student', s); window.location = `${location.pathname}?${params.toString()}`; } }, 50); } }); }
+        })();
+      </script>
       <button class="soft-btn" @click="resetFilters">Reset</button>
     </div>
 
@@ -105,31 +119,9 @@ function callsUI(){
     async loadModal(url, title){
       this.modalTitle = title; this.showModal = true; this.modalBody = '<div class="p-3 text-sm text-slate-500">Loading…</div>';
       const res = await fetch(url); const html = await res.text(); this.modalBody = html;
-      // Initialize Alpine on injected content and enhance student lookup with async search
+      // Initialize Alpine on injected content
       this.$nextTick(()=>{
         try{ if(window.Alpine && this.$refs.modalBox){ window.Alpine.initTree(this.$refs.modalBox); } }catch(_e){}
-        const scope = this.$refs.modalBox; // limit queries to modal box
-        const input = scope.querySelector('form input[placeholder="Search by name or ID"]');
-        const select = scope.querySelector('form select[name="student_id"]');
-        if(!input || !select) return;
-        let timer;
-        input.addEventListener('input', ()=>{
-          clearTimeout(timer);
-          const q = input.value.trim();
-          if(!q){ return; }
-          timer = setTimeout(async ()=>{
-            try{
-              const r = await fetch(`/api/students/search?q=${encodeURIComponent(q)}`);
-              const items = await r.json();
-              // Replace options
-              const currentVal = select.value;
-              select.innerHTML = '<option value="">Select student</option>' + items.map(s=>`<option value="${s.id}">${s.student_id} — ${s.name}</option>`).join('');
-              // Keep value if still present
-              const hasPrev = Array.from(select.options).some(o=>o.value===currentVal);
-              if(hasPrev) select.value = currentVal;
-            }catch(e){ console.warn('student search failed', e); }
-          }, 300);
-        });
       });
     },
     applyFilter(){

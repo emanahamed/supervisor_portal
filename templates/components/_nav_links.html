@@ -151,6 +151,25 @@
         </ul>
       </div>
     </li>
+    {# Version History - visible to all logged in users #}
+    <li>
+      <a
+        href="{{ url_for('version_history') }}"
+        class="nav-single {{ 'active' if endpoint=='version_history' else '' }}"
+      >
+        <svg
+          class="h-4 w-4 text-indigo-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M12 8v4l3 3" />
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+        Version History
+      </a>
+    </li>
     {% endif %} {# Books #} {% if can('manage_books') %}
     <li>
       <div>
@@ -538,7 +557,7 @@
       </div>
     </li>
     {% endif %} {# Staff Management #} {% if can('manage_staff') or
-    can('manage_availability') %}
+    can('manage_availability') or can('manage_supervisor_shifts') %}
     <li>
       <div>
         <button
@@ -614,6 +633,27 @@
                 />
               </svg>
               <span>Tutor Availability</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_supervisor_shifts') %}
+          <li>
+            <a
+              href="{{ url_for('supervisor_shifts_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='supervisor_shifts_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 12h18" />
+                <path d="M8 6v12" />
+                <path d="M16 6v12" />
+                <path d="M12 2v4" />
+              </svg>
+              <span>Supervisor Shifts</span>
             </a>
           </li>
           {% endif %}

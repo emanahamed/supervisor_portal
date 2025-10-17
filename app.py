@@ -50,7 +50,8 @@ from models import (AppointmentBooking, AppointmentSlot, Availability, Book,
                     ErrorReport, Invoice, Issue, IssueChange, Meeting,
                     Observation, ObservationCycle, Permission, PermissionAudit,
                     Resource, ResourceLoan, RolePermission, Staff, Student,
-                    StudentChange, Todo, User, UserPermission, db)
+                    StudentChange, SupervisorShift, Todo, User, UserPermission,
+                    db)
 from utils import (BRANCH_CHOICES, allowed_file, get_setting,
                    normalize_staff_dataframe, parse_preferred_contact,
                    parse_schedule_message, set_setting)
@@ -363,6 +364,7 @@ with app.app_context():  # pragma: no cover - simple safety patch
             ('access_timetable_eastham','Access East Ham timetable generator'),
             ('manage_student_concerns','Manage student concerns reports'),
             ('manage_resources','Manage resource inventory'),
+            ('manage_supervisor_shifts','Manage supervisor shifts'),
         ]
         created = False
         for k, desc in needed_perms:
@@ -615,8 +617,14 @@ def fmt_money(value):
         return str(value)
 
 @app.route('/version-history')
+@login_required
 def version_history():
-    return jsonify({"version": VERSION, "changelog": get_changelog()})
+    # Render a human-friendly page of versions using parsed entries
+    try:
+        entries = changelog_json()  # newest first
+    except Exception:
+        entries = []
+    return render_template('dashboard/version_history.html', entries=entries)
 
 @app.route('/api/version')
 def api_version():
@@ -907,6 +915,21 @@ def create_tables_and_superadmin():
                     conn.execute(text("ALTER TABLE shift ADD COLUMN floors TEXT"))
             except Exception:
                 pass
+            # SupervisorShift table (no floors)
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS supervisor_shift (
+                id INTEGER PRIMARY KEY,
+                staff_user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                day VARCHAR(20) NOT NULL,
+                timeslots TEXT NOT NULL,
+                branch VARCHAR(120),
+                notes TEXT,
+                created_at DATETIME,
+                updated_at DATETIME,
+                FOREIGN KEY(staff_user_id) REFERENCES user(id)
+            )
+            """))
             # Permissions tables (0.9.0) if not present
             conn.execute(text("CREATE TABLE IF NOT EXISTS permission (key VARCHAR(120) PRIMARY KEY, description VARCHAR(255))"))
             conn.execute(text("CREATE TABLE IF NOT EXISTS role_permission (id INTEGER PRIMARY KEY, role VARCHAR(80) NOT NULL, permission_key VARCHAR(120) NOT NULL, UNIQUE(role, permission_key))"))
@@ -998,6 +1021,7 @@ def create_tables_and_superadmin():
             ('manage_floor_reports','Manage floor print reports'),
             ('manage_call_list','Manage floor call list'),
             ('manage_student_concerns','Manage student concerns reports'),
+            ('manage_supervisor_shifts','Manage supervisor shifts'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -1012,9 +1036,9 @@ def create_tables_and_superadmin():
         role_defaults = {
             'staff': {'view_dashboard','manage_tasks','view_reports'},
             'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books','manage_students'},
-            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns',
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts',
                                'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list','manage_students'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns',
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts',
                       'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
         }
         # Admin should also manage students (append if not present for backward runs)
@@ -1270,7 +1294,7 @@ from calendar import day_name
 from datetime import datetime as _dt
 
 from email_utils import send_email
-from models import Shift
+from models import Shift, SupervisorShift
 
 TIMESLOT_OPTIONS = ['9-11','11-1','2-4','4-6','5-7']
 
@@ -1290,6 +1314,17 @@ def _users_for_shifts():
     # Staff dropdown: users whose role in admin/staff (and approved/active)
     roles = ['admin','staff']
     return User.query.filter(User.is_approved.is_(True), User.is_active.is_(True), User.role.in_(roles)).order_by(User.name.asc()).all()
+
+def _users_for_supervisor_shifts():
+    """Users eligible for Supervisor Shifts: centre managers and supervisors only.
+
+    Ensures only approved and active accounts appear in the dropdown.
+    """
+    roles = ['centre_manager', 'supervisor']
+    return (User.query
+            .filter(User.is_approved.is_(True), User.is_active.is_(True), User.role.in_(roles))
+            .order_by(User.name.asc())
+            .all())
 
 
 def _build_shift_email(shift: Shift, staff_user: User) -> tuple[str, str]:
@@ -1349,6 +1384,266 @@ def _build_shift_email(shift: Shift, staff_user: User) -> tuple[str, str]:
     </html>
         """.format(title=subject, intro=intro, table=''.join(table), year=date.today().year)
         return subject, shell
+
+def _build_supervisor_shift_email(shift: SupervisorShift, staff_user: User) -> tuple[str, str]:
+        date_label = shift.date.strftime('%A, %d %B %Y') if shift.date else ''
+        times = ', '.join(shift.timeslot_list())
+        branch = shift.branch or '—'
+        subject = f"Your supervisor shift – {date_label} ({times})"
+        body_rows = [
+                ("Staff", staff_user.name or ''),
+                ("Date", date_label),
+                ("Day", shift.day or ''),
+                ("Timeslots", times or ''),
+                ("Branch", branch),
+                ("Notes", (shift.notes or '').replace('\n','<br/>') or '<em>None</em>'),
+        ]
+        table = ["<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>"]
+        for label, value in body_rows:
+                table.append(
+                        "<tr>"+
+                        f"<td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td>"+
+                        f"<td style='padding:6px 0;color:#0f172a;'>{value}</td>"+
+                        "</tr>"
+                )
+        table.append("</table>")
+        intro = f"Hello {staff_user.name},<br/><br/>You have been assigned a new supervisor shift. The details are below."
+        shell = """
+<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'/><title>{title}</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
+    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#f1f5f9;padding:24px 0;'>
+        <tr><td align='center'>
+            <table role='presentation' width='640' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;'>
+                <tr>
+                    <td style='background:#0f172a;padding:24px 32px;'>
+                        <h1 style='margin:0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;'>Excel Tutors</h1>
+                        <p style='margin:6px 0 0;font-size:13px;color:#cbd5f5;'>Supervisor shift assignment</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style='padding:32px;'>
+                        <p style='margin:0 0 16px;font-size:15px;color:#0f172a;'>{intro}</p>
+                        {table}
+                    </td>
+                </tr>
+                <tr>
+                    <td style='background:#f8fafc;padding:18px 32px;text-align:center;font-size:11px;color:#94a3b8;'>
+                        &copy; {year} Excel Tutors. All rights reserved.
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+    </body>
+    </html>
+        """.format(title=subject, intro=intro, table=''.join(table), year=date.today().year)
+        return subject, shell
+
+@app.route('/supervisor/shifts')
+@login_required
+@permission_required('manage_supervisor_shifts')
+def supervisor_shifts_index():
+    q = (request.args.get('q') or '').strip().lower()
+    staff_id = request.args.get('staff', type=int)
+    day = (request.args.get('day') or '').strip()
+    status = (request.args.get('status') or '').strip().lower()  # upcoming | past
+    date_from = request.args.get('from')
+    date_to = request.args.get('to')
+    sort = (request.args.get('sort') or 'date').lower()  # date|staff|day
+    direction = (request.args.get('direction') or 'desc').lower()  # asc|desc
+
+    query = SupervisorShift.query
+    today = date.today()
+    if staff_id:
+        query = query.filter(SupervisorShift.staff_user_id == staff_id)
+    if day:
+        query = query.filter(SupervisorShift.day == day)
+    if status == 'upcoming':
+        query = query.filter(SupervisorShift.date >= today)
+    elif status == 'past':
+        query = query.filter(SupervisorShift.date < today)
+    if date_from:
+        try:
+            df = _dt.strptime(date_from, '%Y-%m-%d').date()
+            query = query.filter(SupervisorShift.date >= df)
+        except Exception:
+            pass
+    if date_to:
+        try:
+            dt = _dt.strptime(date_to, '%Y-%m-%d').date()
+            query = query.filter(SupervisorShift.date <= dt)
+        except Exception:
+            pass
+    if q:
+        query = query.join(User, SupervisorShift.staff_user_id == User.id).filter(
+            (User.name.ilike(f"%{q}%")) | (SupervisorShift.notes.ilike(f"%{q}%"))
+        )
+
+    if sort == 'staff':
+        query = query.join(User, SupervisorShift.staff_user_id == User.id).order_by(User.name.asc())
+    elif sort == 'day':
+        query = query.order_by(SupervisorShift.day.asc(), SupervisorShift.date.desc())
+    else:
+        query = query.order_by(SupervisorShift.date.desc())
+    if direction == 'asc':
+        if sort == 'date':
+            query = query.order_by(SupervisorShift.date.asc())
+
+    records = query.all()
+    staff_list = _users_for_supervisor_shifts()
+    days = list(day_name)
+    return render_template(
+        'supervisor/shifts/index.html',
+        records=records,
+        staff_list=staff_list,
+        days=days,
+        TIMESLOT_OPTIONS=TIMESLOT_OPTIONS,
+        today=today,
+        BRANCH_CHOICES=BRANCH_CHOICES,
+    )
+
+@app.route('/supervisor/shifts/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def supervisor_shifts_new():
+    if request.method == 'POST':
+        try:
+            staff_user_id = int(request.form.get('staff_user_id'))
+        except Exception:
+            flash('Invalid staff', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        # Enforce role restriction: only centre_manager or supervisor accounts can be assigned
+        assignee = db.session.get(User, staff_user_id)
+        if not assignee or (assignee.role not in ('centre_manager','supervisor')):
+            flash('Selected user is not eligible for a supervisor shift (requires Supervisor or Centre Manager role).', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        try:
+            raw = (request.form.get('date') or '').strip()
+            dt_parsed = None
+            for fmt in ('%d-%m-%Y','%Y-%m-%d'):
+                try:
+                    dt_parsed = _dt.strptime(raw, fmt).date(); break
+                except Exception:
+                    pass
+            if not dt_parsed:
+                raise ValueError('Invalid date')
+        except Exception:
+            flash('Invalid date format', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        slots = request.form.getlist('timeslots')
+        if not slots and (dt_parsed.weekday() < 5):
+            slots = ['5-7']
+        slots = [s for s in slots if s in TIMESLOT_OPTIONS]
+        if not slots:
+            flash('Please choose at least one timeslot', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        branch = (request.form.get('branch') or '').strip()
+        if branch and branch not in BRANCH_CHOICES:
+            flash('Invalid branch', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        notes = (request.form.get('notes') or '').strip() or None
+        sh = SupervisorShift(staff_user_id=staff_user_id, date=dt_parsed, day=_shift_day_for(dt_parsed), timeslots=','.join(slots), branch=branch or None, notes=notes)
+        db.session.add(sh)
+        db.session.commit()
+        try:
+            staff_user = db.session.get(User, staff_user_id)
+            if staff_user and staff_user.email:
+                subj, html = _build_supervisor_shift_email(sh, staff_user)
+                send_email(staff_user.email, subj, html)
+        except Exception as _exc:
+            print(f"[WARN] Supervisor shift email send failed: {_exc}")
+        flash('Supervisor shift created', 'success')
+        return redirect(url_for('supervisor_shifts_index'))
+    staff_list = _users_for_supervisor_shifts()
+    return render_template('supervisor/shifts/form.html', record=None, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
+
+@app.route('/supervisor/shifts/<int:shift_id>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def supervisor_shifts_edit(shift_id: int):
+    sh = SupervisorShift.query.get_or_404(shift_id)
+    if sh.date < date.today():
+        flash('Cannot edit past supervisor shifts', 'warning')
+        return redirect(url_for('supervisor_shifts_index'))
+    if request.method == 'POST':
+        try:
+            staff_user_id = int(request.form.get('staff_user_id'))
+        except Exception:
+            flash('Invalid staff', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        # Enforce role restriction on edit as well
+        assignee = db.session.get(User, staff_user_id)
+        if not assignee or (assignee.role not in ('centre_manager','supervisor')):
+            flash('Selected user is not eligible for a supervisor shift (requires Supervisor or Centre Manager role).', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        raw = (request.form.get('date') or '').strip()
+        nd = None
+        for fmt in ('%d-%m-%Y','%Y-%m-%d'):
+            try:
+                nd = _dt.strptime(raw, fmt).date(); break
+            except Exception:
+                pass
+        if not nd:
+            flash('Invalid date format', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        slots = request.form.getlist('timeslots')
+        if not slots and (nd.weekday() < 5):
+            slots = ['5-7']
+        slots = [s for s in slots if s in TIMESLOT_OPTIONS]
+        if not slots:
+            flash('Please choose at least one timeslot', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        branch = (request.form.get('branch') or '').strip()
+        if branch and branch not in BRANCH_CHOICES:
+            flash('Invalid branch', 'danger')
+            return redirect(url_for('supervisor_shifts_index'))
+        sh.staff_user_id = staff_user_id
+        sh.date = nd
+        sh.day = _shift_day_for(nd)
+        sh.timeslots = ','.join(slots)
+        sh.branch = branch or None
+        sh.notes = (request.form.get('notes') or '').strip() or None
+        db.session.commit()
+        flash('Supervisor shift updated', 'success')
+        return redirect(url_for('supervisor_shifts_index'))
+    staff_list = _users_for_supervisor_shifts()
+    return render_template('supervisor/shifts/form.html', record=sh, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
+
+@app.route('/api/supervisor/shifts/<int:shift_id>')
+@login_required
+@permission_required('manage_supervisor_shifts')
+def api_supervisor_shift(shift_id: int):
+    sh = SupervisorShift.query.get_or_404(shift_id)
+    payload = {
+        'id': sh.id,
+        'staff_user_id': sh.staff_user_id,
+        'date': sh.date.strftime('%Y-%m-%d') if sh.date else None,
+        'day': sh.day,
+        'timeslots': sh.timeslot_list(),
+        'branch': sh.branch,
+        'notes': sh.notes or '',
+        'is_past': bool(sh.date < date.today()) if sh.date else False,
+    }
+    return jsonify(payload)
+
+@app.route('/supervisor/shifts/<int:shift_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def supervisor_shifts_delete(shift_id: int):
+    sh = SupervisorShift.query.get_or_404(shift_id)
+    if sh.date and sh.date < date.today():
+        flash('Cannot delete past supervisor shifts', 'warning')
+        return redirect(url_for('supervisor_shifts_index'))
+    try:
+        db.session.delete(sh)
+        db.session.commit()
+        flash('Supervisor shift deleted', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete supervisor shift: {exc}', 'danger')
+    return redirect(url_for('supervisor_shifts_index'))
 
 
 @app.route('/floor/shifts')
@@ -2038,7 +2333,7 @@ def floor_call_list_index():
 
     reasons = ['absence','lateness','payment issue','detention','meeting','event','other']
     staff_opts = User.query.filter(User.role.in_(['superadmin','centre_manager','supervisor','admin'])).order_by(User.name.asc()).all()
-    students = Student.query.order_by(Student.name.asc()).limit(500).all()
+    students = Student.query.order_by(Student.name.asc()).all()
     return render_template('floor/calls/index.html', records=records, selected_date=selected_date, reasons=reasons, staff_opts=staff_opts, students=students, selected_reason=reason, selected_called_by=called_by, selected_student=student_id, q=q)
 
 
@@ -2109,7 +2404,7 @@ def floor_call_list_new():
     # GET -> modal content
     reasons = ['absence','lateness','payment issue','detention','meeting','event','other']
     staff_opts = User.query.filter(User.role.in_(['superadmin','centre_manager','supervisor','admin'])).order_by(User.name.asc()).all()
-    students = Student.query.order_by(Student.name.asc()).limit(500).all()
+    students = Student.query.order_by(Student.name.asc()).all()
     return render_template('floor/calls/form.html', record=None, reasons=reasons, staff_opts=staff_opts, students=students, today=date.today())
 
 @app.route('/floor/call-list/<int:cid>/edit', methods=['GET','POST'])
@@ -7409,13 +7704,13 @@ def company_json(company_id):
     }
     return jsonify(payload)
 
-# -------- Student autocomplete (meetings) -------- #
+# -------- Student autocomplete (meetings/call list) -------- #
 @app.route('/api/students/suggest')
 @login_required
 def api_student_suggest():
     """Return up to 20 students matching `q` in student_id or name.
 
-    Response format: [{id, label, name, student_id}]
+    Response format: [{id, label, name, student_id, status}]
     Label is formatted as "<student_id>-<name>" for direct insertion.
     Note: We do not filter by a non-existent `is_active`; optionally prioritize
     status == 'Active' in ordering when available.
@@ -7453,6 +7748,7 @@ def api_student_suggest():
             'student_id': sid,
             'name': name,
             'label': label,
+            'status': (s.status or ''),
         })
     return jsonify(out)
 

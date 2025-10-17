@@ -606,6 +606,30 @@ class Shift(db.Model):
         return [t.strip() for t in raw.split(',') if t.strip()]
 
 
+class SupervisorShift(db.Model):
+    """Supervisor/Centre Manager shift (separate from floor staff shifts).
+
+    Mirrors the core fields of Shift but omits floor assignments. Used to
+    schedule supervisors and centre managers. No end-of-day checklist or
+    print report workflows are associated with this model.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    staff_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    day = db.Column(db.String(20), nullable=False, index=True)  # Monday, Tuesday, ...
+    timeslots = db.Column(db.Text, nullable=False)  # CSV list e.g. "9-11,11-1"
+    branch = db.Column(db.String(120), index=True)  # Whitechapel, East Ham, Stratford, Docklands
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    staff_user = db.relationship('User', foreign_keys=[staff_user_id], lazy=True)
+
+    def timeslot_list(self) -> list[str]:
+        raw = self.timeslots or ''
+        return [t.strip() for t in raw.split(',') if t.strip()]
+
+
 # End of Day Checklists (Floor Management)
 class EndOfDayChecklist(db.Model):
     id = db.Column(db.Integer, primary_key=True)

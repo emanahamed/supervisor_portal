@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% block title %}Supervisor Shifts{% endblock %}
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8" x-data="supShiftUI()">
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Supervisor Shifts</h1>
+    <button @click="openCreate()" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">New Shift</button>
+  </div>
+
+  <div class="rounded-lg border border-gray-200 dark:border-white/10 p-3 bg-white dark:bg-slate-900/50">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <input id="q" name="q" type="text" placeholder="Search by staff or notes" class="soft-input" @input="debouncedFilter" />
+      <select id="staff" class="soft-input" @change="applyFilter">
+        <option value="">All Staff</option>
+        {% for u in staff_list %}<option value="{{ u.id }}">{{ u.name }}</option>{% endfor %}
+      </select>
+      <select id="day" class="soft-input" @change="applyFilter">
+        <option value="">All Days</option>
+        {% for d in days %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+      </select>
+      <select id="status" class="soft-input" @change="applyFilter">
+        {% set st = request.args.get('status','') %}
+        <option value="" {% if not st %}selected{% endif %}>All Statuses</option>
+        <option value="upcoming" {% if st=='upcoming' %}selected{% endif %}>Upcoming</option>
+        <option value="past" {% if st=='past' %}selected{% endif %}>Past</option>
+      </select>
+      <input id="from" type="date" class="soft-input" @change="applyFilter" />
+      <input id="to" type="date" class="soft-input" @change="applyFilter" />
+      <button class="soft-btn" @click="resetFilters">Reset</button>
+    </div>
+
+    <div class="overflow-auto">
+      <table id="tbl_sup_shifts" data-sortable data-paginate data-page-size="25" class="min-w-full divide-y divide-gray-200 dark:divide-white/10">
+        <thead class="bg-gray-50 dark:bg-slate-800/50">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Day</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Staff</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Branch</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Timeslots</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Notes</th>
+            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-white/10">
+          {% for r in records %}
+          {% set is_past = r.date < today %}
+          <tr>
+            <td class="px-3 py-2 text-sm">{{ r.date.strftime('%d-%m-%Y') }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.day }}</td>
+            <td class="px-3 py-2 text-sm">
+              {% if is_past %}
+              <span class="soft-badge bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">Past</span>
+              {% else %}
+              <span class="soft-badge bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Upcoming</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-sm">{{ r.staff_user.name }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.branch or '' }}</td>
+            <td class="px-3 py-2 text-sm">{{ ', '.join(r.timeslot_list()) }}</td>
+            <td class="px-3 py-2 text-sm">{{ r.notes or '' }}</td>
+            <td class="px-3 py-2 text-sm text-right">
+              <div class="inline-flex items-center gap-1">
+                {% if not is_past %}
+                <button class="soft-btn" @click="openEdit({{ r.id }})">Edit</button>
+                <form action="{{ url_for('supervisor_shifts_delete', shift_id=r.id) }}" method="post" onsubmit="return confirm('Delete this shift?');" class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+                  <button type="submit" class="soft-btn danger">Delete</button>
+                </form>
+                {% else %}
+                <span class="text-xs text-gray-400">Past</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal Shell -->
+  <div x-show="showModal" class="fixed inset-0 z-40" style="display: none">
+    <div class="absolute inset-0 bg-black/40" @click="closeModal"></div>
+    <div class="relative z-50 mx-auto mt-16 w-full max-w-xl rounded-lg bg-white dark:bg-slate-900 shadow-lg border border-gray-200 dark:border-white/10">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-white/10">
+        <h3 class="text-sm font-medium" x-text="modalTitle"></h3>
+        <button class="text-gray-500 hover:text-gray-700" @click="closeModal">✕</button>
+      </div>
+      <div class="p-4">
+        <form :action="formAction" method="post" @submit="onSubmit">
+          <input type="hidden" name="csrf_token" value="{{ CSRF_TOKEN }}" />
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium mb-1">Staff</label>
+              <select name="staff_user_id" class="soft-input" required x-model="form.staff_user_id">
+                <option value="">Select staff</option>
+                {% for u in staff_list %}<option value="{{ u.id }}">{{ u.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs font-medium mb-1">Date</label>
+                <input name="date" type="date" class="soft-input" x-model="form.date" @change="onDateChange" required />
+              </div>
+              <div>
+                <label class="block text-xs font-medium mb-1">Day</label>
+                <input type="text" class="soft-input" x-model="form.day" disabled />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">Timeslots</label>
+              <div class="flex flex-wrap gap-2">
+                {% for t in TIMESLOT_OPTIONS %}
+                <label class="inline-flex items-center gap-1 text-xs">
+                  <input type="checkbox" name="timeslots" value="{{ t }}" :checked="form.timeslots.includes('{{ t }}')" />
+                  <span>{{ t }}</span>
+                </label>
+                {% endfor %}
+              </div>
+              <p class="text-[11px] text-gray-400 mt-1">Weekdays default to 5-7 if none selected (can be changed).</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs font-medium mb-1">Branch</label>
+                <select name="branch" class="soft-input" x-model="form.branch">
+                  <option value="">Select branch</option>
+                  {% for b in BRANCH_CHOICES %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium mb-1">Notes (optional)</label>
+                <input type="text" name="notes" class="soft-input" x-model="form.notes" />
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 flex items-center justify-end gap-2">
+            <button type="button" class="soft-btn" @click="closeModal">Cancel</button>
+            <button type="submit" class="soft-btn primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function supShiftUI() {
+    return {
+      showModal: false,
+      modalTitle: '',
+      formAction: '',
+      form: { id: null, staff_user_id: '', date: '', day: '', timeslots: [], branch: '', notes: '' },
+      openCreate() {
+        this.modalTitle = 'New Supervisor Shift';
+        this.formAction = '{{ url_for('supervisor_shifts_new') }}';
+        this.form = { id: null, staff_user_id: '', date: '', day: '', timeslots: [], branch: '', notes: '' };
+        this.showModal = true;
+      },
+      openEdit(id) {
+        this.modalTitle = 'Edit Supervisor Shift';
+        this.formAction = '{{ url_for('supervisor_shifts_edit', shift_id=0) }}'.replace('/0/','/'+id+'/');
+        fetch(`{{ url_for('api_supervisor_shift', shift_id=0) }}`.replace('/0', `/${id}`))
+          .then(r => r.json())
+          .then(data => {
+            if (data.is_past) { alert('Cannot edit past shifts'); return; }
+            this.form = {
+              id: data.id,
+              staff_user_id: String(data.staff_user_id || ''),
+              date: data.date || '',
+              day: data.day || '',
+              timeslots: Array.isArray(data.timeslots) ? data.timeslots : [],
+              branch: data.branch || '',
+              notes: data.notes || ''
+            };
+            this.showModal = true;
+          })
+          .catch(() => { alert('Failed to load shift details'); });
+      },
+      closeModal() { this.showModal = false; },
+      onDateChange(e) {
+        const val = this.form.date;
+        let d = null;
+        const iso = val && /^\d{4}-\d{2}-\d{2}$/.test(val);
+        if (iso) d = new Date(val);
+        if(!d || isNaN(d)) { this.form.day = ''; return; }
+        const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        this.form.day = days[d.getDay()];
+        if(d.getDay()>=1 && d.getDay()<=5 && this.form.timeslots.length === 0) {
+          this.form.timeslots = ['5-7'];
+        }
+      },
+      debouncedFilter: debounce(function() { this.applyFilter(); }, 300),
+      applyFilter() {
+        const params = new URLSearchParams();
+        const q = document.getElementById('q').value.trim(); if(q) params.set('q', q);
+        const s = document.getElementById('staff').value; if(s) params.set('staff', s);
+        const d = document.getElementById('day').value; if(d) params.set('day', d);
+        const st = document.getElementById('status').value; if(st) params.set('status', st);
+        const f = document.getElementById('from').value; if(f) params.set('from', f);
+        const t = document.getElementById('to').value; if(t) params.set('to', t);
+        window.location = `${location.pathname}?${params.toString()}`;
+      },
+      resetFilters() { window.location = location.pathname; },
+    };
+  }
+  function debounce(fn, wait) { let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn.apply(null,args), wait); }; }
+</script>
+{% endblock %}
