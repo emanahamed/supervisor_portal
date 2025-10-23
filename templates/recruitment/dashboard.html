@@ -1,0 +1,149 @@
+{% extends 'base.html' %} {% block title %}Recruitment · Dashboard{% endblock %}
+{% block page_title %}Recruitment Dashboard{% endblock %} {% block content %}
+<div class="max-w-7xl mx-auto">
+  <!-- KPIs -->
+  <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+    <div class="soft-card p-4">
+      <div class="text-slate-500">Total Applications</div>
+      <div class="text-2xl font-semibold">{{ kpis.total }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-slate-500">Last 30 days</div>
+      <div class="text-2xl font-semibold">{{ kpis.last30 }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-slate-500">Pending Review</div>
+      <div class="text-2xl font-semibold">{{ kpis.pending }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-slate-500">Invited</div>
+      <div class="text-2xl font-semibold">{{ kpis.invited }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-slate-500">Selected</div>
+      <div class="text-2xl font-semibold">{{ kpis.selected }}</div>
+    </div>
+    <div class="soft-card p-4">
+      <div class="text-slate-500">Onboarded</div>
+      <div class="text-2xl font-semibold">{{ kpis.onboarded }}</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+    <div class="soft-card p-4">
+      <h3 class="font-semibold mb-2">Applications Trend (12 months)</h3>
+      <canvas id="trendChart" height="140"></canvas>
+    </div>
+    <div class="soft-card p-4">
+      <h3 class="font-semibold mb-2">Status Breakdown</h3>
+      <canvas id="statusChart" height="140"></canvas>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+    <div class="soft-card p-4">
+      <h3 class="font-semibold mb-2">By Branch</h3>
+      <canvas id="branchChart" height="140"></canvas>
+    </div>
+    <div class="soft-card p-4">
+      <h3 class="font-semibold mb-2">Top Universities</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full table-auto">
+          <thead>
+            <tr class="text-left">
+              <th class="px-2 py-1">University</th>
+              <th class="px-2 py-1">Applications</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u, c in charts.top_universities %}
+            <tr class="border-t">
+              <td class="px-2 py-1">{{ u }}</td>
+              <td class="px-2 py-1">{{ c }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="2" class="px-2 py-6 text-center text-slate-500">
+                No data
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="soft-card p-4 mb-10">
+    <h3 class="font-semibold mb-2">Top Subjects</h3>
+    <div class="overflow-x-auto">
+      <table class="w-full table-auto">
+        <thead>
+          <tr class="text-left">
+            <th class="px-2 py-1">Subject</th>
+            <th class="px-2 py-1">Applications</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s, c in charts.top_subjects %}
+          <tr class="border-t">
+            <td class="px-2 py-1">{{ s }}</td>
+            <td class="px-2 py-1">{{ c }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="2" class="px-2 py-6 text-center text-slate-500">
+              No data
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  (function(){
+    const labels = {{ (charts.labels or [])|tojson }};
+    const submitted = {{ (charts.submitted or [])|tojson }};
+    const invited = {{ (charts.invited or [])|tojson }};
+    const selected = {{ (charts.selected or [])|tojson }};
+    const onboarded = {{ (charts.onboarded or [])|tojson }};
+
+    const statusLabels = {{ (charts.status_labels or [])|tojson }};
+    const statusValues = {{ (charts.status_values or [])|tojson }};
+
+    const branchLabels = {{ (charts.branch_labels or [])|tojson }};
+    const branchValues = {{ (charts.branch_values or [])|tojson }};
+
+    const t = document.getElementById('trendChart');
+    if (t) new Chart(t, {
+      type: 'bar',
+      data: { labels, datasets: [
+        {label:'Submitted', data: submitted, backgroundColor:'rgba(99,102,241,0.4)', borderColor:'#6366f1', borderWidth:1},
+        {label:'Invited', data: invited, backgroundColor:'rgba(16,185,129,0.4)', borderColor:'#10b981', borderWidth:1},
+        {label:'Selected', data: selected, backgroundColor:'rgba(59,130,246,0.4)', borderColor:'#3b82f6', borderWidth:1},
+        {label:'Onboarded', data: onboarded, backgroundColor:'rgba(245,158,11,0.4)', borderColor:'#f59e0b', borderWidth:1},
+      ]},
+      options:{responsive:true, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true}}}
+    });
+
+    const s = document.getElementById('statusChart');
+    if (s) new Chart(s, {
+      type: 'doughnut',
+      data: { labels: statusLabels, datasets:[{ data: statusValues, backgroundColor:['#f59e0b','#22c55e','#ef4444','#6366f1','#3b82f6','#0ea5e9','#10b981','#eab308'] }] },
+      options:{responsive:true, plugins:{legend:{position:'bottom'}}}
+    });
+
+    const b = document.getElementById('branchChart');
+    if (b) new Chart(b, {
+      type: 'bar',
+      data: { labels: branchLabels, datasets:[{ label:'Applications', data: branchValues, backgroundColor:'rgba(99,102,241,0.4)', borderColor:'#6366f1', borderWidth:1 }] },
+      options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
+    });
+  })();
+</script>
+{% endblock %}

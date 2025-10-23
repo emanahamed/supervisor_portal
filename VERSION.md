@@ -1,5 +1,23 @@
 # Version History
 
+## 2.1.0 - 2025-10-23
+
+Recruitment Admin: Application Management, Branded Invites, and Dashboard
+
+- New permission: `manage_recruitment` (seeded automatically) with default grants to Admin and Centre Manager; Super Admin bypass as usual.
+- Navigation: added "Application Management" group (permission-gated) with links to Applications and Recruitment Dashboard.
+- Applications Admin:
+  - List with filters (query, status, branch preference, university, study year) and bulk actions (Mark Reviewed, Reject, Select, Onboard, Invite).
+  - Detail view with per-application Invite action.
+  - Invitation emails use branded HTML shell and send from the Recruitment mailbox (via EmailSetting).
+- Recruitment Dashboard: KPIs (totals, last 30 days, status counts), 12‑month trend, branch distribution, top universities and subjects; implemented with Chart.js.
+- Helpers: added interview slot label builder and ordinal suffix helper for nicer invite content.
+
+Notes:
+
+- Existing public Job Application flow unchanged. Admin features are permission-gated and hidden from unauthorized users.
+- Email templates fallback to a built-in branded invite if no editable template exists; can be migrated to `EmailTemplate` later.
+
 ## 2.0.7 - 2025-10-12
 
 Navigation width & Staff access-code communications
@@ -13,6 +31,32 @@ Navigation width & Staff access-code communications
 - Security: CSRF meta/header injector continues to protect POST requests; endpoints return JSON with per‑row error collection on bulk sends.
 
 No schema changes. Safe minor release.
+
+## 2.0.8 - 2025-10-22
+
+Invoice management: manager review controls, NMW bands admin, branded notifications
+
+- Manager controls: added Accept / Reject buttons to the staff invoice detail view. Reject opens a modal to capture the reason and both actions record audit rows in `StaffInvoiceChange`.
+- Notifications: manager actions trigger branded HTML emails to the submitter. The system prefers editable `EmailTemplate` records and falls back to built-in branded HTML builders when templates are missing.
+- NMW bands: introduced a small System Setup admin page `/admin/nmw-bands` to manage National Minimum Wage bands as structured rows (table CRUD, no JSON editor). Default bands seeded include: £12.21 (21+), £10.00 (18–20), £7.55 (under 18), and £7.55 (apprentice).
+- Invoice detail & PDF improvements: invoice detail now shows employee age and the selected NMW band; bank details and emphasized totals are included in both print and PDF outputs. Print view includes logo and consistent inline CSS.
+- DB safety helper: added `scripts/ensure_staff_columns.py` — a conservative script that creates a timestamped backup and adds missing nullable `staff` columns (used to repair missing `joining_date` during this release).
+
+Notes:
+
+- Default email templates for approved/rejected invoices are seeded but editable templates (via the Email Templates admin) will be used if present.
+
+## 2.0.9 - 2025-10-22
+
+Template and rendering fixes
+
+- Fixed duplicated totals in the invoice detail page by consolidating totals into a single emphasized totals block.
+- Ensured bank details render reliably by preferring the resolved `Staff` record (`staff_rec`) for bank fields in both detail and PDF/print rendering (fallbacks to `inv.created_by` remain).
+- PDF/print renderers now pass `staff_rec` into templates for consistent rendering across contexts.
+
+Notes:
+
+- If bank details still appear missing for specific invoices, check the `Staff` ↔ `User` linkage for the submitting user (invoice.created_by_id vs Staff.user_id) or the staff record's bank fields.
 
 ## 2.0.6 - 2025-10-09
 

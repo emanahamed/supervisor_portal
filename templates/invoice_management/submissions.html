@@ -1,0 +1,390 @@
+{% extends 'base.html' %}
+{% block title %}Invoice Submissions{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Invoice Submissions</h1>
+  <div class="flex gap-2">
+    <a class="btn btn-secondary" href="{{ url_for('staff_invoices_dashboard') }}">Back to Dashboard</a>
+    <button id="openCreateSalaryReport" class="btn btn-primary" type="button">Create Salary Report</button>
+  </div>
+</div>
+
+<form method="get" class="grid grid-cols-6 gap-3 mb-4">
+  <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="Invoice id, name or staff" class="form-input col-span-2" />
+  <select name="company" class="form-input">
+    <option value="">All companies</option>
+    {% for c in companies %}
+    <option value="{{ c.id }}" {% if filters.company==c.id %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="month" class="form-input">
+    <option value="">Any month</option>
+    {% for m in range(1,13) %}
+    <option value="{{ m }}" {% if filters.month==m %}selected{% endif %}>{{ m }}</option>
+    {% endfor %}
+  </select>
+  <select name="year" class="form-input">
+    <option value="">Any year</option>
+    {% for y in range(2023, (2026 + 1)) %}
+    <option value="{{ y }}" {% if filters.year==y %}selected{% endif %}>{{ y }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" name="date_from" class="form-input" value="{{ filters.date_from or '' }}" />
+  <input type="date" name="date_to" class="form-input" value="{{ filters.date_to or '' }}" />
+  <select name="payment_status" class="form-input">
+    <option value="">Payment status</option>
+    <option value="Paid" {% if filters.payment_status=='Paid' %}selected{% endif %}>Paid</option>
+    <option value="Unpaid" {% if filters.payment_status=='Unpaid' %}selected{% endif %}>Unpaid</option>
+  </select>
+  <button class="btn btn-primary col-span-1" type="submit">Filter</button>
+</form>
+
+<table class="w-full table-auto">
+  <thead>
+    <tr>
+      <th>Invoice ID</th>
+      <th>Staff Name</th>
+      <th>Company</th>
+      <th>Age</th>
+      <th>Department</th>
+      <th>Month-Year</th>
+      <th>Submitted</th>
+      <th>Amount</th>
+      <th>Status</th>
+      <th>Payment Status</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for inv in records %}
+    <tr>
+      <td class="font-mono">#{{ inv.id }}</td>
+  <td>{{ inv.created_by.name }}</td>
+  <td>{{ user_company.get(inv.created_by_id) or '' }}</td>
+  <td>{{ (staff_map.get(inv.created_by_id).age) if staff_map.get(inv.created_by_id) else '' }}</td>
+  <td>{{ (staff_map.get(inv.created_by_id).department) if staff_map.get(inv.created_by_id) else '' }}</td>
+  <td>{{ inv.month_year_label() }}</td>
+  <td>{{ (inv.submitted_at or inv.created_at)|fmt_datetime }}</td>
+  <td>£{{ '%.2f'|format(inv.amount or 0) }}</td>
+      <td>{{ inv.status }}</td>
+      <td>
+        <div class="flex items-center gap-2" id="payment-row-{{ inv.id }}">
+          <div class="group relative inline-flex w-11 shrink-0 rounded-full bg-gray-200 p-0.5 inset-ring inset-ring-gray-900/5 outline-offset-2 outline-indigo-600 transition-colors duration-200 ease-in-out has-checked:bg-indigo-600 has-focus-visible:outline-2 dark:bg-white/5 dark:inset-ring-white/10 dark:outline-indigo-500 dark:has-checked:bg-indigo-500">
+            <span class="relative size-5 rounded-full bg-white shadow-xs ring-1 ring-gray-900/5 transition-transform duration-200 ease-in-out group-has-checked:translate-x-5">
+              <span aria-hidden="true" class="absolute inset-0 flex size-full items-center justify-center opacity-100 transition-opacity duration-200 ease-in group-has-checked:opacity-0 group-has-checked:duration-100 group-has-checked:ease-out">
+                <svg viewBox="0 0 12 12" fill="none" class="size-3 text-gray-400 dark:text-gray-600">
+                  <path d="M4 8l2-2m0 0l2-2M6 6L4 4m2 2l2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span aria-hidden="true" class="absolute inset-0 flex size-full items-center justify-center opacity-0 transition-opacity duration-100 ease-out group-has-checked:opacity-100 group-has-checked:duration-200 group-has-checked:ease-in">
+                <svg viewBox="0 0 12 12" fill="currentColor" class="size-3 text-indigo-600 dark:text-indigo-500">
+                  <path d="M3.707 5.293a1 1 0 00-1.414 1.414l1.414-1.414zM5 8l-.707.707a1 1 0 001.414 0L5 8zm4.707-3.293a1 1 0 00-1.414-1.414l1.414 1.414zm-7.414 2l2 2 1.414-1.414-2-2-1.414 1.414zm3.414 2l4-4-1.414-1.414-4 4 1.414 1.414z" />
+                </svg>
+              </span>
+            </span>
+            <input type="checkbox" name="payment_status_{{ inv.id }}" class="absolute inset-0 appearance-none focus:outline-hidden payment-toggle" data-id="{{ inv.id }}" aria-label="Toggle payment status for invoice {{ inv.id }}" role="switch" aria-checked="{{ 'true' if inv.payment_status=='Paid' else 'false' }}" {% if inv.payment_status=='Paid' %}checked{% endif %} />
+          </div>
+          <span class="text-sm payment-status-text" id="payment-status-{{ inv.id }}">{{ inv.payment_status }}</span>
+          <span class="text-xs text-red-600 hidden ml-2" id="payment-error-{{ inv.id }}"></span>
+        </div>
+      </td>
+      <td>
+        <a class="icon-btn secondary icon-btn-xs" href="{{ url_for('invoice_submission_view', invoice_id=inv.id) }}" title="View">View</a>
+        <button class="icon-btn neutral icon-btn-xs history-btn" data-id="{{ inv.id }}">History</button>
+        <form method="post" action="{{ url_for('staff_invoice_delete', invoice_id=inv.id) }}" style="display:inline" onsubmit="return confirm('Delete this invoice?');">
+          <button class="icon-btn danger icon-btn-xs" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include 'invoice_management/_status_history_modal.html' %}
+
+<style>
+/* Improved polyfill for the Tailwind-style toggle:
+  - moves the knob element (.relative) to the right when .group.on
+  - crossfades the first and second inner icon spans
+  - keeps transitions smooth when Tailwind's 'group-has-*' variants aren't available
+*/
+.group { display: inline-block; width: 44px; height: 22px; position: relative; }
+.group .relative { transition: transform 0.18s cubic-bezier(.4,0,.2,1); transform: translateX(0); width: 18px; height: 18px; border-radius: 50%; left: 2px; top: 2px; position: absolute; background: white; }
+.group.on .relative { transform: translateX(22px); }
+
+/* The .relative element contains two stacked spans (icons). Fade them in/out */
+.group .relative > span { display: block; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transition: opacity 0.12s ease-in-out; pointer-events: none; }
+.group .relative > span:first-child { opacity: 1; }
+.group .relative > span:nth-child(2) { opacity: 0; }
+.group.on .relative > span:first-child { opacity: 0; }
+.group.on .relative > span:nth-child(2) { opacity: 1; }
+
+/* Ensure the outer container provides a visible hit area for the absolute input */
+.group > input.payment-toggle { cursor: pointer; }
+</style>
+
+<script>
+document.addEventListener('click', function(e){
+  // Open history modal
+  if(e.target && e.target.classList.contains('history-btn')){
+    const id = e.target.getAttribute('data-id');
+    const modal = document.getElementById('statusHistoryModal');
+    const body = modal.querySelector('#historyBody');
+    const index = modal.querySelector('#historyIndex');
+    const label = modal.querySelector('#historyInvoiceLabel');
+    // Clear existing content
+    body.innerHTML = '<div class="animate-pulse text-slate-400">Loading history…</div>';
+    index.innerHTML = '';
+    label.textContent = `Invoice #${id}`;
+    // Fetch structured history (include credentials so protected endpoints work)
+    fetch(`{{ url_for('invoice_submission_history_api', invoice_id=0) }}`.replace('0', id), { credentials: 'same-origin' })
+      .then(async r => {
+        if (!r.ok) {
+          try { const err = await r.json(); throw new Error(err.error || r.statusText); } catch(_) { throw new Error(r.status + ' ' + r.statusText); }
+        }
+        return r.json();
+      })
+      .then(data => {
+        // data is an array of history events
+        if (!Array.isArray(data) || data.length === 0) {
+          body.innerHTML = '<div class="text-sm text-slate-500">No history available.</div>';
+          return;
+        }
+        // Build index and body
+        index.innerHTML = '';
+        body.innerHTML = '';
+        data.forEach((ev, idx) => {
+          const when = ev.at ? new Date(ev.at).toLocaleString() : '';
+          const title = ev.action ? (ev.action.charAt(0).toUpperCase() + ev.action.slice(1)) : (ev.field ? ev.field : 'Event');
+          const by = ev.by ? `by ${ev.by}` : '';
+          const entry = document.createElement('div');
+          entry.className = 'mb-4 pb-3 border-b last:border-b-0';
+          entry.innerHTML = `<div class="flex items-center justify-between gap-2"><div class="font-semibold">${escapeHtml(title)} ${ev.status?('<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">'+escapeHtml(ev.status)+'</span>'):''}</div><div class="text-xs text-slate-400">${escapeHtml(when)} ${escapeHtml(by)}</div></div><div class="mt-2 text-sm text-slate-700">${ev.field?('<div class="text-xs text-slate-500 font-mono">Field: '+escapeHtml(ev.field)+'</div>') : ''}${ev.old?('<div class="text-xs text-red-600">Old: '+escapeHtml(String(ev.old))+'</div>') : ''}${ev.new?('<div class="text-xs text-green-700">New: '+escapeHtml(String(ev.new))+'</div>') : ''}</div>`;
+          body.appendChild(entry);
+          // index entry
+          const idxBtn = document.createElement('button');
+          idxBtn.type = 'button';
+          idxBtn.className = 'block w-full text-left px-2 py-1 rounded hover:bg-indigo-100 hover:text-indigo-700 truncate';
+          idxBtn.textContent = (ev.action || ev.field || ('Event '+(idx+1))).toString();
+          idxBtn.dataset.jump = idx;
+          idxBtn.addEventListener('click', ()=>{
+            const node = body.querySelectorAll('.mb-4')[idx];
+            if(node) node.scrollIntoView({behavior:'smooth', block:'start'});
+          });
+          index.appendChild(idxBtn);
+        });
+        // show modal
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+      }).catch(err=>{
+        body.innerHTML = `<div class="text-red-600">Failed to load history: ${escapeHtml(String(err))}</div>`;
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+      });
+  }
+
+  // Close modal handlers
+  if(e.target && e.target.hasAttribute('data-h-close')){
+    const m = document.getElementById('statusHistoryModal'); if(m){ m.classList.add('hidden'); m.classList.remove('flex'); }
+  }
+});
+
+// small helper to escape HTML in injected strings
+function escapeHtml(s){ return String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// Ensure the Tailwind-style toggle visually reflects the checkbox state.
+function updateToggleVisual(cb){
+  try{
+    const parent = cb.closest('.group');
+    if(!parent) return;
+    if(cb.checked){
+      parent.classList.add('group-has-checked');
+      parent.classList.add('on');
+    } else {
+      parent.classList.remove('group-has-checked');
+      parent.classList.remove('on');
+    }
+    // set aria-checked attribute on input
+    cb.setAttribute('aria-checked', cb.checked ? 'true' : 'false');
+    // Also set inline styles on the visual elements to force the change
+    try{
+      const knob = parent.querySelector('.relative');
+      if(knob){
+        knob.style.transform = cb.checked ? 'translateX(20px)' : 'translateX(0)';
+      }
+      const spans = parent.querySelectorAll('.relative > span');
+      if(spans && spans.length >= 2){
+        spans[0].style.opacity = cb.checked ? '0' : '1';
+        spans[1].style.opacity = cb.checked ? '1' : '0';
+      }
+    }catch(e){/* ignore individual DOM errors */}
+  }catch(e){/* ignore visual update errors */}
+}
+
+// Toggle a chooser menu (company/month/year/status). Defined at top-level so injected modal HTML
+// can call it immediately after being appended.
+function toggleMenu(ev, which){
+  ev && ev.stopPropagation();
+  const menu = document.getElementById(which + 'Menu');
+  if(!menu) return;
+  // close others
+  document.querySelectorAll('[id$="Menu"]').forEach((m) => { if(m !== menu) m.classList.add('hidden'); });
+  menu.classList.toggle('hidden');
+}
+
+// Initialize modal behaviour after injecting HTML via AJAX
+function setupSalaryReportModal(rootEl){
+  if(!rootEl) return;
+  const form = document.getElementById('create-salary-report-form');
+  if(form){
+    // copy checkbox choices into hidden selects on submit
+    form.addEventListener('submit', function(e){
+      ['company','month','year','status'].forEach(function(name){
+        const sel = document.getElementById(name + 'Select');
+        if(!sel) return;
+        sel.innerHTML = '';
+        const opts = document.querySelectorAll('.' + name + 'Opt');
+        opts.forEach(function(cb){ if(cb.checked){ const o = document.createElement('option'); o.value = cb.value; o.selected = true; sel.appendChild(o); } });
+      });
+      // allow normal POST to trigger download
+    });
+  }
+
+  // Wire chooser click handlers inside the modal
+  const choosers = rootEl.querySelectorAll('.chooser');
+  choosers.forEach(function(ch){
+    ch.addEventListener('click', function(ev){
+      const which = ch.dataset.which;
+      try{ toggleMenu(ev, which); }catch(e){ const menu = document.getElementById(which + 'Menu'); if(menu) menu.classList.toggle('hidden'); }
+    });
+  });
+
+  // Helpers to update badge counts and clear selections
+  const pluralMap = { company: 'Companies', month: 'Months', year: 'Years', status: 'Status' };
+  function updateChooserBadge(name){
+    const count = Array.from(rootEl.querySelectorAll('.' + name + 'Opt')).filter(x=>x.checked).length;
+    const badge = document.getElementById(name + 'Badge');
+    const label = document.getElementById(name + 'ChooserLabel');
+    if(label){ label.textContent = pluralMap[name] || name; }
+    if(badge){
+      if(count > 0){ badge.textContent = String(count); badge.classList.remove('hidden'); }
+      else { badge.textContent = '0'; badge.classList.add('hidden'); }
+    }
+  }
+
+  function clearChooser(name){
+    rootEl.querySelectorAll('.' + name + 'Opt').forEach(cb => { cb.checked = false; });
+    const sel = document.getElementById(name + 'Select'); if(sel) sel.innerHTML='';
+    updateChooserBadge(name);
+  }
+
+  // When checkboxes change, update the badge
+  ['company','month','year','status'].forEach(function(name){
+    rootEl.querySelectorAll('.' + name + 'Opt').forEach(function(cb){
+      cb.addEventListener('change', function(){ updateChooserBadge(name); });
+    });
+  });
+
+  // Wire clear buttons
+  rootEl.querySelectorAll('.chooser-clear').forEach(btn => {
+    btn.addEventListener('click', function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      const which = btn.dataset.which; if(!which) return;
+      clearChooser(which);
+    });
+  });
+
+  // Initialize badges on open
+  ['company','month','year','status'].forEach(updateChooserBadge);
+
+  // Attach click handler to close modal when clicking outside (fallback)
+  const modal = document.getElementById('create-salary-report-modal');
+  if(modal){ modal.addEventListener('click', function(ev){ if(ev.target === modal){ modal.remove(); } }); }
+}
+
+
+// Initialize visuals for existing toggles on page load
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.payment-toggle').forEach(function(cb){ try{ updateToggleVisual(cb); }catch(e){} });
+  // Create Salary Report button handler
+  const csrBtn = document.getElementById('openCreateSalaryReport');
+  if(csrBtn){ csrBtn.addEventListener('click', function(){
+    fetch(`{{ url_for('create_salary_report') }}`)
+      .then(r=>r.text())
+      .then(html=>{
+        const wrapper = document.createElement('div'); wrapper.innerHTML = html;
+        document.body.appendChild(wrapper);
+        // Execute any <script> tags included in the fetched HTML so event handlers like
+        // `toggleMenu` are defined. Scripts inside innerHTML are not executed by default.
+        try{
+          const scripts = wrapper.querySelectorAll('script');
+          scripts.forEach(function(s){
+            try{
+              const ns = document.createElement('script');
+              if(s.src){ ns.src = s.src; ns.type = s.type || 'text/javascript'; ns.async = false; document.body.appendChild(ns); }
+              else { ns.textContent = s.textContent || s.innerText || ''; document.body.appendChild(ns); }
+            }catch(e){ console.error('Failed to run injected script', e); }
+          });
+        }catch(e){ console.error('Failed to evaluate injected modal scripts', e); }
+        // Also run passive initializer (in case script tags didn't include needed bindings)
+        try{ setupSalaryReportModal(wrapper); }catch(e){ console.error('Failed to init salary report modal', e); }
+      }).catch(err=>{ alert('Failed to open create salary report modal'); });
+  }); }
+});
+
+// Payment toggle (improved accessibility and inline error handling)
+document.querySelectorAll('.payment-toggle').forEach(function(cb){
+  cb.addEventListener('change', function(){
+    const id = this.getAttribute('data-id');
+    const statusTextEl = document.getElementById('payment-status-'+id);
+    const errorEl = document.getElementById('payment-error-'+id);
+    errorEl.classList.add('hidden');
+    errorEl.textContent = '';
+  // UI: disable while request in flight
+  cb.disabled = true;
+  cb.setAttribute('aria-busy', 'true');
+  // Update visual classes immediately so the toggle appears to change
+  updateToggleVisual(cb);
+    // optimistic state already applied by the user; remember previous
+    const prevChecked = !cb.checked;
+    fetch(`{{ url_for('invoice_submission_toggle_payment', invoice_id=0) }}`.replace('0', id), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'X-CSRFToken': '{{ csrf_token() }}',
+        'Accept': 'application/json'
+      }
+    })
+    .then(async (r) => {
+      if (!r.ok) {
+        let errText = r.statusText;
+        try { const j = await r.json(); errText = j.error || j.message || errText; } catch(e){}
+        throw new Error(errText || (`HTTP ${r.status}`));
+      }
+      return r.json();
+    })
+    .then(j => {
+      if(!j.ok){
+        throw new Error(j.error || 'Failed to toggle payment status');
+      }
+      // update UI
+      if(statusTextEl){ statusTextEl.textContent = j.payment_status || '' }
+      cb.setAttribute('aria-checked', (j.payment_status === 'Paid') ? 'true' : 'false');
+      // ensure visual state matches final state
+      updateToggleVisual(cb);
+    })
+    .catch(err => {
+      // revert and show inline error
+      cb.checked = prevChecked;
+      cb.setAttribute('aria-checked', prevChecked ? 'true' : 'false');
+      if(errorEl){ errorEl.textContent = String(err.message || err); errorEl.classList.remove('hidden'); }
+    })
+    .finally(()=>{
+      cb.disabled = false;
+      cb.removeAttribute('aria-busy');
+    });
+  });
+
+});
+</script>
+
+{% endblock %}

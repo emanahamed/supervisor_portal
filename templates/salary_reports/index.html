@@ -1,0 +1,392 @@
+{% extends 'base.html' %} {% block title %}Salary Reports{% endblock %} {% block
+content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Salary Reports</h1>
+  <div class="flex gap-2">
+    <form method="post" action="{{ url_for('salary_reports_new') }}">
+      <input type="hidden" name="name" value="" />
+      <button class="btn btn-primary" type="submit">New Report</button>
+    </form>
+    <a class="btn btn-secondary" href="{{ url_for('invoice_submissions') }}"
+      >Back to Invoices</a
+    >
+  </div>
+</div>
+
+<!-- Filters: chooser-style like staff list -->
+<div class="soft-card p-3 mb-4">
+  <div class="grid grid-cols-1 md:grid-cols-5 gap-2 items-start">
+    <input
+      type="text"
+      id="searchInput"
+      placeholder="Search reports or creator"
+      value="{{ q or '' }}"
+      class="soft-input"
+    />
+
+    <div class="relative">
+      <button
+        type="button"
+        id="companyBtn"
+        class="soft-input flex items-center justify-between w-full"
+      >
+        <span id="companyLabel" class="truncate text-left">Companies</span>
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="companyMenu"
+        class="hidden absolute z-20 top-full left-0 mt-1 w-64 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+      >
+        {% for c in companies %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ c.id }}"
+            class="cmpChk w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            company_filters
+            and
+            (c.id
+            in
+            company_filters)
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ c.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="relative">
+      <button
+        type="button"
+        id="monthBtn"
+        class="soft-input flex items-center justify-between w-full"
+      >
+        <span id="monthLabel" class="truncate text-left">Months</span>
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="monthMenu"
+        class="hidden absolute z-20 top-full left-0 mt-1 w-64 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+      >
+        {% set month_names =
+        ["January","February","March","April","May","June","July","August","September","October","November","December"]
+        %} {% for name in month_names %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ loop.index }}"
+            class="monChk w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            month_filters
+            and
+            (loop.index
+            in
+            month_filters)
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="relative">
+      <button
+        type="button"
+        id="yearBtn"
+        class="soft-input flex items-center justify-between w-full"
+      >
+        <span id="yearLabel" class="truncate text-left">Years</span>
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="yearMenu"
+        class="hidden absolute z-20 top-full left-0 mt-1 w-48 max-h-64 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+      >
+        {% for y in range(2023, (2026 + 1)) %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ y }}"
+            class="yrChk w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            year_filters
+            and
+            (y
+            in
+            year_filters)
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ y }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="relative">
+      <button
+        type="button"
+        id="statusBtn"
+        class="soft-input flex items-center justify-between w-full"
+      >
+        <span id="statusLabel" class="truncate text-left">Status</span>
+        <svg
+          class="w-4 h-4 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+      <div
+        id="statusMenu"
+        class="hidden absolute z-20 top-full left-0 mt-1 w-44 max-h-56 overflow-auto bg-white border border-slate-200 rounded-md shadow-sm p-2 space-y-1"
+      >
+        {% for s in ['Pending','Approved','Rejected'] %}
+        <label
+          class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+        >
+          <input
+            type="checkbox"
+            value="{{ s }}"
+            class="stChk w-4 h-4 text-indigo-600 border-slate-300 rounded"
+            {%
+            if
+            status_filters
+            and
+            (s
+            in
+            status_filters)
+            %}checked{%
+            endif
+            %}
+          />
+          <span class="text-sm text-slate-700">{{ s }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button id="applyBtn" class="btn btn-primary" type="button">Apply</button>
+      <button id="resetBtn" class="btn" type="button">Reset</button>
+    </div>
+  </div>
+</div>
+
+<table class="w-full table-auto">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Created By</th>
+      <th>Created At</th>
+      <th>Month</th>
+      <th>Year</th>
+      <th>Company</th>
+      <th>Rows</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in reports %}
+    <tr>
+      <td>
+        <a href="{{ url_for('salary_report_detail', rid=r.id) }}"
+          >{{ r.name or ('Report '+r.created_at.strftime('%Y-%m-%d')) }}</a
+        >
+      </td>
+      <td>{{ r.created_by.name if r.created_by else '' }}</td>
+      <td>{{ r.created_at|fmt_datetime }}</td>
+      <td>
+        {% if r._month_names and r._month_names|length %} {{
+        r._month_names|join(', ') if r._month_names|length <= 3 else
+        (r._month_names[:3]|join(', ') ~ ' +' ~ (r._month_names|length - 3)) }}
+        {% else %} — {% endif %}
+      </td>
+      <td>
+        {% if r._year_values and r._year_values|length %} {{
+        r._year_values|join(', ') if r._year_values|length <= 3 else
+        (r._year_values[:3]|join(', ') ~ ' +' ~ (r._year_values|length - 3)) }}
+        {% else %} — {% endif %}
+      </td>
+      <td>
+        {% if r._company_names and r._company_names|length %} {{
+        r._company_names|join(', ') if r._company_names|length <= 3 else
+        (r._company_names[:3]|join(', ') ~ ' +' ~ (r._company_names|length - 3))
+        }} {% else %} — {% endif %}
+      </td>
+      <td>{{ (r.rows or [])|length }}</td>
+      <td class="space-x-2">
+        <a class="btn" href="{{ url_for('salary_report_detail', rid=r.id) }}"
+          >View</a
+        >
+        <a class="btn" href="{{ url_for('salary_report_import', rid=r.id) }}"
+          >Import XLSX</a
+        >
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  (function () {
+    const els = {
+      search: document.getElementById("searchInput"),
+      companyBtn: document.getElementById("companyBtn"),
+      companyMenu: document.getElementById("companyMenu"),
+      companyLabel: document.getElementById("companyLabel"),
+      monthBtn: document.getElementById("monthBtn"),
+      monthMenu: document.getElementById("monthMenu"),
+      monthLabel: document.getElementById("monthLabel"),
+      yearBtn: document.getElementById("yearBtn"),
+      yearMenu: document.getElementById("yearMenu"),
+      yearLabel: document.getElementById("yearLabel"),
+      statusBtn: document.getElementById("statusBtn"),
+      statusMenu: document.getElementById("statusMenu"),
+      statusLabel: document.getElementById("statusLabel"),
+      apply: document.getElementById("applyBtn"),
+      reset: document.getElementById("resetBtn"),
+    };
+    function toggle(menu) {
+      menu.classList.toggle("hidden");
+    }
+    function closeAll(e) {
+      [
+        ["companyBtn", "companyMenu"],
+        ["monthBtn", "monthMenu"],
+        ["yearBtn", "yearMenu"],
+        ["statusBtn", "statusMenu"],
+      ].forEach(([b, m]) => {
+        const btn = els[b],
+          menu = els[m];
+        if (!menu.contains(e.target) && !btn.contains(e.target))
+          menu.classList.add("hidden");
+      });
+    }
+    document.addEventListener("click", closeAll);
+    els.companyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.companyMenu);
+    });
+    els.monthBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.monthMenu);
+    });
+    els.yearBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.yearMenu);
+    });
+    els.statusBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle(els.statusMenu);
+    });
+    function summarize(menu, labelEl, placeholder) {
+      const checked = Array.from(
+        menu.querySelectorAll("input[type=checkbox]:checked")
+      ).map((i) => i.nextElementSibling?.textContent?.trim() || i.value);
+      if (!checked.length) {
+        labelEl.textContent = placeholder;
+        return;
+      }
+      labelEl.textContent =
+        checked.length <= 2
+          ? checked.join(", ")
+          : `${checked.slice(0, 2).join(", ")} +${checked.length - 2}`;
+    }
+    function update() {
+      summarize(els.companyMenu, els.companyLabel, "Companies");
+      summarize(els.monthMenu, els.monthLabel, "Months");
+      summarize(els.yearMenu, els.yearLabel, "Years");
+      summarize(els.statusMenu, els.statusLabel, "Status");
+    }
+    ["change", "input"].forEach((ev) => {
+      els.companyMenu.addEventListener(ev, update);
+      els.monthMenu.addEventListener(ev, update);
+      els.yearMenu.addEventListener(ev, update);
+      els.statusMenu.addEventListener(ev, update);
+    });
+    update();
+    els.apply.addEventListener("click", () => {
+      const p = new URLSearchParams();
+      const q = (els.search.value || "").trim();
+      if (q) p.set("q", q);
+      Array.from(els.companyMenu.querySelectorAll("input:checked")).forEach(
+        (i) => p.append("company", i.value)
+      );
+      Array.from(els.monthMenu.querySelectorAll("input:checked")).forEach((i) =>
+        p.append("month", i.value)
+      );
+      Array.from(els.yearMenu.querySelectorAll("input:checked")).forEach((i) =>
+        p.append("year", i.value)
+      );
+      Array.from(els.statusMenu.querySelectorAll("input:checked")).forEach(
+        (i) => p.append("status", i.value)
+      );
+      window.location = "?" + p.toString();
+    });
+    els.reset.addEventListener("click", () => {
+      window.location = window.location.pathname;
+    });
+  })();
+</script>
+{% endblock %}

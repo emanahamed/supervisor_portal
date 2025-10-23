@@ -11,6 +11,7 @@ content %}
       ABSENT rows, and produce a cleaned report with a consolidated header.
     </p>
     <form id="attendanceForm" class="space-y-5" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1"

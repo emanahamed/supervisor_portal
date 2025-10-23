@@ -1,0 +1,500 @@
+{% extends 'public/_public_base.html' %} {% from 'components/forms_macros.html'
+import csrf_field %} {% block title %}Apply for a Tutor Role{% endblock %} {%
+block page_title %}Job Application – Tutor{% endblock %} {% block content %}
+<div class="max-w-3xl mx-auto">
+  <form
+    method="post"
+    enctype="multipart/form-data"
+    class="soft-card p-4"
+    x-data="jobForm()"
+  >
+    {{ csrf_field() }}
+    <!-- honeypot -->
+    <div class="hidden" aria-hidden="true">
+      <label
+        >Website
+        <input type="text" name="website" tabindex="-1" autocomplete="off"
+      /></label>
+    </div>
+    <!-- Personal Info -->
+    <h2 class="text-base font-semibold mb-3">Personal Details</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold mb-1">First name</label>
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="first_name"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Last name</label>
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="last_name"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Personal email</label>
+        <input
+          class="soft-input w-full"
+          type="email"
+          name="email"
+          x-model="email"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Confirm email</label>
+        <input
+          class="soft-input w-full"
+          type="email"
+          name="confirm_email"
+          x-model="confirm_email"
+          required
+        />
+        <p
+          class="text-xs mt-1"
+          :class="emailValid ? 'text-emerald-600' : 'text-amber-600'"
+          x-text="emailMessage"
+        ></p>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="block text-xs font-semibold mb-1">Phone number</label>
+        <input class="soft-input w-full" type="text" name="phone" required />
+      </div>
+      <div class="sm:col-span-2">
+        <label class="block text-xs font-semibold mb-1"
+          >First line of address</label
+        >
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="address_line1"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">City</label>
+        <input class="soft-input w-full" type="text" name="city" required />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Postcode</label>
+        <input class="soft-input w-full" type="text" name="postcode" required />
+      </div>
+    </div>
+
+    <!-- Education -->
+    <h2 class="text-base font-semibold mt-6 mb-3">Education</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold mb-1">University</label>
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="university"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1"
+          >Current year of study</label
+        >
+        <input
+          class="soft-input w-full"
+          type="number"
+          name="study_year"
+          min="1"
+          step="1"
+          inputmode="numeric"
+          placeholder="e.g. 1"
+          required
+        />
+      </div>
+      <div class="sm:col-span-2">
+        <label class="block text-xs font-semibold mb-1">Name of course</label>
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="course_name"
+          required
+        />
+      </div>
+    </div>
+
+    <!-- A Levels -->
+    <h2 class="text-base font-semibold mt-6 mb-3">A Level Qualifications</h2>
+    <div class="space-y-3">
+      {% for idx in [1,2,3] %}
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1"
+            >Subject {{ idx }} Name</label
+          >
+          <input
+            class="soft-input w-full"
+            type="text"
+            name="alevel{{ idx }}_subject"
+            required
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1"
+            >Subject {{ idx }} Grade</label
+          >
+          <input
+            class="soft-input w-full"
+            type="text"
+            name="alevel{{ idx }}_grade"
+            placeholder="e.g. A*"
+            required
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Status</label>
+          <select
+            class="soft-input w-full"
+            name="alevel{{ idx }}_status"
+            required
+          >
+            <option value="">-- Select --</option>
+            <option>Achieved</option>
+            <option>Predicted</option>
+          </select>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- GCSE -->
+    <h2 class="text-base font-semibold mt-6 mb-3">GCSE Qualifications</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold mb-1">GCSE Maths Grade</label>
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="gcse_maths_grade"
+          placeholder="e.g. 9 / A*"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Status</label>
+        <select class="soft-input w-full" name="gcse_maths_status" required>
+          <option value="">-- Select --</option>
+          <option>Achieved</option>
+          <option>Predicted</option>
+        </select>
+      </div>
+      <div class="sm:col-span-1"></div>
+      <div>
+        <label class="block text-xs font-semibold mb-1"
+          >GCSE English Grade</label
+        >
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="gcse_english_grade"
+          placeholder="e.g. 9 / A*"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Status</label>
+        <select class="soft-input w-full" name="gcse_english_status" required>
+          <option value="">-- Select --</option>
+          <option>Achieved</option>
+          <option>Predicted</option>
+        </select>
+      </div>
+      <div class="sm:col-span-1"></div>
+      <div>
+        <label class="block text-xs font-semibold mb-1"
+          >GCSE Science Grade</label
+        >
+        <input
+          class="soft-input w-full"
+          type="text"
+          name="gcse_science_grade"
+          placeholder="e.g. 9 / A*"
+          required
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Status</label>
+        <select class="soft-input w-full" name="gcse_science_status" required>
+          <option value="">-- Select --</option>
+          <option>Achieved</option>
+          <option>Predicted</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Experience & Eligibility -->
+    <h2 class="text-base font-semibold mt-6 mb-3">Experience & Eligibility</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold mb-1"
+          >Do you have tutoring experience?</label
+        >
+        <div
+          class="flex items-center gap-4"
+          x-data="exclusive('tutoring_experience')"
+        >
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="tutoring_experience_yes"
+              x-model="yes"
+              @change="sync('yes')"
+              required
+            />
+            Yes
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="tutoring_experience_no"
+              x-model="no"
+              @change="sync('no')"
+            />
+            No
+          </label>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1"
+          >Are you eligible to work in the UK?</label
+        >
+        <div
+          class="flex items-center gap-4"
+          x-data="exclusive('uk_work_eligible')"
+        >
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="uk_work_eligible_yes"
+              x-model="yes"
+              @change="sync('yes')"
+              required
+            />
+            Yes
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="uk_work_eligible_no"
+              x-model="no"
+              @change="sync('no')"
+            />
+            No
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Heard about us -->
+    <h2 class="text-base font-semibold mt-6 mb-2">
+      How did you hear about us? <span class="text-rose-600">*</span>
+    </h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="sm:col-span-2">
+        <select class="soft-input w-full" name="heard_about" required>
+          <option value="">-- Select one --</option>
+          <option>Google</option>
+          <option>Facebook</option>
+          <option>Instagram</option>
+          <option>TikTok</option>
+          <option>Friend/Referral</option>
+          <option>Walk-in / Poster</option>
+          <option>University society</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Subjects they can tutor -->
+    <h2 class="text-base font-semibold mt-6 mb-2">Subjects you can tutor</h2>
+    <p class="text-xs text-slate-500 mb-2">
+      Select one or more subjects you are confident tutoring.
+    </p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {% for s in subject_choices %}
+      <label class="inline-flex items-center gap-2 text-sm soft-card p-2">
+        <input type="checkbox" name="subjects" value="{{ s }}" required />
+        <span>{{ s }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <!-- Branches -->
+    <h2 class="text-base font-semibold mt-6 mb-2">Preferred Branches</h2>
+    <p class="text-xs text-slate-500 mb-2">
+      Select one or more branches you can work at.
+    </p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {% for b in branch_choices %}
+      <label class="inline-flex items-center gap-2 text-sm soft-card p-2">
+        <input type="checkbox" name="branches" value="{{ b }}" required />
+        <span>{{ b }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <!-- CV Upload -->
+    <h2 class="text-base font-semibold mt-6 mb-2">
+      Upload Your CV <span class="text-rose-600">*</span>
+    </h2>
+    <p class="text-xs text-slate-500 mb-2">
+      PDF or Word document (.pdf, .doc, .docx). Max ~10MB.
+    </p>
+    <div class="md:col-span-1">
+      <div
+        id="cvDropZone"
+        class="relative group border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition bg-white hover:border-indigo-400 hover:bg-indigo-50 border-slate-300"
+      >
+        <input
+          id="cvFileInput"
+          type="file"
+          name="cv_file"
+          accept=".pdf,.doc,.docx"
+          class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          required
+        />
+        <div
+          class="flex flex-col items-center justify-center pointer-events-none select-none"
+        >
+          <svg
+            class="h-8 w-8 mb-2 text-slate-400 group-hover:text-indigo-500"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v9"
+            />
+          </svg>
+          <span id="cvDzPrompt" class="text-[11px] font-medium text-slate-600"
+            >Click or Drag & Drop CV (.pdf/.doc/.docx)</span
+          >
+          <span
+            id="cvDzFile"
+            class="mt-1 text-[10px] text-indigo-600 hidden"
+          ></span>
+        </div>
+        <div
+          id="cvDzOverlay"
+          class="absolute inset-0 rounded-lg bg-indigo-100/70 backdrop-blur-sm hidden items-center justify-center text-indigo-700 font-semibold text-xs"
+        >
+          Drop file to upload
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 flex justify-end">
+      <button type="submit" class="soft-btn soft-btn-primary">
+        Submit Application
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  function jobForm() {
+    return {
+      email: "",
+      confirm_email: "",
+      get emailValid() {
+        if (!this.email || !this.confirm_email) return true;
+        return (
+          this.email.trim().toLowerCase() ===
+          this.confirm_email.trim().toLowerCase()
+        );
+      },
+      get emailMessage() {
+        if (!this.email || !this.confirm_email) return "";
+        return this.emailValid ? "Emails match" : "Emails do not match";
+      },
+    };
+  }
+  function exclusive(key) {
+    return {
+      key,
+      yes: false,
+      no: false,
+      sync(which) {
+        if (which === "yes" && this.yes) this.no = false;
+        if (which === "no" && this.no) this.yes = false;
+      },
+    };
+  }
+  // Minimal drag & drop for CV (mirror attendance fix styling)
+  (function () {
+    const dz = document.getElementById("cvDropZone");
+    if (!dz) return;
+    const fileInput = document.getElementById("cvFileInput");
+    const overlay = document.getElementById("cvDzOverlay");
+    const fileLabel = document.getElementById("cvDzFile");
+    const prompt = document.getElementById("cvDzPrompt");
+    function setFileDisplay(file) {
+      if (!file) {
+        fileLabel.classList.add("hidden");
+        prompt.classList.remove("hidden");
+        fileLabel.textContent = "";
+        return;
+      }
+      fileLabel.textContent =
+        file.name + " (" + Math.round(file.size / 1024) + " KB)";
+      fileLabel.classList.remove("hidden");
+      prompt.classList.add("hidden");
+    }
+    function highlight(on) {
+      dz.classList.toggle("ring-2", on);
+      dz.classList.toggle("ring-indigo-400", on);
+      overlay.classList.toggle("hidden", !on);
+    }
+    function validExt(name) {
+      return /\.(pdf|docx?|PDF|DOCX?)$/.test(name);
+    }
+    dz.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () =>
+      setFileDisplay(fileInput.files[0])
+    );
+    ["dragenter", "dragover"].forEach((ev) =>
+      dz.addEventListener(ev, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        highlight(true);
+      })
+    );
+    ["dragleave", "dragend"].forEach((ev) =>
+      dz.addEventListener(ev, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        highlight(false);
+      })
+    );
+    dz.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      highlight(false);
+      const files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+      const file = files[0];
+      if (!validExt(file.name)) {
+        alert("Invalid file type. Please upload a PDF or Word document.");
+        return;
+      }
+      fileInput.files = files;
+      setFileDisplay(file);
+    });
+  })();
+</script>
+{% endblock %}

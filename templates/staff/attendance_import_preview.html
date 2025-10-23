@@ -1,0 +1,60 @@
+{% extends 'base.html' %} {% block content %}
+<h1 class="text-xl font-semibold mb-4">Preview Attendance Import</h1>
+
+<p class="mb-4">
+  Showing a preview of the first {{ rows|length }} rows. If this looks correct,
+  click Confirm to commit the import.
+</p>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <input type="hidden" name="action" value="confirm" />
+  <div class="mb-4">
+    <label class="label">Branch</label>
+    <input
+      type="text"
+      class="input"
+      name="branch"
+      value="{{ branch }}"
+      readonly
+    />
+  </div>
+
+  <div class="overflow-auto max-h-96 mb-4">
+    <table class="table-auto w-full">
+      <thead>
+        <tr>
+          <th>Machine</th>
+          <th>Staff ID</th>
+          <th>Staff Name</th>
+          <th>Date</th>
+          <th>Check In</th>
+          <th>Check Out</th>
+          <th>Late (min)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.machine or '—' }}</td>
+          <td>{{ r.staffid or '—' }}</td>
+          <td>{{ r.staff_name or '—' }}</td>
+          <td>{{ r.date or '—' }}</td>
+          <td>{{ r.check_in or '—' }}</td>
+          <td>{{ r.check_out or '—' }}</td>
+          <td>{{ r.late_min or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex gap-2">
+    <button type="submit" class="btn btn-primary">Confirm Import</button>
+    <a href="{{ url_for('staff_attendance_import') }}" class="btn btn-secondary"
+      >Cancel / Re-upload</a
+    >
+  </div>
+</form>
+
+{% endblock %}

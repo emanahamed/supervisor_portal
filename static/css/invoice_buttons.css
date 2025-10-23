@@ -1,0 +1,112 @@
+/* Shared invoice button styles (moved from templates) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 8px;
+  text-decoration: none;
+}
+.icon-btn .btn-label {
+  display: none;
+  font-size: 0.9rem;
+}
+.icon-btn:hover .btn-label {
+  display: inline-block;
+}
+.icon-btn-xs {
+  padding: 6px;
+  border-radius: 6px;
+}
+.icon-btn.primary {
+  background-color: #0ea5a4;
+  color: #fff;
+}
+.icon-btn.secondary {
+  background-color: #64748b;
+  color: #fff;
+}
+.icon-btn.warn {
+  background-color: #f59e0b;
+  color: #fff;
+}
+.icon-btn.danger {
+  background-color: #ef4444;
+  color: #fff;
+}
+.icon-btn.neutral {
+  background-color: #94a3b8;
+  color: #fff;
+}
+.icon-svg {
+  width: 18px;
+  height: 18px;
+}
+/* small variant for form buttons */
+.icon-btn.form {
+  padding: 6px 10px;
+}
+
+/* Generic button utilities */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+}
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+.btn-primary {
+  background: #0ea5a4;
+  color: #fff;
+}
+.btn-secondary {
+  background: #64748b;
+  color: #fff;
+}
+.btn-ghost {
+  background: transparent;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+}
+
+.table-auto th,
+.table-auto td {
+  padding: 10px 12px;
+  text-align: left;
+}
+.table-auto thead th {
+  background: #f8fafc;
+  font-weight: 700;
+}
+.divide-y tbody tr + tr {
+  border-top: 1px solid #eef2f7;
+}
+.max-h-96 {
+  max-height: 24rem;
+}
+.modal.hidden {
+  display: none;
+}
+.modal {
+  display: flex;
+}
+.modal-backdrop {
+  z-index: 40;
+}
+.modal-panel {
+  z-index: 50;
+}

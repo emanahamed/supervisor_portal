@@ -316,7 +316,7 @@ block content %}
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-edit-id");
         const res = await fetch(`/api/resources/${id}`).then((r) => r.json());
-        if (!res.success) return alert("Failed to load resource");
+        if (!res.success) return showToast("Failed to load resource", "error");
         title.textContent = "Edit Resource";
         form.querySelector('input[name="_id"]').value = id;
         form.type.value = res.resource.type;
@@ -336,7 +336,7 @@ block content %}
         const resp = await fetch(`/api/resources/${id}/delete`, {
           method: "POST",
         }).then((r) => r.json());
-        if (!resp.success) return alert("Delete failed");
+        if (!resp.success) return showToast("Delete failed", "error");
         location.reload();
       });
     });
@@ -365,7 +365,7 @@ block content %}
         headers: { Accept: "application/json" },
       }).then((r) => r.json());
       if (!resp.success) {
-        return alert("Save failed");
+        return showToast("Save failed", "error");
       }
       location.reload();
     });
@@ -383,7 +383,7 @@ block content %}
         headers: { Accept: "application/json" },
       }).then((r) => r.json());
       if (!resp.success) {
-        return alert("Bulk create failed");
+        return showToast("Bulk create failed", "error");
       }
       location.reload();
     });

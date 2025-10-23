@@ -3,9 +3,18 @@ import os
 
 from werkzeug.utils import secure_filename
 
-from models import Setting, db
+from models import Branch, Setting, db
 
-BRANCH_CHOICES = ["Whitechapel", "East Ham", "Stratford", "Docklands"]
+
+def BRANCH_CHOICES():
+    """Return list of branch names (ordered) from DB; fall back to hardcoded list if DB not accessible."""
+    try:
+        rows = Branch.query.order_by(Branch.name).all()
+        if rows:
+            return [r.name for r in rows]
+    except Exception:
+        pass
+    return ["Whitechapel", "East Ham", "Stratford", "Docklands"]
 
 def allowed_file(filename):
     return "." in filename and os.path.splitext(filename)[1].lower() in {".xlsx", ".xls", ".csv"}
@@ -38,7 +47,7 @@ def normalize_staff_dataframe(df):
     def clean_branch(x):
         if not isinstance(x, str): return ""
         items = [i.strip() for i in str(x).replace(";",",").split(",") if i.strip()]
-        items = [i for i in items if i in BRANCH_CHOICES]
+        items = [i for i in items if i in BRANCH_CHOICES()]
         return ",".join(sorted(set(items)))
     out_df["branch"] = out_df["branch"].apply(clean_branch)
     return out_df
@@ -90,6 +99,50 @@ def set_setting(key: str, value, *, as_json: bool = False) -> None:
     else:
         s.value = stored
     db.session.commit()
+
+
+def ensure_form_branch_choices(form):
+    """Recursively walk a WTForms form/formfield and populate any SelectField
+    or SelectMultipleField named 'branch' or 'branches' with choices from the
+    DB-driven BRANCH_CHOICES(). This is a safe no-op if fields are already set.
+    Views can call this as a small safety check before rendering forms.
+    """
+    try:
+        choices = [(b, b) for b in BRANCH_CHOICES()]
+    except Exception:
+        choices = [(b, b) for b in ["Whitechapel", "East Ham", "Stratford", "Docklands"]]
+
+    # Work recursively through attributes that are FormFields or FieldList
+    from wtforms import FieldList, FormField, SelectField, SelectMultipleField
+
+    def _fill(f):
+        # If form provides fields via _fields dict
+        try:
+            fields = getattr(f, '_fields', {})
+        except Exception:
+            fields = {}
+        for name, fld in fields.items():
+            # Exact name matches
+            if name in ('branch', 'branches') and isinstance(fld, (SelectField, SelectMultipleField)):
+                if not getattr(fld, 'choices', None):
+                    fld.choices = choices
+            # Recurse into nested FormField
+            if isinstance(fld, FormField):
+                _fill(fld.form)
+            # FieldList of FormField
+            if isinstance(fld, FieldList):
+                # FieldList.entries may be empty if no entries; if entries exist, recurse
+                for entry in getattr(fld, 'entries', []):
+                    try:
+                        _fill(entry.form)
+                    except Exception:
+                        pass
+
+    try:
+        _fill(form)
+    except Exception:
+        # Defensive: never raise from this helper
+        return
 
 
 # ------------- Schedule Message Parsing (Student timetable message) ------------- #

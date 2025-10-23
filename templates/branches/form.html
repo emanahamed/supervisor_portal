@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ 'Edit' if branch else 'New' }} Branch{% endblock %}
+
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">{{ 'Edit' if branch else 'New' }} Branch</h1>
+<form method="post" class="max-w-2xl">
+  {{ csrf_field() }}
+  <div class="mb-3">
+    <label class="block text-sm font-medium mb-1">Name</label>
+    <input name="name" class="form-input w-full" value="{{ branch.name if branch else '' }}" />
+  </div>
+  <div class="mb-3">
+    <label class="block text-sm font-medium mb-1">Address</label>
+    <input name="address" class="form-input w-full" value="{{ branch.address if branch else '' }}" />
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div>
+      <label class="block text-sm font-medium mb-1">Phone</label>
+      <input name="phone" class="form-input w-full" value="{{ branch.phone if branch else '' }}" />
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Email</label>
+      <input name="email" class="form-input w-full" value="{{ branch.email if branch else '' }}" />
+    </div>
+  </div>
+  <div class="mt-3">
+    <label class="block text-sm font-medium mb-1">Status</label>
+    <select name="status" class="form-select">
+      <option value="Active" {{ 'selected' if branch and branch.status=='Active' else '' }}>Active</option>
+      <option value="Inactive" {{ 'selected' if branch and branch.status=='Inactive' else '' }}>Inactive</option>
+    </select>
+  </div>
+  <div class="mt-4">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-secondary" href="{{ url_for('branches_index') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

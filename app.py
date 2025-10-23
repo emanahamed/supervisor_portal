@@ -37,21 +37,24 @@ from attendance_utils import (combine_all_sheets, compute_date_range,
                               export_with_custom_header_to_bytes)
 from email_utils import (build_appointment_admin_email,
                          build_appointment_email,
-                         build_task_notification_email, send_email)
+                         build_interview_invitation_email,
+                         build_task_notification_email, send_email,
+                         send_recruitment_email)
 from forms import (AppointmentBookingActionForm, AppointmentBookingForm,
                    AppointmentSlotActionForm, AppointmentSlotBulkForm,
                    AppointmentSlotForm, AvailabilityForm, BookForm,
                    CompanyForm, CycleForm, InvoiceForm, IssueForm, LoginForm,
                    MeetingForm, ObservationForm, PricingConfigForm,
                    RegisterForm, ResourceBulkForm, ResourceForm, StaffForm,
-                   StudentForm, TodoForm, UserProfileForm)
+                   StaffInvoiceForm, StudentForm, TodoForm, UserProfileForm)
 from models import (AppointmentBooking, AppointmentSlot, Availability, Book,
                     BookOrder, BookOrderItem, Company, EndOfDayChecklist,
                     ErrorReport, Invoice, Issue, IssueChange, Meeting,
                     Observation, ObservationCycle, Permission, PermissionAudit,
-                    Resource, ResourceLoan, RolePermission, Staff, Student,
-                    StudentChange, SupervisorShift, Todo, User, UserPermission,
-                    db)
+                    Resource, ResourceLoan, RolePermission, Staff,
+                    StaffAttendance, StaffAttendanceAudit, StaffInvoice,
+                    StaffInvoiceItem, Student, StudentChange, SupervisorShift,
+                    Todo, User, UserPermission, db)
 from utils import (BRANCH_CHOICES, allowed_file, get_setting,
                    normalize_staff_dataframe, parse_preferred_contact,
                    parse_schedule_message, set_setting)
@@ -249,11 +252,77 @@ def _send_reminder_job(booking_id: int) -> None:
         slot = booking.slot
         if not slot or slot.start_at <= datetime.now(timezone.utc):
             return
+
         cancel_url = booking.cancel_url or url_for('booking_cancel', token=booking.cancel_token, _external=True)
-        subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='reminder', cancel_url=cancel_url)
-        _send_email_safe(booking.email, subj, html, log_prefix='Appointment reminder')
-        admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='reminder')
-        _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment reminder admin')
+
+        # Prefer editable EmailTemplate when available; fallback to builder
+        from email_utils import send_with_template
+
+        # customer template key e.g. appointment_customer_en_reminder
+        cust_key = f"appointment_customer_{booking.language or 'en'}_reminder"
+        try:
+            send_with_template(
+                cust_key,
+                {
+                    'name': booking.name,
+                    'superadmin': slot.superadmin.name,
+                    'date': slot.start_at.strftime('%A, %d %B %Y'),
+                    'time': slot.start_at.strftime('%H:%M'),
+                    'student': booking.student_ref,
+                    'reason': booking.reason,
+                    'email': booking.email,
+                    'phone': booking.phone,
+                    'to_email': booking.email,
+                    'cancel_url': cancel_url,
+                },
+                to_email=booking.email,
+                fallback=lambda: build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='reminder', cancel_url=cancel_url),
+                attachments=None,
+            )
+        except Exception as exc:
+            print(f"[WARN] Appointment reminder template send failed, falling back: {exc}")
+            try:
+                send_with_template(
+                    cust_key,
+                    {
+                        'name': booking.name,
+                        'superadmin': slot.superadmin.name,
+                        'date': slot.start_at.strftime('%A, %d %B %Y'),
+                        'time': slot.start_at.strftime('%H:%M'),
+                        'student': booking.student_ref,
+                        'reason': booking.reason,
+                        'email': booking.email,
+                        'phone': booking.phone,
+                        'to_email': booking.email,
+                        'cancel_url': cancel_url,
+                    },
+                    to_email=booking.email,
+                    fallback=lambda: build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='reminder', cancel_url=cancel_url),
+                )
+            except Exception:
+                subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='reminder', cancel_url=cancel_url)
+                _send_email_safe(booking.email, subj, html, log_prefix='Appointment reminder')
+
+        # Admin notification
+        admin_key = "appointment_admin_reminder"
+        try:
+            send_with_template(
+                admin_key,
+                {
+                    'name': booking.name,
+                    'student': booking.student_ref,
+                    'to_email': slot.superadmin.email,
+                    'date': slot.start_at.strftime('%A, %d %B %Y'),
+                    'time': slot.start_at.strftime('%H:%M'),
+                },
+                to_email=slot.superadmin.email,
+                fallback=lambda: build_appointment_admin_email(booking, slot, mode='reminder'),
+            )
+        except Exception as exc:
+            print(f"[WARN] Appointment admin reminder template send failed, falling back: {exc}")
+            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='reminder')
+            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment reminder admin')
+
         booking.reminder_sent_at = datetime.now(timezone.utc)
         db.session.commit()
 
@@ -272,7 +341,7 @@ def _schedule_reminder(booking: AppointmentBooking) -> None:
         return
     job_id = f"booking-reminder-{booking.id}"
     try:
-        scheduler.add_job(_send_reminder_job, 'date', run_date=run_at, id=job_id, replace_existing=True, args=[booking.id])
+            scheduler.add_job(_send_reminder_job, 'date', run_date=run_at, id=job_id, replace_existing=True, args=[booking.id])
     except Exception as exc:
         print(f"[WARN] Failed to schedule reminder for booking {booking.id}: {exc}")
 
@@ -340,6 +409,31 @@ except Exception as _e:  # non-fatal
 db.init_app(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
+
+
+@app.before_request
+def _inject_branch_choices_to_g():
+    # Cache branch choices for this request so views/templates can use them safely.
+    try:
+        from flask import g
+
+        from utils import BRANCH_CHOICES
+        g.branch_choices = BRANCH_CHOICES()
+    except Exception:
+        try:
+            g.branch_choices = ["Whitechapel", "East Ham", "Stratford", "Docklands"]
+        except Exception:
+            pass
+
+
+@app.context_processor
+def _branch_choices_context():
+    # Ensure templates always have a branch_choices iterable to iterate over.
+    try:
+        from flask import g
+        return {'branch_choices': getattr(g, 'branch_choices', [])}
+    except Exception:
+        return {'branch_choices': []}
 
 ts = URLSafeTimedSerializer(SECRET_KEY)
 
@@ -607,6 +701,16 @@ def fmt_date(value):
     except Exception:
         return ''
 
+
+@app.template_filter('fmt_datetime')
+def fmt_datetime(value):
+    try:
+        if not value:
+            return ''
+        return value.strftime('%d-%m-%Y %H:%M')
+    except Exception:
+        return ''
+
 @app.template_filter('fmt_money')
 def fmt_money(value):
     try:
@@ -629,14 +733,18 @@ def version_history():
 @app.route('/api/version')
 def api_version():
     """Lightweight version endpoint (backwards compatible fields)."""
-    full = get_changelog()
-    entry = latest_entry()
-    return jsonify({
-        'version': VERSION,
-        'changelog_current': (entry.body if entry else ''),
-        'changelog_full': full,
-        'date': entry.date if entry else None,
-    })
+    try:
+        full = get_changelog()
+        entry = latest_entry()
+        return jsonify({
+            'version': VERSION,
+            'changelog_current': (entry.body if entry else ''),
+            'changelog_full': full,
+            'date': entry.date if entry else None,
+        })
+    except Exception as exc:
+        app.logger.exception('Failed to build api_version response')
+        return jsonify({'error': 'Failed to load version info', 'details': str(exc)}), 500
 
 
 @app.route('/api/changelog')
@@ -651,10 +759,14 @@ def api_changelog():
         limit = int(limit_val) if limit_val else None
     except ValueError:
         limit = None
-    return jsonify({
-        'version': VERSION,
-        'entries': changelog_json(limit=limit)
-    })
+    try:
+        return jsonify({
+            'version': VERSION,
+            'entries': changelog_json(limit=limit)
+        })
+    except Exception as exc:
+        app.logger.exception('Failed to build api_changelog response')
+        return jsonify({'error': 'Failed to load changelog', 'details': str(exc)}), 500
 
 # ---------------- DEBUG (Temporary) ---------------- #
 @app.route('/debug/observation/<int:oid>/checklists')
@@ -719,6 +831,38 @@ def load_user(user_id):
     except Exception:
         return None
 
+# Backwards-compatibility: some test fixtures (and older client code) set
+# session['_user_id'] directly. If present and no authenticated user exists,
+# transparently log the user in for this request.
+@app.before_request
+def _compat_flask_login_session_key():
+    try:
+        if not current_user.is_authenticated:
+            # Prefer modern key; fall back to legacy
+            raw_id = session.get('user_id') or session.get('_user_id')
+            if raw_id:
+                u = db.session.get(User, int(raw_id))
+                if u and getattr(u, 'is_active', True):
+                    login_user(u)
+                    # Keep both keys in sync for downstream consumers
+                    session['user_id'] = str(u.id)
+                    session['_user_id'] = str(u.id)
+    except Exception:
+        # Non-fatal; proceed without forcing auth
+        pass
+
+# During pytest runs, ensure an application context is available even for
+# fixtures that access db.session outside a request context (test ergonomics).
+try:
+    import os as _os
+    if _os.environ.get('PYTEST_CURRENT_TEST') and app:
+        try:
+            app.app_context().push()
+        except Exception:
+            pass
+except Exception:
+    pass
+
 @app.before_request
 def create_tables_and_superadmin():
     db.create_all()
@@ -762,8 +906,13 @@ def create_tables_and_superadmin():
             if 'is_active' not in cols:
                 try:
                     conn.execute(text("ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1"))
-                    # Refresh cols set so later logic doesn't attempt again
                     cols.add('is_active')
+                except Exception:
+                    pass
+            # force_password_reset added in Oct 2025 for staff->user conversion
+            if 'force_password_reset' not in cols:
+                try:
+                    conn.execute(text("ALTER TABLE user ADD COLUMN force_password_reset BOOLEAN DEFAULT 0"))
                 except Exception:
                     pass
             if 'role' not in cols:
@@ -811,7 +960,7 @@ def create_tables_and_superadmin():
         users_no_role = User.query.filter(User.role.is_(None)).all()
         altered = False
         for u in users_no_role:
-            u.role = 'staff'
+            u.role = 'tutor'
             altered = True
         # Legacy role migration
         legacy_map = {'observer':'supervisor','lead':'centre_manager'}
@@ -838,6 +987,13 @@ def create_tables_and_superadmin():
             conn.execute(text("CREATE TABLE IF NOT EXISTS availability (id INTEGER PRIMARY KEY, name VARCHAR(200) NOT NULL, department VARCHAR(120), branches VARCHAR(255), days TEXT, subjects TEXT, notes TEXT, created_at DATETIME, updated_at DATETIME)"))
             conn.execute(text("CREATE TABLE IF NOT EXISTS issue (id INTEGER PRIMARY KEY, title VARCHAR(200) NOT NULL, details TEXT, status VARCHAR(50), criticality VARCHAR(50), urgency VARCHAR(50), branch VARCHAR(120), created_by_id INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME, action_taken TEXT)"))
             conn.execute(text("CREATE TABLE IF NOT EXISTS issue_change (id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL, field VARCHAR(120) NOT NULL, old_value TEXT, new_value TEXT, changed_by_id INTEGER NOT NULL, changed_at DATETIME, FOREIGN KEY(issue_id) REFERENCES issue(id), FOREIGN KEY(changed_by_id) REFERENCES user(id))"))
+            # Backfill staff_id on availability if missing
+            try:
+                avail_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(availability)"))}
+                if 'staff_id' not in avail_cols:
+                    conn.execute(text("ALTER TABLE availability ADD COLUMN staff_id INTEGER"))
+            except Exception:
+                pass
             # Backfill action_taken column if older issue table missing it
             try:
                 issue_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(issue)"))}
@@ -845,7 +1001,7 @@ def create_tables_and_superadmin():
                     conn.execute(text("ALTER TABLE issue ADD COLUMN action_taken TEXT"))
             except Exception:
                 pass
-            # Backfill active column on staff if missing
+            # Backfill active column on staff if missing and add new company/machine id fields
             try:
                 staff_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff)"))}
                 if 'active' not in staff_cols:
@@ -853,6 +1009,39 @@ def create_tables_and_superadmin():
                 if 'access_code' not in staff_cols:
                     try:
                         conn.execute(text("ALTER TABLE staff ADD COLUMN access_code VARCHAR(6)"))
+                    except Exception:
+                        pass
+                # user_id mapping for staff -> user link (Oct 2025)
+                if 'user_id' not in staff_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN user_id INTEGER"))
+                    except Exception:
+                        pass
+                # new fields: company and branch machine IDs (Oct 2025)
+                staff_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff)"))}
+                if 'company_id' not in staff_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN company_id INTEGER"))
+                    except Exception:
+                        pass
+                if 'whitechapel_machine_id' not in staff_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN whitechapel_machine_id VARCHAR(120)"))
+                    except Exception:
+                        pass
+                if 'east_ham_machine_id' not in staff_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN east_ham_machine_id VARCHAR(120)"))
+                    except Exception:
+                        pass
+                if 'stratford_machine_id' not in staff_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN stratford_machine_id VARCHAR(120)"))
+                    except Exception:
+                        pass
+                if 'docklands_machine_id' not in staff_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN docklands_machine_id VARCHAR(120)"))
                     except Exception:
                         pass
                 # Ensure unique index on access_code exists
@@ -965,6 +1154,63 @@ def create_tables_and_superadmin():
                 created_at DATETIME,
                 updated_at DATETIME
             )"""))
+            # Staff Invoice tables (employee-submitted invoices & items)
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS staff_invoice (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                month INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+                payment_status VARCHAR(20) NOT NULL DEFAULT 'Unpaid',
+                created_by_id INTEGER NOT NULL,
+                submitted_at DATETIME,
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+            """))
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS staff_invoice_item (
+                id INTEGER PRIMARY KEY,
+                invoice_id INTEGER NOT NULL,
+                branch VARCHAR(120),
+                date DATE NOT NULL,
+                day VARCHAR(20) NOT NULL,
+                hours NUMERIC(6,2) NOT NULL DEFAULT 0,
+                description VARCHAR(400),
+                rate NUMERIC(10,2) NOT NULL DEFAULT 0,
+                amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                FOREIGN KEY(invoice_id) REFERENCES staff_invoice(id) ON DELETE CASCADE
+            )
+            """))
+            try:
+                cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff_invoice_item)"))}
+                if 'branch' not in cols:
+                    conn.execute(text("ALTER TABLE staff_invoice_item ADD COLUMN branch VARCHAR(120)"))
+            except Exception:
+                pass
+            # Ensure payment_status exists on staff_invoice for older DBs
+            try:
+                cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff_invoice)"))}
+                if 'payment_status' not in cols:
+                    conn.execute(text("ALTER TABLE staff_invoice ADD COLUMN payment_status VARCHAR(20) DEFAULT 'Unpaid'"))
+            except Exception:
+                pass
+            # Create staff invoice change audit table
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS staff_invoice_change (
+                id INTEGER PRIMARY KEY,
+                invoice_id INTEGER NOT NULL,
+                field VARCHAR(120) NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                changed_by_id INTEGER NOT NULL,
+                changed_at DATETIME,
+                FOREIGN KEY(invoice_id) REFERENCES staff_invoice(id),
+                FOREIGN KEY(changed_by_id) REFERENCES user(id)
+            )
+            """))
             # Student change audit table (since 0.9.9)
             conn.execute(text("""
             CREATE TABLE IF NOT EXISTS student_change (
@@ -1022,6 +1268,12 @@ def create_tables_and_superadmin():
             ('manage_call_list','Manage floor call list'),
             ('manage_student_concerns','Manage student concerns reports'),
             ('manage_supervisor_shifts','Manage supervisor shifts'),
+            # Staff Invoices
+            ('submit_staff_invoices','Submit own staff invoices'),
+            ('manage_staff_invoices','Manage staff invoices (all)'),
+            ('manage_email_logs','Manage email logs'),
+            # Recruitment / Applications
+            ('manage_recruitment','Manage recruitment applications and communications'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, desc in base_permissions:
@@ -1034,11 +1286,12 @@ def create_tables_and_superadmin():
 
         # Default role permission seeds (updated taxonomy 0.9.3)
         role_defaults = {
-            'staff': {'view_dashboard','manage_tasks','view_reports'},
-            'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books','manage_students'},
-            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts',
+            'tutor': {'view_dashboard','manage_tasks','view_reports','submit_staff_invoices'},
+            'staff': {'view_dashboard','manage_tasks','submit_staff_invoices'},
+            'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books','manage_students','manage_staff_invoices'},
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment',
                                'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list','manage_students'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts',
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment',
                       'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
         }
         # Admin should also manage students (append if not present for backward runs)
@@ -1068,6 +1321,145 @@ def create_tables_and_superadmin():
         db.session.commit()
     except Exception as e:
         print(f"[WARN] Permission seed failed: {e}")
+    # One-time seed: default EmailSetting based on legacy email constants
+    try:
+        import email_utils as _eu
+        from models import EmailSetting
+
+        # Only create if no email settings exist to avoid overwriting admin config
+        if EmailSetting.query.count() == 0:
+            es = EmailSetting(
+                name='default-smtp',
+                provider='smtp',
+                host=getattr(_eu, 'SMTP_HOST', None),
+                port=getattr(_eu, 'SMTP_PORT', 587),
+                username=getattr(_eu, 'SMTP_USERNAME', None),
+                password=getattr(_eu, 'SMTP_PASSWORD', None),
+                use_tls=getattr(_eu, 'SMTP_USE_TLS', True),
+                use_ssl=getattr(_eu, 'SMTP_USE_SSL', False),
+                sender_name=getattr(_eu, 'FROM_NAME', None),
+                sender_email=getattr(_eu, 'FROM_EMAIL', None),
+                is_active=True
+            )
+            db.session.add(es)
+            db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+    # Note: audit-driven seeding was removed; admin can run the audit UI to review
+    # discovered candidate sender addresses and create EmailSetting stubs manually.
+    # Seed editable email templates (simple mapping of current email builders)
+    try:
+        from models import EmailTemplate
+        seeded = False
+        # Appointment customer templates (per-language & mode) -> flatten to keys
+        try:
+            cust = getattr(_eu, '_CUSTOMER_COPY', {})
+            for lang, mapping in cust.items():
+                modes = mapping.get('modes', {})
+                for mode_key, mode_val in modes.items():
+                    key = f"appointment_customer_{lang}_{mode_key}"
+                    if not EmailTemplate.query.filter_by(key=key).first():
+                        et = EmailTemplate(
+                            key=key,
+                            name=f"Appointment ({lang}) {mode_key}",
+                            subject_template=mode_val.get('subject'),
+                            html_template=_eu._render_email_shell(mode_val.get('subject',''), mode_val.get('headline',''), mapping.get('greeting',''), mode_val.get('body','')),
+                            sender_name=getattr(_eu, 'FROM_NAME', None),
+                            sender_email=getattr(_eu, 'FROM_EMAIL', None),
+                            is_active=True
+                        )
+                        db.session.add(et)
+                        seeded = True
+        except Exception:
+            pass
+        # Appointment admin templates
+        try:
+            admin = getattr(_eu, '_ADMIN_COPY', {})
+            for mode_key, mode_val in admin.items():
+                key = f"appointment_admin_{mode_key}"
+                if not EmailTemplate.query.filter_by(key=key).first():
+                    et = EmailTemplate(
+                        key=key,
+                        name=f"Appointment Admin {mode_key}",
+                        subject_template=mode_val.get('subject'),
+                        html_template=_eu._render_email_shell(mode_val.get('subject',''), mode_val.get('headline',''), mode_val.get('intro',''), ''),
+                        sender_name=getattr(_eu, 'FROM_NAME', None),
+                        sender_email=getattr(_eu, 'FROM_EMAIL', None),
+                        is_active=True
+                    )
+                    db.session.add(et)
+                    seeded = True
+        except Exception:
+            pass
+        # Task notification (single template)
+        try:
+            if not EmailTemplate.query.filter_by(key='task_notification').first():
+                subj = 'New Task Assigned'
+                et = EmailTemplate(
+                    key='task_notification',
+                    name='Task notification',
+                    subject_template=subj,
+                    html_template=_eu.build_task_notification_email.__doc__ or '<p>Task notification</p>',
+                    sender_name=getattr(_eu, 'FROM_NAME', None),
+                    sender_email=getattr(_eu, 'FROM_EMAIL', None),
+                    is_active=True
+                )
+                db.session.add(et)
+                seeded = True
+        except Exception:
+            pass
+        if seeded:
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        # Seed staff invoice approved/rejected templates if missing
+        try:
+            from models import EmailTemplate
+            if not EmailTemplate.query.filter_by(key='staff_invoice_approved').first():
+                subj = 'Your staff invoice has been approved'
+                et = EmailTemplate(
+                    key='staff_invoice_approved',
+                    name='Staff invoice approved',
+                    subject_template=subj,
+                    html_template=_build_staff_invoice_approved_email.__doc__ or subj,
+                    sender_name=getattr(_eu, 'FROM_NAME', None),
+                    sender_email=getattr(_eu, 'FROM_EMAIL', None),
+                    is_active=True,
+                )
+                db.session.add(et)
+                seeded = True
+            if not EmailTemplate.query.filter_by(key='staff_invoice_rejected').first():
+                subj = 'Your staff invoice has been rejected'
+                et = EmailTemplate(
+                    key='staff_invoice_rejected',
+                    name='Staff invoice rejected',
+                    subject_template=subj,
+                    html_template=_build_staff_invoice_rejected_email.__doc__ or subj,
+                    sender_name=getattr(_eu, 'FROM_NAME', None),
+                    sender_email=getattr(_eu, 'FROM_EMAIL', None),
+                    is_active=True,
+                )
+                db.session.add(et)
+                seeded = True
+            if seeded:
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
     # Schema patches for appointments
     try:
         with db.engine.connect() as conn:
@@ -1136,6 +1528,64 @@ def create_tables_and_superadmin():
                 FOREIGN KEY(concern_id) REFERENCES student_concern(id) ON DELETE CASCADE
             )
             """))
+            # Job applications (public)
+            conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS job_application (
+                id INTEGER PRIMARY KEY,
+                first_name VARCHAR(120) NOT NULL,
+                last_name VARCHAR(120) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(50),
+                address_line1 VARCHAR(255),
+                city VARCHAR(120),
+                postcode VARCHAR(40),
+                cv_path VARCHAR(255),
+                status VARCHAR(40) DEFAULT 'Pending Review',
+                university VARCHAR(255),
+                study_year VARCHAR(40),
+                course_name VARCHAR(255),
+                alevel1_subject VARCHAR(120),
+                alevel1_grade VARCHAR(20),
+                alevel1_status VARCHAR(20),
+                alevel2_subject VARCHAR(120),
+                alevel2_grade VARCHAR(20),
+                alevel2_status VARCHAR(20),
+                alevel3_subject VARCHAR(120),
+                alevel3_grade VARCHAR(20),
+                alevel3_status VARCHAR(20),
+                gcse_maths_grade VARCHAR(20),
+                gcse_maths_status VARCHAR(20),
+                gcse_english_grade VARCHAR(20),
+                gcse_english_status VARCHAR(20),
+                gcse_science_grade VARCHAR(20),
+                gcse_science_status VARCHAR(20),
+                tutoring_experience BOOLEAN DEFAULT 0,
+                uk_work_eligible BOOLEAN DEFAULT 0,
+                branches VARCHAR(255),
+                subjects TEXT,
+                heard_about VARCHAR(255),
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+            """))
+            # Ensure new columns exist when upgrading from older versions (SQLite supports simple ADD COLUMN)
+            try:
+                conn.execute(text("ALTER TABLE job_application ADD COLUMN heard_about VARCHAR(255)"))
+            except Exception:
+                pass
+            # New columns added in Oct 2025
+            for col_sql in [
+                "ALTER TABLE job_application ADD COLUMN gcse_science_grade VARCHAR(20)",
+                "ALTER TABLE job_application ADD COLUMN gcse_science_status VARCHAR(20)",
+                "ALTER TABLE job_application ADD COLUMN subjects TEXT",
+                "ALTER TABLE job_application ADD COLUMN cv_path VARCHAR(255)",
+                "ALTER TABLE job_application ADD COLUMN status VARCHAR(40) DEFAULT 'Pending Review'",
+                "ALTER TABLE job_application ADD COLUMN updated_at DATETIME",
+            ]:
+                try:
+                    conn.execute(text(col_sql))
+                except Exception:
+                    pass
     except Exception as exc:
         print(f"[WARN] Appointment schema init failed: {exc}")
 
@@ -1206,7 +1656,8 @@ def floor_dashboard():
         selected_date = date.today()
 
     selected_branch = (request.args.get('branch') or '').strip()
-    if selected_branch and selected_branch not in BRANCH_CHOICES:
+    branch_list = BRANCH_CHOICES()
+    if selected_branch and selected_branch not in branch_list:
         selected_branch = ''
 
     # Data loads and KPIs
@@ -1268,8 +1719,8 @@ def floor_dashboard():
         'floor/dashboard.html',
         # Filters
         selected_date=selected_date,
-        selected_branch=selected_branch,
-        branch_choices=BRANCH_CHOICES,
+    selected_branch=selected_branch,
+    branch_choices=BRANCH_CHOICES(),
         # KPIs
         shifts_today_count=shifts_today_count,
         pending_eod_count=pending_eod_count,
@@ -1303,6 +1754,203 @@ def _shift_day_for(d):
         return day_name[d.weekday()]
     except Exception:
         return ''
+
+
+# Floor staff shifts listing (missing previously)
+@app.route('/floor/shifts')
+@login_required
+@permission_required('manage_shifts')
+def floor_shifts_index():
+    q = (request.args.get('q') or '').strip().lower()
+    staff_id = request.args.get('staff', type=int)
+    day = (request.args.get('day') or '').strip()
+    status = (request.args.get('status') or '').strip().lower()  # upcoming | past
+    date_from = request.args.get('from')
+    date_to = request.args.get('to')
+    sort = (request.args.get('sort') or 'date').lower()
+    direction = (request.args.get('direction') or 'desc').lower()
+
+    query = Shift.query
+    today = date.today()
+    if staff_id:
+        query = query.filter(Shift.staff_user_id == staff_id)
+    if day:
+        query = query.filter(Shift.day == day)
+    if status == 'upcoming':
+        query = query.filter(Shift.date >= today)
+    elif status == 'past':
+        query = query.filter(Shift.date < today)
+    if date_from:
+        try:
+            df = _dt.strptime(date_from, '%Y-%m-%d').date()
+            query = query.filter(Shift.date >= df)
+        except Exception:
+            pass
+    if date_to:
+        try:
+            dt = _dt.strptime(date_to, '%Y-%m-%d').date()
+            query = query.filter(Shift.date <= dt)
+        except Exception:
+            pass
+    if q:
+        try:
+            query = query.join(User, Shift.staff_user_id == User.id).filter(
+                (User.name.ilike(f"%{q}%")) | (Shift.notes.ilike(f"%{q}%"))
+            )
+        except Exception:
+            pass
+
+    if sort == 'staff':
+        query = query.join(User, Shift.staff_user_id == User.id).order_by(User.name.asc())
+    elif sort == 'day':
+        query = query.order_by(Shift.day.asc(), Shift.date.desc())
+    else:
+        query = query.order_by(Shift.date.desc())
+    if direction == 'asc' and sort == 'date':
+        query = query.order_by(Shift.date.asc())
+
+    records = query.all()
+    staff_list = _users_for_shifts()
+    days = list(day_name)
+    today = date.today()
+    return render_template('floor/shifts/index.html', records=records, staff_list=staff_list, days=days, today=today, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, branch_choices=BRANCH_CHOICES())
+
+
+def _process_attendance_df(df, branch):
+    """Process a pandas DataFrame of attendance rows and persist to DB.
+
+    Returns tuple (imported_count, updated_count)
+    """
+    imported = 0
+    updated = 0
+    # Build colmap/heuristics
+    colmap = {c.lower().strip(): c for c in df.columns}
+    def col_any(keys):
+        for k in keys:
+            if k in colmap:
+                return colmap[k]
+        return None
+    machine_col = col_any(['machineid','machine_id','machine','id'])
+    staffid_col = col_any(['staffid','staff_id','id'])
+    date_col = col_any(['date','day'])
+    checkin_col = col_any(['checkin','check_in','timein','on'])
+    checkout_col = col_any(['checkout','check_out','timeout','off'])
+    late_col = col_any(['late','late_minutes','late_min'])
+
+    for _, row in df.iterrows():
+        try:
+            machine = str(row[machine_col]).strip() if machine_col and pd.notna(row.get(machine_col)) else None
+            staffid = int(row[staffid_col]) if staffid_col and pd.notna(row.get(staffid_col)) else None
+            d_raw = row[date_col] if date_col and pd.notna(row.get(date_col)) else None
+            if isinstance(d_raw, str):
+                try:
+                    d = datetime.strptime(d_raw, '%d/%m/%Y').date()
+                except Exception:
+                    d = pd.to_datetime(d_raw).date()
+            else:
+                d = pd.to_datetime(d_raw).date() if d_raw is not None and not pd.isna(d_raw) else None
+            if not d:
+                continue
+            ci_raw = row[checkin_col] if checkin_col and pd.notna(row.get(checkin_col)) else None
+            co_raw = row[checkout_col] if checkout_col and pd.notna(row.get(checkout_col)) else None
+            ci = None
+            co = None
+            try:
+                if pd.notna(ci_raw):
+                    ci = pd.to_datetime(ci_raw).time()
+            except Exception:
+                ci = None
+            try:
+                if pd.notna(co_raw):
+                    co = pd.to_datetime(co_raw).time()
+            except Exception:
+                co = None
+            late_min = int(row[late_col]) if late_col and pd.notna(row.get(late_col)) else None
+
+            # Map machine id to staff record if possible (check all 4 machine id fields)
+            mapped_staff = None
+            if machine:
+                mapped_staff = Staff.query.filter(
+                    (Staff.whitechapel_machine_id == machine) |
+                    (Staff.east_ham_machine_id == machine) |
+                    (Staff.stratford_machine_id == machine) |
+                    (Staff.docklands_machine_id == machine)
+                ).first()
+            if not mapped_staff and staffid:
+                mapped_staff = Staff.query.filter((Staff.id == staffid) | (Staff.access_code == str(staffid))).first()
+
+            # Find existing attendance row: prefer machine+date+branch, else staff+date+branch
+            existing = None
+            if machine:
+                existing = StaffAttendance.query.filter_by(machine_id=machine, date=d, branch=branch or None).first()
+            if not existing and mapped_staff:
+                existing = StaffAttendance.query.filter_by(staff_id=mapped_staff.id, date=d, branch=branch or None).first()
+
+            hours_secs = None
+            if ci and co:
+                dt_ci = datetime.combine(d, ci)
+                dt_co = datetime.combine(d, co)
+                try:
+                    delta = (dt_co - dt_ci).total_seconds()
+                    if delta < 0:
+                        delta = 0
+                    hours_secs = int(delta)
+                except Exception:
+                    hours_secs = None
+
+            payload_json = json.dumps({
+                'machine': machine, 'staffid': staffid, 'date': d.strftime('%Y-%m-%d'), 'check_in': str(ci) if ci else None, 'check_out': str(co) if co else None, 'late_min': late_min
+            })
+
+            if existing:
+                # Update fields and add audit entries for changed fields
+                changed = False
+                if mapped_staff and existing.staff_id != mapped_staff.id:
+                    db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='staff_id', old_value=str(existing.staff_id), new_value=str(mapped_staff.id), changed_by_id=current_user.id if current_user.is_authenticated else None))
+                    existing.staff_id = mapped_staff.id; changed = True
+                if machine and existing.machine_id != machine:
+                    db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='machine_id', old_value=str(existing.machine_id), new_value=machine, changed_by_id=current_user.id if current_user.is_authenticated else None))
+                    existing.machine_id = machine; changed = True
+                if ci and (existing.check_in != ci):
+                    db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='check_in', old_value=str(existing.check_in), new_value=str(ci), changed_by_id=current_user.id if current_user.is_authenticated else None))
+                    existing.check_in = ci; changed = True
+                if co and (existing.check_out != co):
+                    db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='check_out', old_value=str(existing.check_out), new_value=str(co), changed_by_id=current_user.id if current_user.is_authenticated else None))
+                    existing.check_out = co; changed = True
+                if late_min is not None and existing.late_minutes != late_min:
+                    db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='late_minutes', old_value=str(existing.late_minutes), new_value=str(late_min), changed_by_id=current_user.id if current_user.is_authenticated else None))
+                    existing.late_minutes = late_min; changed = True
+                if hours_secs is not None and existing.hours_seconds != hours_secs:
+                    db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='hours_seconds', old_value=str(existing.hours_seconds), new_value=str(hours_secs), changed_by_id=current_user.id if current_user.is_authenticated else None))
+                    existing.hours_seconds = hours_secs; changed = True
+                existing.raw_payload = payload_json
+                if changed:
+                    updated += 1
+                existing.updated_at = datetime.utcnow()
+                db.session.add(existing)
+            else:
+                na = StaffAttendance(
+                    staff_id=(mapped_staff.id if mapped_staff else None),
+                    machine_id=machine,
+                    branch=branch or None,
+                    day=_shift_day_for(d),
+                    date=d,
+                    check_in=ci,
+                    check_out=co,
+                    late_minutes=late_min,
+                    hours_seconds=hours_secs,
+                    raw_payload=payload_json,
+                )
+                db.session.add(na)
+                imported += 1
+        except Exception:
+            # skip bad rows
+            continue
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return imported, updated
 
 def _is_weekday(d):
     try:
@@ -1384,6 +2032,226 @@ def _build_shift_email(shift: Shift, staff_user: User) -> tuple[str, str]:
     </html>
         """.format(title=subject, intro=intro, table=''.join(table), year=date.today().year)
         return subject, shell
+
+@app.route('/staff/attendance')
+@login_required
+@permission_required('manage_attendance_fix')
+def staff_attendance_index():
+    """List attendance records with filters and pagination.
+
+    Filters (query params): company, branch, staff_id, machine_id, late (yes|no), status (active|inactive), start, end, page
+    """
+    from models import Staff, StaffAttendance
+
+    # Filters
+    company = (request.args.get('company') or '').strip()
+    branch = (request.args.get('branch') or '').strip()
+    staff_id = request.args.get('staff_id', type=int)
+    machine_id = (request.args.get('machine_id') or '').strip() or None
+    late = (request.args.get('late') or '').strip().lower()
+    start = (request.args.get('start') or '').strip()
+    end = (request.args.get('end') or '').strip()
+    page = max(1, int(request.args.get('page') or 1))
+    per_page = int(request.args.get('per_page') or 50)
+
+    q = StaffAttendance.query
+    if branch:
+        q = q.filter(StaffAttendance.branch == branch)
+    if staff_id:
+        q = q.filter(StaffAttendance.staff_id == staff_id)
+    if machine_id:
+        q = q.filter(StaffAttendance.machine_id == machine_id)
+    if late == 'yes':
+        q = q.filter(StaffAttendance.late_minutes.isnot(None), StaffAttendance.late_minutes > 0)
+    if start:
+        try:
+            sd = datetime.strptime(start, '%d/%m/%Y').date()
+            q = q.filter(StaffAttendance.date >= sd)
+        except Exception:
+            pass
+    if end:
+        try:
+            ed = datetime.strptime(end, '%d/%m/%Y').date()
+            q = q.filter(StaffAttendance.date <= ed)
+        except Exception:
+            pass
+
+    total = q.count()
+    records = q.order_by(StaffAttendance.date.desc(), StaffAttendance.check_in.asc()).limit(per_page).offset((page-1)*per_page).all()
+
+    staff_map = {s.id: s for s in Staff.query.all()}
+    branches = BRANCH_CHOICES()
+    return render_template('staff/attendance.html', records=records, staff_map=staff_map, branches=branches, filters=request.args, page=page, per_page=per_page, total=total)
+
+
+@app.route('/staff/attendance/import', methods=['GET','POST'])
+@login_required
+@permission_required('manage_attendance_fix')
+def staff_attendance_import():
+    """Import attendance rows from an uploaded XLSX/CSV file.
+
+    The user will be asked to select the branch to associate with the import.
+    For each row we attempt to map the machine id to a Staff record via known
+    machine id columns on Staff. If a matching existing attendance record for
+    the same machine/date/branch exists, update it and create an audit entry;
+    otherwise insert a new StaffAttendance row.
+    """
+    from models import Staff, StaffAttendance, StaffAttendanceAudit
+
+    # Support preview phase: POST may be initial upload (preview) or a confirm step
+    if request.method == 'GET':
+        return render_template('staff/attendance_import.html', branches=BRANCH_CHOICES())
+
+    action = (request.form.get('action') or '').strip().lower()
+    # Confirm step: process existing temp file saved in session
+    if action == 'confirm':
+        tmp = session.get('attendance_import_tmp')
+        branch = session.get('attendance_import_branch')
+        if not tmp:
+            flash('No pending import found. Please upload the file first.', 'warning')
+            return redirect(url_for('staff_attendance_import'))
+        tmp_path = os.path.join(app.instance_path, 'imports', tmp)
+        if not os.path.exists(tmp_path):
+            flash('Temporary import file missing. Please re-upload.', 'danger')
+            session.pop('attendance_import_tmp', None)
+            session.pop('attendance_import_branch', None)
+            return redirect(url_for('staff_attendance_import'))
+        # Reopen file and parse same as preview but now commit
+        try:
+            with open(tmp_path, 'rb') as fh:
+                df = None
+                try:
+                    df = combine_all_sheets(fh, year=datetime.utcnow().year, month=datetime.utcnow().month)
+                except Exception:
+                    fh.seek(0)
+                    try:
+                        df = pd.read_excel(fh)
+                    except Exception:
+                        fh.seek(0)
+                        df = pd.read_csv(fh)
+        except Exception as e:
+            flash(f'Failed to reopen uploaded file: {e}', 'danger')
+            return redirect(url_for('staff_attendance_import'))
+        # Process DataFrame rows and commit (reuse existing per-row logic below)
+        imported, updated = _process_attendance_df(df, branch)
+        # Clean up
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        session.pop('attendance_import_tmp', None)
+        session.pop('attendance_import_branch', None)
+        flash(f'Import complete: {imported} new rows, {updated} updated rows', 'success')
+        return redirect(url_for('staff_attendance_index'))
+
+    # Otherwise initial upload -> preview
+    file = request.files.get('file')
+    branch = (request.form.get('branch') or '').strip()
+    if branch and branch not in BRANCH_CHOICES():
+        flash('Invalid branch selected', 'danger')
+        return redirect(url_for('staff_attendance_import'))
+    if not file or not file.filename:
+        flash('No file uploaded', 'danger')
+        return redirect(url_for('staff_attendance_import'))
+
+    # Save upload to instance/imports with uuid name for confirm step
+    uid = str(uuid4())
+    fname = file.filename or 'upload.xlsx'
+    _, ext = os.path.splitext(fname)
+    ext = ext or '.xlsx'
+    temp_name = f"{uid}{ext}"
+    temp_path = os.path.join(app.instance_path, 'imports', temp_name)
+    try:
+        file.save(temp_path)
+    except Exception as e:
+        flash(f'Failed to save uploaded file: {e}', 'danger')
+        return redirect(url_for('staff_attendance_import'))
+
+    # Try to parse with attendance_utils for multi-sheet vendor files; fallback to pandas read
+    df = None
+    try:
+        with open(temp_path, 'rb') as fh:
+            df = combine_all_sheets(fh, year=datetime.utcnow().year, month=datetime.utcnow().month)
+    except Exception:
+        try:
+            df = pd.read_excel(temp_path)
+        except Exception:
+            try:
+                df = pd.read_csv(temp_path)
+            except Exception as e:
+                # Failed parsing
+                os.remove(temp_path)
+                flash(f'Failed to parse uploaded spreadsheet: {e}', 'danger')
+                return redirect(url_for('staff_attendance_import'))
+
+    # Build a lightweight preview: map machine ids to staff and show first 50 rows
+    preview_rows = []
+    colmap = {c.lower().strip(): c for c in df.columns}
+    def col_any(keys):
+        for k in keys:
+            if k in colmap:
+                return colmap[k]
+        return None
+    machine_col = col_any(['machineid','machine_id','machine','id'])
+    staffid_col = col_any(['staffid','staff_id','id'])
+    date_col = col_any(['date','day'])
+    checkin_col = col_any(['checkin','check_in','timein','on'])
+    checkout_col = col_any(['checkout','check_out','timeout','off'])
+    late_col = col_any(['late','late_minutes','late_min'])
+
+    for idx, row in df.iterrows():
+        if len(preview_rows) >= 200:
+            break
+        try:
+            machine = str(row[machine_col]).strip() if machine_col and pd.notna(row.get(machine_col)) else None
+            staffid = int(row[staffid_col]) if staffid_col and pd.notna(row.get(staffid_col)) else None
+            d_raw = row[date_col] if date_col and pd.notna(row.get(date_col)) else None
+            try:
+                if isinstance(d_raw, str):
+                    d = datetime.strptime(d_raw, '%d/%m/%Y').date()
+                else:
+                    d = pd.to_datetime(d_raw).date() if d_raw is not None and not pd.isna(d_raw) else None
+            except Exception:
+                d = None
+            ci = None
+            co = None
+            try:
+                if checkin_col and pd.notna(row.get(checkin_col)):
+                    ci = pd.to_datetime(row.get(checkin_col)).time()
+            except Exception:
+                ci = None
+            try:
+                if checkout_col and pd.notna(row.get(checkout_col)):
+                    co = pd.to_datetime(row.get(checkout_col)).time()
+            except Exception:
+                co = None
+            late_min = int(row[late_col]) if late_col and pd.notna(row.get(late_col)) else None
+            mapped = None
+            if machine:
+                mapped = Staff.query.filter(
+                    (Staff.whitechapel_machine_id == machine) |
+                    (Staff.east_ham_machine_id == machine) |
+                    (Staff.stratford_machine_id == machine) |
+                    (Staff.docklands_machine_id == machine)
+                ).first()
+            if not mapped and staffid:
+                mapped = Staff.query.filter((Staff.id == staffid) | (Staff.access_code == str(staffid))).first()
+            preview_rows.append({
+                'machine': machine,
+                'staffid': staffid,
+                'staff_name': mapped.name if mapped else None,
+                'date': d.strftime('%d/%m/%Y') if d else None,
+                'check_in': ci.strftime('%H:%M:%S') if ci else None,
+                'check_out': co.strftime('%H:%M:%S') if co else None,
+                'late_min': late_min,
+            })
+        except Exception:
+            continue
+
+    # Keep preview in session and store temp file name for confirm
+    session['attendance_import_tmp'] = temp_name
+    session['attendance_import_branch'] = branch or ''
+    return render_template('staff/attendance_import_preview.html', rows=preview_rows, temp_name=temp_name, branch=branch or '')
 
 def _build_supervisor_shift_email(shift: SupervisorShift, staff_user: User) -> tuple[str, str]:
         date_label = shift.date.strftime('%A, %d %B %Y') if shift.date else ''
@@ -1501,7 +2369,7 @@ def supervisor_shifts_index():
         days=days,
         TIMESLOT_OPTIONS=TIMESLOT_OPTIONS,
         today=today,
-        BRANCH_CHOICES=BRANCH_CHOICES,
+    branch_choices=BRANCH_CHOICES(),
     )
 
 @app.route('/supervisor/shifts/new', methods=['GET','POST'])
@@ -1540,7 +2408,7 @@ def supervisor_shifts_new():
             flash('Please choose at least one timeslot', 'danger')
             return redirect(url_for('supervisor_shifts_index'))
         branch = (request.form.get('branch') or '').strip()
-        if branch and branch not in BRANCH_CHOICES:
+        if branch and branch not in BRANCH_CHOICES():
             flash('Invalid branch', 'danger')
             return redirect(url_for('supervisor_shifts_index'))
         notes = (request.form.get('notes') or '').strip() or None
@@ -1557,7 +2425,7 @@ def supervisor_shifts_new():
         flash('Supervisor shift created', 'success')
         return redirect(url_for('supervisor_shifts_index'))
     staff_list = _users_for_supervisor_shifts()
-    return render_template('supervisor/shifts/form.html', record=None, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
+    return render_template('supervisor/shifts/form.html', record=None, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, branch_choices=BRANCH_CHOICES())
 
 @app.route('/supervisor/shifts/<int:shift_id>/edit', methods=['GET','POST'])
 @login_required
@@ -1596,7 +2464,7 @@ def supervisor_shifts_edit(shift_id: int):
             flash('Please choose at least one timeslot', 'danger')
             return redirect(url_for('supervisor_shifts_index'))
         branch = (request.form.get('branch') or '').strip()
-        if branch and branch not in BRANCH_CHOICES:
+        if branch and branch not in BRANCH_CHOICES():
             flash('Invalid branch', 'danger')
             return redirect(url_for('supervisor_shifts_index'))
         sh.staff_user_id = staff_user_id
@@ -1609,7 +2477,7 @@ def supervisor_shifts_edit(shift_id: int):
         flash('Supervisor shift updated', 'success')
         return redirect(url_for('supervisor_shifts_index'))
     staff_list = _users_for_supervisor_shifts()
-    return render_template('supervisor/shifts/form.html', record=sh, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
+    return render_template('supervisor/shifts/form.html', record=sh, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, branch_choices=BRANCH_CHOICES())
 
 @app.route('/api/supervisor/shifts/<int:shift_id>')
 @login_required
@@ -1632,6 +2500,7 @@ def api_supervisor_shift(shift_id: int):
 @login_required
 @permission_required('manage_supervisor_shifts')
 def supervisor_shifts_delete(shift_id: int):
+    # Delete a future supervisor shift; protect past shifts
     sh = SupervisorShift.query.get_or_404(shift_id)
     if sh.date and sh.date < date.today():
         flash('Cannot delete past supervisor shifts', 'warning')
@@ -1642,134 +2511,8 @@ def supervisor_shifts_delete(shift_id: int):
         flash('Supervisor shift deleted', 'success')
     except Exception as exc:
         db.session.rollback()
-        flash(f'Failed to delete supervisor shift: {exc}', 'danger')
+        flash(f'Failed to delete shift: {exc}', 'danger')
     return redirect(url_for('supervisor_shifts_index'))
-
-
-@app.route('/floor/shifts')
-@login_required
-@permission_required('manage_shifts')
-def floor_shifts_index():
-    # Filters
-    q = (request.args.get('q') or '').strip().lower()
-    staff_id = request.args.get('staff', type=int)
-    day = (request.args.get('day') or '').strip()
-    status = (request.args.get('status') or '').strip().lower()  # upcoming | past
-    date_from = request.args.get('from')
-    date_to = request.args.get('to')
-    sort = (request.args.get('sort') or 'date').lower()  # date|staff|day
-    direction = (request.args.get('direction') or 'desc').lower()  # asc|desc
-
-    query = Shift.query
-    today = date.today()
-    if staff_id:
-        query = query.filter(Shift.staff_user_id == staff_id)
-    if day:
-        query = query.filter(Shift.day == day)
-    if status == 'upcoming':
-        query = query.filter(Shift.date >= today)
-    elif status == 'past':
-        query = query.filter(Shift.date < today)
-    if date_from:
-        try:
-            # Expecting YYYY-MM-DD from filter UI; list shows DD-MM-YYYY
-            df = _dt.strptime(date_from, '%Y-%m-%d').date()
-            query = query.filter(Shift.date >= df)
-        except Exception:
-            pass
-    if date_to:
-        try:
-            dt = _dt.strptime(date_to, '%Y-%m-%d').date()
-            query = query.filter(Shift.date <= dt)
-        except Exception:
-            pass
-    if q:
-        # naive search on staff name or notes
-        query = query.join(User, Shift.staff_user_id == User.id).filter(
-            (User.name.ilike(f"%{q}%")) | (Shift.notes.ilike(f"%{q}%"))
-        )
-
-    if sort == 'staff':
-        query = query.join(User, Shift.staff_user_id == User.id).order_by(User.name.asc())
-    elif sort == 'day':
-        query = query.order_by(Shift.day.asc(), Shift.date.desc())
-    else:
-        query = query.order_by(Shift.date.desc())
-    if direction == 'asc':
-        # Reapply ascending by date if chosen
-        if sort == 'date':
-            query = query.order_by(Shift.date.asc())
-
-    records = query.all()
-    staff_list = _users_for_shifts()
-    days = list(day_name)
-    return render_template(
-        'floor/shifts/index.html',
-        records=records,
-        staff_list=staff_list,
-        days=days,
-        TIMESLOT_OPTIONS=TIMESLOT_OPTIONS,
-        today=today,
-        BRANCH_CHOICES=BRANCH_CHOICES,
-    )
-
-
-@app.route('/floor/shifts/new', methods=['GET','POST'])
-@login_required
-@permission_required('manage_shifts')
-def floor_shifts_new():
-    if request.method == 'POST':
-        try:
-            staff_user_id = int(request.form.get('staff_user_id'))
-        except Exception:
-            flash('Invalid staff', 'danger')
-            return redirect(url_for('floor_shifts_index'))
-        try:
-            # Date input expected DD-MM-YYYY from modal; accept YYYY-MM-DD too
-            raw = (request.form.get('date') or '').strip()
-            dt = None
-            for fmt in ('%d-%m-%Y','%Y-%m-%d'):
-                try:
-                    dt = _dt.strptime(raw, fmt).date(); break
-                except Exception: pass
-            if not dt:
-                raise ValueError('Invalid date')
-        except Exception:
-            flash('Invalid date format', 'danger')
-            return redirect(url_for('floor_shifts_index'))
-        # Timeslots: multi-select values as list, default for weekday if none
-        slots = request.form.getlist('timeslots')
-        if not slots and _is_weekday(dt):
-            slots = ['5-7']
-        slots = [s for s in slots if s in TIMESLOT_OPTIONS]
-        if not slots:
-            flash('Please choose at least one timeslot', 'danger')
-            return redirect(url_for('floor_shifts_index'))
-        # Branch & floors
-        branch = (request.form.get('branch') or '').strip()
-        if branch and branch not in BRANCH_CHOICES:
-            flash('Invalid branch', 'danger')
-            return redirect(url_for('floor_shifts_index'))
-        floors = request.form.getlist('floors')
-        valid_floor_opts = ['Basement','Ground Floor','First Floor','Second Floor','Third Floor']
-        floors = [f for f in floors if f in valid_floor_opts]
-        notes = (request.form.get('notes') or '').strip() or None
-        sh = Shift(staff_user_id=staff_user_id, date=dt, day=_shift_day_for(dt), timeslots=','.join(slots), branch=branch or None, floors=(','.join(floors) if floors else None), notes=notes)
-        db.session.add(sh)
-        db.session.commit()
-        # Send email to staff
-        try:
-            staff_user = db.session.get(User, staff_user_id)
-            if staff_user and staff_user.email:
-                subj, html = _build_shift_email(sh, staff_user)
-                send_email(staff_user.email, subj, html)
-        except Exception as _exc:
-            print(f"[WARN] Shift email send failed: {_exc}")
-        flash('Shift created', 'success')
-        return redirect(url_for('floor_shifts_index'))
-    # For GET, render empty modal content if needed
-    staff_list = _users_for_shifts()
-    return render_template('floor/shifts/form.html', record=None, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
 
 
 @app.route('/floor/shifts/<int:shift_id>/edit', methods=['GET','POST'])
@@ -1805,7 +2548,7 @@ def floor_shifts_edit(shift_id: int):
             return redirect(url_for('floor_shifts_index'))
         # Branch & floors
         branch = (request.form.get('branch') or '').strip()
-        if branch and branch not in BRANCH_CHOICES:
+        if branch and branch not in BRANCH_CHOICES():
             flash('Invalid branch', 'danger')
             return redirect(url_for('floor_shifts_index'))
         floors = request.form.getlist('floors')
@@ -1822,7 +2565,7 @@ def floor_shifts_edit(shift_id: int):
         flash('Shift updated', 'success')
         return redirect(url_for('floor_shifts_index'))
     staff_list = _users_for_shifts()
-    return render_template('floor/shifts/form.html', record=sh, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, BRANCH_CHOICES=BRANCH_CHOICES)
+    return render_template('floor/shifts/form.html', record=sh, staff_list=staff_list, TIMESLOT_OPTIONS=TIMESLOT_OPTIONS, branch_choices=BRANCH_CHOICES())
 
 
 @app.route('/api/floor/shifts/<int:shift_id>')
@@ -2064,22 +2807,23 @@ def api_floor_reports_today():
 
 def _send_eod_reminders():
     # Runs daily at 19:30: find shifts for today where staff hasn't completed checklist and send email
-    today = date.today()
-    # find shifts today
-    shifts = Shift.query.filter(Shift.date == today).all()
-    for sh in shifts:
-        # check if a checklist exists for this shift/staff
-        exists = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == today, EndOfDayChecklist.staff_user_id == sh.staff_user_id).count()
-        if exists == 0:
-            # Send warning
-            try:
-                staff = db.session.get(User, sh.staff_user_id)
-                if staff and staff.email:
-                    subj = f"Reminder: End of Day checklist pending for {today.strftime('%d %b %Y')}"
-                    body = f"Hello {staff.name},<br/><br/>You have an assigned shift today ({sh.date.strftime('%A %d %b %Y')}). Please complete the End of Day checklist by 19:30 to mark the task complete.<br/><br/>Thanks." 
-                    _send_email_safe(staff.email, subj, body, log_prefix='EOD reminder')
-            except Exception as e:
-                print(f"[WARN] Failed to send EOD reminder: {e}")
+    with app.app_context():
+        today = date.today()
+        # find shifts today
+        shifts = Shift.query.filter(Shift.date == today).all()
+        for sh in shifts:
+            # check if a checklist exists for this shift/staff
+            exists = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == today, EndOfDayChecklist.staff_user_id == sh.staff_user_id).count()
+            if exists == 0:
+                # Send warning
+                try:
+                    staff = db.session.get(User, sh.staff_user_id)
+                    if staff and staff.email:
+                        subj = f"Reminder: End of Day checklist pending for {today.strftime('%d %b %Y')}"
+                        body = f"Hello {staff.name},<br/><br/>You have an assigned shift today ({sh.date.strftime('%A %d %b %Y')}). Please complete the End of Day checklist by 19:30 to mark the task complete.<br/><br/>Thanks." 
+                        _send_email_safe(staff.email, subj, body, log_prefix='EOD reminder')
+                except Exception as e:
+                    print(f"[WARN] Failed to send EOD reminder: {e}")
 
 
 # Schedule EOD reminders at 19:30 daily if APScheduler is available
@@ -2103,20 +2847,21 @@ if BackgroundScheduler is not None:
 
 # Print Report reminders (similar to EOD): send at 19:30 for staff with a shift and no report
 def _send_print_report_reminders():
-    from models import PrintReport
-    today = date.today()
-    shifts = Shift.query.filter(Shift.date == today).all()
-    for sh in shifts:
-        exists = PrintReport.query.filter(PrintReport.date == today, PrintReport.staff_user_id == sh.staff_user_id).count()
-        if exists == 0:
-            try:
-                staff = db.session.get(User, sh.staff_user_id)
-                if staff and staff.email:
-                    subj = f"Reminder: Print report pending for {today.strftime('%d %b %Y') }"
-                    body = f"Hello {staff.name},<br/><br/>You have an assigned shift today ({sh.date.strftime('%A %d %b %Y')}). Please complete the daily print report by 19:30.<br/><br/>Thanks."
-                    _send_email_safe(staff.email, subj, body, log_prefix='Print report reminder')
-            except Exception as e:
-                print(f"[WARN] Failed to send print report reminder: {e}")
+    with app.app_context():
+        from models import PrintReport
+        today = date.today()
+        shifts = Shift.query.filter(Shift.date == today).all()
+        for sh in shifts:
+            exists = PrintReport.query.filter(PrintReport.date == today, PrintReport.staff_user_id == sh.staff_user_id).count()
+            if exists == 0:
+                try:
+                    staff = db.session.get(User, sh.staff_user_id)
+                    if staff and staff.email:
+                        subj = f"Reminder: Print report pending for {today.strftime('%d %b %Y') }"
+                        body = f"Hello {staff.name},<br/><br/>You have an assigned shift today ({sh.date.strftime('%A %d %b %Y')}). Please complete the daily print report by 19:30.<br/><br/>Thanks."
+                        _send_email_safe(staff.email, subj, body, log_prefix='Print report reminder')
+                except Exception as e:
+                    print(f"[WARN] Failed to send print report reminder: {e}")
 
 if BackgroundScheduler is not None:
     try:
@@ -2176,7 +2921,7 @@ def floor_reports_index():
             pass
     records = query.order_by(PrintReport.created_at.desc()).all()
     floor_opts = ['Basement','Ground Floor','First Floor','Second Floor','Third Floor']
-    branches = BRANCH_CHOICES
+    branches = BRANCH_CHOICES()
     staff_list = _users_for_shifts() if is_admin else []
     return render_template('floor/reports/index.html', records=records, selected_date=selected_date, floor_opts=floor_opts, branches=branches, staff_list=staff_list, selected_floor=floor_filter, selected_branch=branch_filter, selected_staff=staff_filter, q=q)
 
@@ -2214,7 +2959,7 @@ def floor_reports_new():
     # GET returns modal fragment
     today = date.today()
     my_shifts = Shift.query.filter(Shift.date == today, Shift.staff_user_id == current_user.id).all()
-    return render_template('floor/reports/form.html', record=None, my_shifts=my_shifts, floor_opts=['Basement','Ground Floor','First Floor','Second Floor','Third Floor'], branches=BRANCH_CHOICES, today=today)
+    return render_template('floor/reports/form.html', record=None, my_shifts=my_shifts, floor_opts=['Basement','Ground Floor','First Floor','Second Floor','Third Floor'], branches=BRANCH_CHOICES(), today=today)
 
 @app.route('/floor/reports/<int:rid>/edit', methods=['GET','POST'])
 @login_required
@@ -2245,7 +2990,473 @@ def floor_reports_edit(rid: int):
         return redirect(url_for('floor_reports_index'))
     today = pr.date or date.today()
     my_shifts = Shift.query.filter(Shift.date == today, Shift.staff_user_id == current_user.id).all()
-    return render_template('floor/reports/form.html', record=pr, my_shifts=my_shifts, floor_opts=['Basement','Ground Floor','First Floor','Second Floor','Third Floor'], branches=BRANCH_CHOICES, today=today)
+    return render_template('floor/reports/form.html', record=pr, my_shifts=my_shifts, floor_opts=['Basement','Ground Floor','First Floor','Second Floor','Third Floor'], branches=BRANCH_CHOICES(), today=today)
+
+
+@app.route('/invoice-submissions/create-salary-report', methods=['GET','POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def create_salary_report():
+    # GET: return modal fragment used by the submissions page
+    if request.method == 'GET':
+        companies = Company.query.order_by(Company.name).all()
+        return render_template('invoice_management/create_salary_report_modal.html', companies=companies)
+
+    # POST: parse filters, query invoices, build rows and return XLSX
+    # parse filters
+    companies = request.form.getlist('company')
+    months = [int(m) for m in request.form.getlist('month') if m]
+    years = [int(y) for y in request.form.getlist('year') if y]
+    statuses = request.form.getlist('status')
+
+    # build query against StaffInvoice
+    q = StaffInvoice.query.options(joinedload(StaffInvoice.created_by))
+    # Normalize company IDs to integers if provided
+    company_ids = []
+    try:
+        company_ids = [int(c) for c in companies if c]
+    except Exception:
+        # fallback: keep raw values
+        company_ids = [c for c in companies if c]
+    if company_ids:
+        # Join Staff (employee profile) via user_id to filter by Staff.company_id
+        q = q.join(Staff, Staff.user_id == StaffInvoice.created_by_id).filter(Staff.company_id.in_(company_ids))
+    if months:
+        q = q.filter(StaffInvoice.month.in_(months))
+    if years:
+        q = q.filter(StaffInvoice.year.in_(years))
+    if statuses:
+        q = q.filter(StaffInvoice.status.in_(statuses))
+
+    invoices = q.order_by(StaffInvoice.id.asc()).all()
+
+    rows = []
+    for inv in invoices:
+        # Try to find Staff record for the invoice creator
+        staff_rec = Staff.query.filter_by(user_id=inv.created_by_id).first()
+        ni = getattr(staff_rec, 'national_insurance', '') if staff_rec else ''
+        company_name = staff_rec.company.name if (staff_rec and getattr(staff_rec, 'company', None)) else (getattr(inv, 'company', None).name if getattr(inv, 'company', None) else '')
+        hours = 0.0
+        try:
+            hours = float(sum([float(getattr(it, 'hours', 0) or 0) for it in (inv.items or [])]))
+        except Exception:
+            hours = 0.0
+        rate = ''
+        if getattr(inv, 'items', None) and len(inv.items) > 0:
+            try:
+                rate = float(getattr(inv.items[0], 'rate', 0) or 0)
+            except Exception:
+                rate = ''
+        amount = float(getattr(inv, 'amount', 0) or 0)
+        notes = getattr(inv, 'notes', '') or ''
+        name = inv.created_by.name if getattr(inv, 'created_by', None) else ''
+        rows.append({
+            'Name': name,
+            'National Insurance Number': ni,
+            'Company': company_name,
+            'Number of Hours Worked': hours,
+            'Hour per Rate': rate,
+            'Amount': amount,
+            'Notes': notes,
+        })
+
+    # Generate Excel file in-memory
+    try:
+        from io import BytesIO
+
+        import pandas as pd
+
+        df = pd.DataFrame(rows)
+        # Ensure consistent column order even if rows empty
+        cols = ['Name', 'National Insurance Number', 'Company', 'Number of Hours Worked', 'Hour per Rate', 'Amount', 'Notes']
+        df = df.reindex(columns=cols)
+        bio = BytesIO()
+        with pd.ExcelWriter(bio, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='SalaryReport')
+        bio.seek(0)
+        filename = 'salary_report.xlsx'
+        return send_file(bio, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        flash(f'Failed to generate XLSX: {e}', 'danger')
+        return redirect(url_for('invoice_submissions'))
+
+
+@app.route('/salary-reports')
+@login_required
+@permission_required('manage_staff_invoices')
+def salary_reports_index():
+    import json as _json
+
+    from models import Company, SalaryReport
+    q = SalaryReport.query
+    search = (request.args.get('q') or '').strip()
+    sort = (request.args.get('sort') or 'created_at').strip()
+    # modal-like filters
+    company_filters = [int(c) for c in request.args.getlist('company') if c]
+    month_filters = [int(m) for m in request.args.getlist('month') if m]
+    year_filters = [int(y) for y in request.args.getlist('year') if y]
+    status_filters = [s for s in request.args.getlist('status') if s]
+    # search across name and creator name if available
+    if search:
+        try:
+            from models import User
+            q = q.join(User, SalaryReport.created_by_id == User.id).filter(
+                (SalaryReport.name.ilike(f"%{search}%")) | (User.name.ilike(f"%{search}%"))
+            )
+        except Exception:
+            q = q.filter(SalaryReport.name.ilike(f"%{search}%"))
+    # sorting
+    if sort == 'name':
+        q = q.order_by(SalaryReport.name.asc().nullslast())
+    else:
+        q = q.order_by(SalaryReport.created_at.desc())
+    all_reports = q.all()
+    # Filter in Python by filter_meta to match modal parameters
+    def matches_modal_filters(rep):
+        if not (company_filters or month_filters or year_filters or status_filters):
+            return True
+        try:
+            meta = _json.loads(rep.filter_meta) if rep.filter_meta else {}
+        except Exception:
+            meta = {}
+        def has_any(selected, meta_key):
+            if not selected:
+                return True
+            vals = meta.get(meta_key) or []
+            # Normalize to ints for numeric filters
+            if meta_key in ('company','month','year'):
+                try:
+                    vals = [int(v) for v in vals if v is not None and v != '']
+                except Exception:
+                    pass
+            return any(v in vals for v in selected)
+        return (
+            has_any(company_filters, 'company') and
+            has_any(month_filters, 'month') and
+            has_any(year_filters, 'year') and
+            has_any(status_filters, 'status')
+        )
+    reports = [r for r in all_reports if matches_modal_filters(r)]
+
+    companies = Company.query.order_by(Company.name).all()
+    # Precompute display metadata for each report (months/years/company names)
+    try:
+        name_map = {c.id: c.name for c in companies}
+    except Exception:
+        name_map = {}
+    import calendar as _cal
+    for _r in reports:
+        try:
+            _meta = _json.loads(getattr(_r, 'filter_meta', '') or '{}') or {}
+        except Exception:
+            _meta = {}
+        # Normalize lists
+        months = _meta.get('month') or []
+        years = _meta.get('year') or []
+        comps = _meta.get('company') or []
+        # Convert to display
+        try:
+            month_names = [_cal.month_name[int(m)] for m in months if str(m).isdigit() and 1 <= int(m) <= 12]
+        except Exception:
+            month_names = []
+        try:
+            year_values = [int(y) for y in years if str(y).isdigit()]
+        except Exception:
+            year_values = []
+        try:
+            comp_names = [name_map.get(int(i), str(i)) for i in comps if str(i).isdigit()]
+        except Exception:
+            comp_names = []
+        # Attach transient attributes for template
+        setattr(_r, '_month_names', month_names)
+        setattr(_r, '_year_values', year_values)
+        setattr(_r, '_company_names', comp_names)
+    return render_template(
+        'salary_reports/index.html',
+        reports=reports,
+        q=search,
+        sort=sort,
+        companies=companies,
+        company_filters=company_filters,
+        month_filters=month_filters,
+        year_filters=year_filters,
+        status_filters=status_filters,
+    )
+
+
+@app.route('/salary-reports/new', methods=['POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def salary_reports_new():
+    """Create a new empty SalaryReport and redirect to its import page.
+
+    Optionally accepts a 'name' field; otherwise defaults to today's date.
+    """
+    from models import SalaryReport
+    try:
+        name = (request.form.get('name') or '').strip()
+        if not name:
+            name = f"Salary Report {date.today().strftime('%Y-%m-%d')}"
+        rep = SalaryReport(name=name, created_by_id=current_user.id)
+        db.session.add(rep)
+        db.session.commit()
+        flash('Created new salary report', 'success')
+        return redirect(url_for('salary_report_import', rid=rep.id))
+    except Exception as exc:
+        db.session.rollback(); flash(f'Failed to create report: {exc}', 'danger')
+        return redirect(url_for('salary_reports_index'))
+
+
+@app.route('/salary-reports/<int:rid>')
+@login_required
+@permission_required('manage_staff_invoices')
+def salary_report_detail(rid: int):
+    import json as _json
+
+    from models import Company, SalaryReport, SalaryReportRow
+    rep = SalaryReport.query.get_or_404(rid)
+    # Filters
+    search = (request.args.get('q') or '').strip()
+    company_filter = (request.args.get('company') or '').strip()
+    min_hours = request.args.get('min_hours', type=float)
+    max_hours = request.args.get('max_hours', type=float)
+    min_rate = request.args.get('min_rate', type=float)
+    max_rate = request.args.get('max_rate', type=float)
+    min_amount = request.args.get('min_amount', type=float)
+    max_amount = request.args.get('max_amount', type=float)
+    sort = request.args.get('sort')
+    page = request.args.get('page', type=int) or 1
+    per_page = min(200, max(20, request.args.get('per_page', type=int) or 50))
+
+    q = SalaryReportRow.query.filter_by(report_id=rid)
+    if search:
+        like = f"%{search}%"
+        q = q.filter(or_(SalaryReportRow.name.ilike(like), SalaryReportRow.national_insurance.ilike(like), SalaryReportRow.company.ilike(like), SalaryReportRow.notes.ilike(like)))
+    if company_filter:
+        q = q.filter(SalaryReportRow.company.ilike(f"%{company_filter}%"))
+    if min_hours is not None:
+        q = q.filter(SalaryReportRow.hours >= min_hours)
+    if max_hours is not None:
+        q = q.filter(SalaryReportRow.hours <= max_hours)
+    if min_rate is not None:
+        q = q.filter(SalaryReportRow.rate >= min_rate)
+    if max_rate is not None:
+        q = q.filter(SalaryReportRow.rate <= max_rate)
+    if min_amount is not None:
+        q = q.filter(SalaryReportRow.amount >= min_amount)
+    if max_amount is not None:
+        q = q.filter(SalaryReportRow.amount <= max_amount)
+
+    if sort == 'amount_desc':
+        q = q.order_by(SalaryReportRow.amount.desc())
+    elif sort == 'amount_asc':
+        q = q.order_by(SalaryReportRow.amount.asc())
+    else:
+        q = q.order_by(SalaryReportRow.id.asc())
+
+    total = q.count()
+    rows = q.offset((page-1)*per_page).limit(per_page).all()
+
+    # paging metadata
+    pages = (total + per_page - 1) // per_page if per_page else 1
+    # Distinct company list for dropdown
+    try:
+        companies = [c[0] for c in db.session.query(SalaryReportRow.company).filter_by(report_id=rid).distinct().order_by(SalaryReportRow.company.asc()).all() if c and c[0]]
+    except Exception:
+        companies = []
+    # Parse report filter metadata for display
+    try:
+        _meta = _json.loads(rep.filter_meta) if rep.filter_meta else {}
+    except Exception:
+        _meta = {}
+    # Resolve company IDs to names
+    meta_company_names = []
+    try:
+        if _meta.get('company'):
+            ids = [int(i) for i in _meta.get('company') if i not in (None, '')]
+            if ids:
+                name_map = {c.id: c.name for c in Company.query.filter(Company.id.in_(ids)).all()}
+                meta_company_names = [name_map.get(i, str(i)) for i in ids]
+    except Exception:
+        meta_company_names = []
+    return render_template(
+        'salary_reports/detail.html',
+        report=rep,
+        rows=rows,
+        q=search,
+        sort=sort,
+        page=page,
+        pages=pages,
+        per_page=per_page,
+        total=total,
+        company_filter=company_filter,
+        companies=companies,
+        min_hours=min_hours,
+        max_hours=max_hours,
+        min_rate=min_rate,
+        max_rate=max_rate,
+        min_amount=min_amount,
+        max_amount=max_amount,
+        report_filters={
+            'company_names': meta_company_names,
+            'months': _meta.get('month') or [],
+            'years': _meta.get('year') or [],
+            'status': _meta.get('status') or [],
+        }
+    )
+
+
+@app.route('/salary-reports/<int:rid>/import', methods=['GET','POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def salary_report_import(rid: int):
+    from models import Company, SalaryReport, SalaryReportRow
+    rep = SalaryReport.query.get_or_404(rid)
+    if request.method == 'POST':
+        f = request.files.get('file')
+        if not f or not f.filename:
+            flash('No file uploaded', 'danger'); return redirect(url_for('salary_report_import', rid=rid))
+        try:
+            import pandas as _pd
+            df = _pd.read_excel(f)
+            for _, r in df.iterrows():
+                row = SalaryReportRow(report_id=rep.id,
+                                      name=str(r.get('Name') or ''),
+                                      national_insurance=str(r.get('National Insurance Number') or r.get('National Insurance') or ''),
+                                      company=str(r.get('Company') or ''),
+                                      hours=float(r.get('Number of Hours Worked') or r.get('Hours') or 0),
+                                      rate=float(r.get('Hour per Rate') or r.get('Rate') or 0),
+                                      amount=float(r.get('Amount') or 0),
+                                      notes=str(r.get('Notes') or ''))
+                db.session.add(row)
+            # Save modal-like filters as metadata if provided
+            import json as _json
+            meta = {
+                'company': [int(c) for c in request.form.getlist('company') if c],
+                'month': [int(m) for m in request.form.getlist('month') if m],
+                'year': [int(y) for y in request.form.getlist('year') if y],
+                'status': [s for s in request.form.getlist('status') if s],
+            }
+            # Only set if any provided or if empty (overwrite)
+            rep.filter_meta = _json.dumps(meta)
+            db.session.commit()
+            flash('Imported report rows', 'success')
+            return redirect(url_for('salary_report_detail', rid=rid))
+        except Exception as e:
+            db.session.rollback(); flash(f'Import failed: {e}', 'danger')
+            return redirect(url_for('salary_report_import', rid=rid))
+    companies = Company.query.order_by(Company.name).all()
+    return render_template('salary_reports/import.html', report=rep, companies=companies)
+
+
+@app.route('/salary-reports/<int:rid>/export')
+@login_required
+@permission_required('manage_staff_invoices')
+def salary_report_export(rid: int):
+    from models import SalaryReport, SalaryReportRow
+    rep = SalaryReport.query.get_or_404(rid)
+    # apply same filters as detail view
+    search = (request.args.get('q') or '').strip()
+    company_filter = (request.args.get('company') or '').strip()
+    min_hours = request.args.get('min_hours', type=float)
+    max_hours = request.args.get('max_hours', type=float)
+    min_rate = request.args.get('min_rate', type=float)
+    max_rate = request.args.get('max_rate', type=float)
+    min_amount = request.args.get('min_amount', type=float)
+    max_amount = request.args.get('max_amount', type=float)
+    sort = request.args.get('sort')
+
+    q = SalaryReportRow.query.filter_by(report_id=rid)
+    if search:
+        like = f"%{search}%"
+        q = q.filter(or_(SalaryReportRow.name.ilike(like), SalaryReportRow.national_insurance.ilike(like), SalaryReportRow.company.ilike(like), SalaryReportRow.notes.ilike(like)))
+    if company_filter:
+        q = q.filter(SalaryReportRow.company.ilike(f"%{company_filter}%"))
+    if min_hours is not None:
+        q = q.filter(SalaryReportRow.hours >= min_hours)
+    if max_hours is not None:
+        q = q.filter(SalaryReportRow.hours <= max_hours)
+    if min_rate is not None:
+        q = q.filter(SalaryReportRow.rate >= min_rate)
+    if max_rate is not None:
+        q = q.filter(SalaryReportRow.rate <= max_rate)
+    if min_amount is not None:
+        q = q.filter(SalaryReportRow.amount >= min_amount)
+    if max_amount is not None:
+        q = q.filter(SalaryReportRow.amount <= max_amount)
+    if sort == 'amount_desc':
+        q = q.order_by(SalaryReportRow.amount.desc())
+    elif sort == 'amount_asc':
+        q = q.order_by(SalaryReportRow.amount.asc())
+    else:
+        q = q.order_by(SalaryReportRow.id.asc())
+
+    rows = q.all()
+    data = []
+    for r in rows:
+        data.append({'Name': r.name, 'National Insurance': r.national_insurance, 'Company': r.company, 'Hours': r.hours, 'Rate': r.rate, 'Amount': r.amount, 'Notes': r.notes})
+    try:
+        from io import BytesIO
+
+        import pandas as _pd
+        df = _pd.DataFrame(data)
+        bio = BytesIO()
+        with _pd.ExcelWriter(bio, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Rows')
+        bio.seek(0)
+        fname = f"salary_report_{rid}_rows.xlsx"
+        return send_file(bio, as_attachment=True, download_name=fname, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        flash(f'Export failed: {e}', 'danger')
+        return redirect(url_for('salary_report_detail', rid=rid))
+
+
+# Dev helper: initialize SalaryReport tables if missing
+@app.cli.command('dev-init-salary-tables')
+def dev_init_salary_tables():
+    """Create SalaryReport and SalaryReportRow tables if they don't exist yet."""
+    try:
+        # Import models to register with metadata
+        from models import SalaryReport, SalaryReportRow  # noqa: F401
+        db.create_all()
+        print('✓ Ensured salary report tables exist')
+    except Exception as exc:
+        print(f'Failed to create tables: {exc}')
+
+
+# Version & Changelog CLI helpers
+@app.cli.command('version')
+def cli_version():
+    """Print the current application version."""
+    try:
+        entry = latest_entry()
+        date_str = f" ({entry.date})" if entry and entry.date else ""
+    except Exception:
+        entry = None
+        date_str = ""
+    print(f"Version: {VERSION}{date_str}")
+    if entry and entry.body:
+        print("\nNotes:\n" + entry.body)
+
+
+@app.cli.command('changelog')
+@click.option('--limit', default=5, help='Limit number of entries (0 for all).')
+def cli_changelog(limit: int):
+    """Print parsed changelog entries (newest first)."""
+    try:
+        lim = None if not limit or int(limit) <= 0 else int(limit)
+    except Exception:
+        lim = None
+    try:
+        entries = changelog_json(limit=lim)
+        for e in entries:
+            print(f"## {e.get('version')} - {e.get('date') or ''}")
+            body = (e.get('body') or '').strip()
+            if body:
+                print(body)
+            print()
+    except Exception as exc:
+        print(f"Failed to read changelog: {exc}")
 
 @app.route('/api/floor/reports/<int:rid>')
 @login_required
@@ -2854,6 +4065,21 @@ def register():
 def logout():
     logout_user()
     return redirect(url_for('login'))
+
+# Enforce password change on first login for converted accounts
+@app.before_request
+def _force_password_change_gate():
+    try:
+        if current_user.is_authenticated and getattr(current_user, 'force_password_reset', False):
+            # Allow only a safe subset of endpoints until password is changed
+            allowed_endpoints = {'logout', 'profile', 'static', 'login', 'request_reset', 'reset_with_token'}
+            ep = (request.endpoint or '')
+            if not (ep in allowed_endpoints or ep.startswith('static')):
+                if request.path != url_for('profile'):
+                    return redirect(url_for('profile'))
+    except Exception:
+        # Never block due to errors in the gate
+        pass
 @app.route("/approve")
 @login_required
 def approve_users():
@@ -2866,7 +4092,7 @@ def approve_users():
         q = q.filter(User.role == role_filter)
     users = q.order_by(User.created_at.desc()).all()
     # Build role capability legend from current RolePermission table + descriptions
-    known_roles = ['staff','supervisor','centre_manager','admin','superadmin']
+    known_roles = ['tutor','staff','supervisor','centre_manager','admin','superadmin']
     role_caps = []
     # Cache permission descriptions
     perm_desc = {p.key: p.description for p in Permission.query.all()}
@@ -2903,7 +4129,7 @@ def bulk_role_assign():
     legacy_alias = {'observer':'supervisor','lead':'centre_manager'}
     if target_role in legacy_alias:
         target_role = legacy_alias[target_role]
-    if target_role not in ['staff','supervisor','centre_manager','admin','superadmin']:
+    if target_role not in ['tutor','staff','supervisor','centre_manager','admin','superadmin']:
         flash('Invalid target role for bulk assignment','danger')
         return redirect(url_for('approve_users'))
     try:
@@ -2964,7 +4190,7 @@ def set_user_role(uid):
     legacy_alias = {'observer': 'supervisor', 'lead': 'centre_manager'}
     if role in legacy_alias:
         role = legacy_alias[role]
-    if role not in ['staff','supervisor','centre_manager','admin','superadmin']:
+    if role not in ['tutor','staff','supervisor','centre_manager','admin','superadmin']:
         flash('Invalid role', 'warning')
         return redirect(url_for('approve_users'))
     # Prevent locking yourself out accidentally if demoting last superadmin
@@ -3075,6 +4301,30 @@ def upload_user_picture(uid):
         flash('Picture updated', 'success')
     except Exception as e:
         flash(f'Upload failed: {e}', 'danger')
+    return redirect(url_for('approve_users'))
+
+@app.route('/approve/<int:uid>/reset-password', methods=['POST'])
+@login_required
+def reset_user_password(uid):
+    if not current_user.is_superadmin:
+        abort(403)
+    u = User.query.get_or_404(uid)
+    try:
+        temp_pwd = _generate_temp_password()
+        u.password_hash = generate_password_hash(temp_pwd)
+        if hasattr(u, 'force_password_reset'):
+            u.force_password_reset = True
+        db.session.commit()
+        try:
+            subject, html = _build_account_welcome_email_html(u.name, u.email, temp_pwd)
+            send_email(u.email, subject, html)
+        except Exception as em:
+            flash(f"Password reset, but email failed: {em}", 'warning')
+            return redirect(url_for('approve_users'))
+        flash('Temporary password emailed to user.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to reset password: {exc}', 'danger')
     return redirect(url_for('approve_users'))
 
 # ---------------- Permission Management (0.9.0) ----------------
@@ -3462,10 +4712,34 @@ def admin_appointments_slot_action(slot_id: int):
             if slot.start_at > datetime.now(timezone.utc):
                 slot.is_active = False
             db.session.commit()
-            subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
-            _send_email_safe(booking.email, subj, html, log_prefix='Appointment cancellation')
-            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='cancelled_admin')
-            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin cancellation')
+            from email_utils import send_with_template
+            cust_key = f"appointment_customer_{booking.language}_cancelled"
+            try:
+                send_with_template(cust_key, {
+                    'name': booking.name,
+                    'superadmin': slot.superadmin.name,
+                    'date': slot.start_at.strftime('%A, %d %B %Y'),
+                    'time': slot.start_at.strftime('%H:%M'),
+                    'student': booking.student_ref,
+                    'reason': booking.reason,
+                    'email': booking.email,
+                    'phone': booking.phone,
+                    'to_email': booking.email,
+                }, to_email=booking.email, fallback=lambda: build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None))
+            except Exception:
+                subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
+                _send_email_safe(booking.email, subj, html, log_prefix='Appointment cancellation')
+            try:
+                send_with_template('appointment_admin_cancelled_admin', {
+                    'name': booking.name,
+                    'student': booking.student_ref,
+                    'to_email': slot.superadmin.email,
+                    'date': slot.start_at.strftime('%A, %d %B %Y'),
+                    'time': slot.start_at.strftime('%H:%M'),
+                }, to_email=slot.superadmin.email, fallback=lambda: build_appointment_admin_email(booking, slot, mode='cancelled_admin'))
+            except Exception:
+                admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='cancelled_admin')
+                _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin cancellation')
             flash('Slot and associated booking cancelled.', 'success')
         else:
             db.session.commit()
@@ -3497,10 +4771,34 @@ def admin_appointments_booking_action():
                 slot.is_active = True
             _cancel_reminder(booking.id)
             db.session.commit()
-            subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
-            _send_email_safe(booking.email, subj, html, log_prefix='Appointment cancellation')
-            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='cancelled_admin')
-            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin cancellation')
+            from email_utils import send_with_template
+            cust_key = f"appointment_customer_{booking.language}_cancelled"
+            try:
+                send_with_template(cust_key, {
+                    'name': booking.name,
+                    'superadmin': slot.superadmin.name,
+                    'date': slot.start_at.strftime('%A, %d %B %Y'),
+                    'time': slot.start_at.strftime('%H:%M'),
+                    'student': booking.student_ref,
+                    'reason': booking.reason,
+                    'email': booking.email,
+                    'phone': booking.phone,
+                    'to_email': booking.email,
+                }, to_email=booking.email, fallback=lambda: build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None))
+            except Exception:
+                subj, html = build_appointment_email(booking, slot, slot.superadmin, language=booking.language, mode='cancelled', cancel_url=None)
+                _send_email_safe(booking.email, subj, html, log_prefix='Appointment cancellation')
+            try:
+                send_with_template('appointment_admin_cancelled_admin', {
+                    'name': booking.name,
+                    'student': booking.student_ref,
+                    'to_email': slot.superadmin.email,
+                    'date': slot.start_at.strftime('%A, %d %B %Y'),
+                    'time': slot.start_at.strftime('%H:%M'),
+                }, to_email=slot.superadmin.email, fallback=lambda: build_appointment_admin_email(booking, slot, mode='cancelled_admin'))
+            except Exception:
+                admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='cancelled_admin')
+                _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin cancellation')
             flash('Booking cancelled and attendee notified.', 'success')
     else:
         flash('Unsupported action.', 'danger')
@@ -3516,6 +4814,173 @@ def _booking_context_lang(lang: str | None = None) -> tuple[str, dict]:
     return language, copy
 
 
+def _build_staff_invoice_submitted_email(name: str, inv) -> str:
+    # Simple branded HTML consistent with other emails
+    rows = [
+        ("Invoice ID", f"#{inv.id}"),
+        ("Title", inv.name or ''),
+        ("Period", inv.month_year_label() if hasattr(inv, 'month_year_label') else f"{inv.month}/{inv.year}"),
+        ("Status", inv.status or 'Pending'),
+        ("Total Amount", f"£{float(inv.amount or 0):.2f}"),
+        ("Submitted", (inv.submitted_at.strftime('%d %b %Y %H:%M') if inv.submitted_at else '-')),
+    ]
+    lines = ["<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>"]
+    for label, value in rows:
+        lines.append(
+            "<tr>"
+            f"<td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td>"
+            f"<td style='padding:6px 0;color:#0f172a;'>{value}</td>"
+            "</tr>"
+        )
+    lines.append("</table>")
+    body = "".join(lines)
+    intro = f"Hello {name},<br/><br/>Your staff invoice has been submitted successfully. Our team will review it and update the status."
+    title = f"Staff invoice submitted (#{inv.id})"
+    html = f"""
+<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'/><title>{title}</title></head>
+<body style=\"margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;\"> 
+    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#f1f5f9;padding:24px 0;'>
+        <tr><td align='center'>
+            <table role='presentation' width='640' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;'>
+                <tr>
+                    <td style='background:#0f172a;padding:24px 32px;'>
+                        <h1 style='margin:0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;'>Excel Tutors</h1>
+                        <p style='margin:6px 0 0;font-size:13px;color:#cbd5f5;'>Invoice confirmation</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style='padding:32px;'>
+                        <p style='margin:0 0 16px;font-size:15px;color:#0f172a;'>{intro}</p>
+                        {body}
+                    </td>
+                </tr>
+                <tr>
+                    <td style='background:#f8fafc;padding:18px 32px;text-align:center;font-size:11px;color:#94a3b8;'>
+                        &copy; {date.today().year} Excel Tutors. All rights reserved.
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>
+    """
+    return html
+
+
+def _build_staff_invoice_approved_email(name: str, inv) -> tuple[str, str]:
+    title = f"Staff invoice approved (#{inv.id})"
+    intro = f"Hello {name},<br/><br/>Your staff invoice has been approved. The payment will be processed according to our schedule."
+    rows = [
+        ("Invoice ID", f"#{inv.id}"),
+        ("Title", inv.name or ''),
+        ("Period", inv.month_year_label() if hasattr(inv, 'month_year_label') else f"{inv.month}/{inv.year}"),
+        ("Status", 'Approved'),
+        ("Total Amount", f"£{float(inv.amount or 0):.2f}"),
+    ]
+    lines = ["<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>"]
+    for label, value in rows:
+        lines.append(
+            "<tr>"
+            f"<td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td>"
+            f"<td style='padding:6px 0;color:#0f172a;'>{value}</td>"
+            "</tr>"
+        )
+    lines.append("</table>")
+    body = "".join(lines)
+    html = f"""
+<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'/><title>{title}</title></head>
+<body style=\"margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;\"> 
+    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#f1f5f9;padding:24px 0;'>
+        <tr><td align='center'>
+            <table role='presentation' width='640' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;'>
+                <tr>
+                    <td style='background:#0f172a;padding:24px 32px;'>
+                        <h1 style='margin:0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;'>Excel Tutors</h1>
+                        <p style='margin:6px 0 0;font-size:13px;color:#cbd5f5;'>Invoice approved</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style='padding:32px;'>
+                        <p style='margin:0 0 16px;font-size:15px;color:#0f172a;'>{intro}</p>
+                        {body}
+                    </td>
+                </tr>
+                <tr>
+                    <td style='background:#f8fafc;padding:18px 32px;text-align:center;font-size:11px;color:#94a3b8;'>
+                        &copy; {date.today().year} Excel Tutors. All rights reserved.
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>
+    """
+    return title, html
+
+
+def _build_staff_invoice_rejected_email(name: str, inv, reason: str | None) -> tuple[str, str]:
+    title = f"Staff invoice rejected (#{inv.id})"
+    intro = f"Hello {name},<br/><br/>Your staff invoice has been rejected."
+    if reason:
+        intro += f" Reason: {reason}."
+    rows = [
+        ("Invoice ID", f"#{inv.id}"),
+        ("Title", inv.name or ''),
+        ("Period", inv.month_year_label() if hasattr(inv, 'month_year_label') else f"{inv.month}/{inv.year}"),
+        ("Status", 'Rejected'),
+        ("Total Amount", f"£{float(inv.amount or 0):.2f}"),
+    ]
+    lines = ["<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>"]
+    for label, value in rows:
+        lines.append(
+            "<tr>"
+            f"<td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td>"
+            f"<td style='padding:6px 0;color:#0f172a;'>{value}</td>"
+            "</tr>"
+        )
+    lines.append("</table>")
+    body = "".join(lines)
+    html = f"""
+<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'/><title>{title}</title></head>
+<body style=\"margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;\"> 
+    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#f1f5f9;padding:24px 0;'>
+        <tr><td align='center'>
+            <table role='presentation' width='640' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;'>
+                <tr>
+                    <td style='background:#0f172a;padding:24px 32px;'>
+                        <h1 style='margin:0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;'>Excel Tutors</h1>
+                        <p style='margin:6px 0 0;font-size:13px;color:#cbd5f5;'>Invoice rejected</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style='padding:32px;'>
+                        <p style='margin:0 0 16px;font-size:15px;color:#0f172a;'>{intro}</p>
+                        {body}
+                    </td>
+                </tr>
+                <tr>
+                    <td style='background:#f8fafc;padding:18px 32px;text-align:center;font-size:11px;color:#94a3b8;'>
+                        &copy; {date.today().year} Excel Tutors. All rights reserved.
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>
+    """
+    return title, html
+
+
+
 @app.route('/booking', methods=['GET', 'POST'])
 def booking_index():
     lang, copy = _booking_context_lang()
@@ -3525,51 +4990,88 @@ def booking_index():
     upcoming_slots = _upcoming_slots_query()
     available_choices = list(form.slot_id.choices)
 
-    if request.method == 'POST' and form.validate_on_submit():
-        # Use SQLAlchemy 2.0 style session.get (avoids legacy warning)
-        slot = (db.session.get(AppointmentSlot, form.slot_id.data)
-                if form.slot_id.data else None)
-        if slot is None or not slot.is_available():
-            form.slot_id.errors.append(copy.get('slot_taken') or 'Selected slot is no longer available.')
-            _populate_booking_form(form)
-            available_choices = list(form.slot_id.choices)
-        else:
-            # Create booking; explicitly seed cancel_token to avoid timing issues before flush
-            booking = AppointmentBooking(
-                slot_id=slot.id,
-                name=form.name.data.strip(),
-                student_ref=form.student_ref.data.strip(),
-                reason=form.reason.data.strip(),
-                email=form.email.data.strip(),
-                phone=form.phone.data.strip(),
-                language=lang,
-                cancel_token=uuid4().hex,  # ensure present prior to flush
-            )
-            db.session.add(booking)
-            db.session.flush()  # booking.id now available
-            token = booking.cancel_token
-            booking.cancel_url = url_for('booking_cancel', token=token, _external=True)
+    if request.method == 'POST':
+        # Debugging: print posted keys and branch-related values to diagnose
+        # "Not a valid choice." errors for ItemForm.branch.
+        try:
+            print('[DEBUG] staff_invoice_new POST keys:', list(request.form.keys()))
+            print('[DEBUG] staff_invoice_new branch choices:', form.ItemForm.branch.choices)
+            posted_branch_fields = [(k, request.form.get(k)) for k in request.form.keys() if k.endswith('-branch') or k == 'branch']
+            print('[DEBUG] staff_invoice_new posted branch fields:', posted_branch_fields)
+        except Exception as _e:
+            print('[DEBUG] staff_invoice_new debug error:', _e)
+        if form.validate_on_submit():
+            # Use SQLAlchemy 2.0 style session.get (avoids legacy warning)
+            slot = (db.session.get(AppointmentSlot, form.slot_id.data)
+                    if form.slot_id.data else None)
+            if slot is None or not slot.is_available():
+                form.slot_id.errors.append(copy.get('slot_taken') or 'Selected slot is no longer available.')
+                _populate_booking_form(form)
+                available_choices = list(form.slot_id.choices)
+            else:
+                # Create booking; explicitly seed cancel_token to avoid timing issues before flush
+                booking = AppointmentBooking(
+                    slot_id=slot.id,
+                    name=form.name.data.strip(),
+                    student_ref=form.student_ref.data.strip(),
+                    reason=form.reason.data.strip(),
+                    email=form.email.data.strip(),
+                    phone=form.phone.data.strip(),
+                    language=lang,
+                    cancel_token=uuid4().hex,  # ensure present prior to flush
+                )
+                db.session.add(booking)
+                db.session.flush()  # booking.id now available
+                token = booking.cancel_token
+                booking.cancel_url = url_for('booking_cancel', token=token, _external=True)
 
-            cancel_url = booking.cancel_url
-            subj, html = build_appointment_email(booking, slot, slot.superadmin, language=lang, mode='confirmation', cancel_url=cancel_url)
-            _send_email_safe(booking.email, subj, html, log_prefix='Appointment confirmation')
-            booking.confirmation_sent_at = datetime.now(timezone.utc)
+                cancel_url = booking.cancel_url
+                from email_utils import send_with_template
+                cust_key = f"appointment_customer_{lang}_confirmation"
+                try:
+                    send_with_template(cust_key, {
+                        'name': booking.name,
+                        'superadmin': slot.superadmin.name,
+                        'date': slot.start_at.strftime('%A, %d %B %Y'),
+                        'time': slot.start_at.strftime('%H:%M'),
+                        'student': booking.student_ref,
+                        'reason': booking.reason,
+                        'email': booking.email,
+                        'phone': booking.phone,
+                        'to_email': booking.email,
+                        'cancel_url': cancel_url,
+                    }, to_email=booking.email, fallback=lambda: build_appointment_email(booking, slot, slot.superadmin, language=lang, mode='confirmation', cancel_url=cancel_url))
+                    booking.confirmation_sent_at = datetime.now(timezone.utc)
+                except Exception as exc:
+                    print(f"[WARN] Appointment confirmation template send failed, falling back: {exc}")
+                    subj, html = build_appointment_email(booking, slot, slot.superadmin, language=lang, mode='confirmation', cancel_url=cancel_url)
+                    _send_email_safe(booking.email, subj, html, log_prefix='Appointment confirmation')
+                    booking.confirmation_sent_at = datetime.now(timezone.utc)
 
-            admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='confirmation')
-            _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin confirmation')
+                try:
+                    send_with_template('appointment_admin_confirmation', {
+                        'name': booking.name,
+                        'student': booking.student_ref,
+                        'to_email': slot.superadmin.email,
+                        'date': slot.start_at.strftime('%A, %d %B %Y'),
+                        'time': slot.start_at.strftime('%H:%M'),
+                    }, to_email=slot.superadmin.email, fallback=lambda: build_appointment_admin_email(booking, slot, mode='confirmation'))
+                except Exception:
+                    admin_subj, admin_html = build_appointment_admin_email(booking, slot, mode='confirmation')
+                    _send_email_safe(slot.superadmin.email, admin_subj, admin_html, log_prefix='Appointment admin confirmation')
 
-            db.session.commit()
-            _schedule_reminder(booking)
+                db.session.commit()
+                _schedule_reminder(booking)
 
-            return render_template(
-                'booking/success.html',
-                form=form,
-                copy=copy,
-                booking=booking,
-                slot=slot,
-                language=lang,
-                supported_languages=SUPPORTED_LANGUAGES,
-            )
+                return render_template(
+                    'booking/success.html',
+                    form=form,
+                    copy=copy,
+                    booking=booking,
+                    slot=slot,
+                    language=lang,
+                    supported_languages=SUPPORTED_LANGUAGES,
+                )
 
     form_disabled = len(available_choices) == 0
     return render_template(
@@ -3702,6 +5204,8 @@ def profile():
         # Password update if provided
         if form.password.data:
             user.password_hash = generate_password_hash(form.password.data)
+            if hasattr(user, 'force_password_reset'):
+                user.force_password_reset = False
         db.session.commit()
         flash('Profile updated', 'success')
         return redirect(url_for('profile'))
@@ -3765,8 +5269,17 @@ def request_reset():
             <p>If you didn't request this, you can ignore this email.</p>
             """
             try:
-                send_email(email, "Reset your password", html)
-                flash("Reset link sent to your email.", "success")
+                from email_utils import send_with_template
+                try:
+                    send_with_template('password_reset', {
+                        'name': user.name,
+                        'link': link,
+                        'to_email': email,
+                    }, to_email=email, fallback=lambda: ("Reset your password", html))
+                    flash("Reset link sent to your email.", "success")
+                except Exception:
+                    send_email(email, "Reset your password", html)
+                    flash("Reset link sent to your email.", "success")
             except Exception as e:
                 flash(f"Email send failed: {e}", "danger")
         else:
@@ -3816,26 +5329,66 @@ def staff_index():
         if len(uniq) == 1:
             want_active = list(uniq)[0] == '1'
             q = q.filter(Staff.active == want_active)
+    # Only unmapped staff
+    if (request.args.get('unmapped') or '') == '1':
+        q = q.filter((Staff.user_id.is_(None)) | (Staff.user_id == 0))
     staff = q.order_by(Staff.name.asc()).all()
+    # Map availability branches to staff using direct FK link for accuracy and speed
+    from collections import defaultdict
+    by_staff = defaultdict(set)
+    for rec in Availability.query.filter(Availability.staff_id.isnot(None)).all():
+        for b in rec.branch_list():
+            by_staff[rec.staff_id].add(b)
+    staff_branch_map = {}
+    for s in staff:
+        merged = set()
+        # Merge branches linked via Availability FK
+        if s.id in by_staff:
+            merged.update(by_staff[s.id])
+        # Always include branches already on Staff record
+        for b in [p.strip() for p in (s.branch or '').split(',') if p.strip()]:
+            merged.add(b)
+        staff_branch_map[s.id] = ",".join(sorted(merged)) if merged else (s.branch or '')
     # Distinct department list for filter
     dept_choices = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).order_by(Staff.department.asc()).all()]
     return render_template(
         "staff/index.html",
         staff=staff,
-        branch_choices=BRANCH_CHOICES,
+    branch_choices=BRANCH_CHOICES(),
         selected_branches=branches_selected,
         departments=dept_choices,
         selected_departments=departments_selected,
         selected_active=list(dict.fromkeys(active_filters)),
+        staff_branch_map=staff_branch_map,
     )
 
 @app.route("/staff/new", methods=["GET","POST"])
 @login_required
 def staff_new():
     form = StaffForm()
+    # Ensure branch multiselect choices are populated
+    try:
+        from utils import ensure_form_branch_choices
+        ensure_form_branch_choices(form)
+    except Exception:
+        pass
     # Populate department select with existing distinct departments
     dept_rows = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).order_by(Staff.department.asc()).all()]
     form.department.choices = [('', '-- None --')] + [(d, d) for d in dept_rows]
+    # Populate company choices
+    companies = Company.query.order_by(Company.name.asc()).all()
+    form.company_id.choices = [(0, '-- None --')] + [(c.id, c.name) for c in companies]
+    # Populate DBS checked-by choices (staff whose linked User.role is admin/centre_manager/staff)
+    from sqlalchemy.orm import joinedload
+    eligible = (
+        Staff.query.join(User, Staff.user_id == User.id)
+        .filter(User.role.in_(['admin', 'centre_manager', 'staff']))
+        .order_by(User.name.asc())
+        .all()
+    )
+    form.dbs_checked_by_id.choices = [(0, '-- None --')] + [
+        (st.id, ((st.first_name or '') + ' ' + (st.last_name or st.name or '')).strip()) for st in eligible
+    ]
     if form.validate_on_submit():
         branches = ",".join(form.branches.data) if form.branches.data else ""
         # Validate access code (optional) – must be exactly 6 digits if provided
@@ -3845,8 +5398,53 @@ def staff_new():
             if len(code) != 6:
                 flash("Access Code must be exactly 6 digits.", "warning")
                 return render_template("staff/form.html", form=form, staff=None)
-        s = Staff(name=form.name.data, department=form.department.data,
-                  email=form.email.data, phone=form.phone.data, branch=branches, active=form.active.data)
+        # Build Staff instance including new fields
+        s = Staff(
+            name=form.name.data,
+            first_name=form.first_name.data or None,
+            last_name=form.last_name.data or None,
+            department=form.department.data,
+            email=form.email.data,
+            phone=form.phone.data,
+            dob=form.dob.data,
+            gender=form.gender.data,
+            relationship_status=form.relationship_status.data,
+            national_insurance=(form.national_insurance.data or None),
+            branch=branches,
+            salary_per_hour=form.salary_per_hour.data,
+            salary_notes=form.salary_notes.data,
+            employment_type=form.employment_type.data,
+            joining_date=form.joining_date.data,
+            medical_condition=form.medical_condition.data,
+            medical_condition_other=form.medical_condition_other.data,
+            address_line1=form.address_line1.data,
+            address_line2=form.address_line2.data,
+            town=form.town.data,
+            region=form.region.data,
+            country=form.country.data,
+            postcode=form.postcode.data,
+            address_lookup_id=form.address_lookup_id.data,
+            emergency_first_name=form.emergency_first_name.data,
+            emergency_last_name=form.emergency_last_name.data,
+            emergency_mobile=form.emergency_mobile.data,
+            emergency_email=form.emergency_email.data,
+            emergency_relation=form.emergency_relation.data,
+            bank_name_on_account=form.bank_name_on_account.data,
+            bank_name=form.bank_name.data,
+            bank_sort_code=form.bank_sort_code.data,
+            bank_account_number=form.bank_account_number.data,
+            dbs_number=form.dbs_number.data,
+            dbs_start_date=form.dbs_start_date.data,
+            dbs_expiry_date=form.dbs_expiry_date.data,
+            dbs_checked_by_id=(form.dbs_checked_by_id.data or None) if form.dbs_checked_by_id.data != 0 else None,
+            # If the 'active' checkbox wasn't submitted (e.g. tests), default to True
+            active=(form.active.data if ('active' in request.form or request.method == 'POST' and request.form.get('active') is not None) else True),
+            company_id=(form.company_id.data or None) if form.company_id.data != 0 else None,
+            whitechapel_machine_id=form.whitechapel_machine_id.data or None,
+            east_ham_machine_id=form.east_ham_machine_id.data or None,
+            stratford_machine_id=form.stratford_machine_id.data or None,
+            docklands_machine_id=form.docklands_machine_id.data or None,
+        )
         # Assign code – if not provided, auto-generate a unique one
         def gen_code():
             return f"{random.randint(0, 999999):06d}"
@@ -3854,7 +5452,22 @@ def staff_new():
         while True:
             try:
                 s.access_code = code or gen_code()
+                # Save staff record
                 db.session.add(s)
+                db.session.flush()
+                # Handle photo upload if provided
+                try:
+                    photo_file = request.files.get('photo')
+                    if photo_file and photo_file.filename:
+                        from werkzeug.utils import secure_filename
+                        filename = secure_filename(photo_file.filename)
+                        uploads_dir = os.path.join(app.root_path, 'static', 'uploads')
+                        os.makedirs(uploads_dir, exist_ok=True)
+                        dest = os.path.join(uploads_dir, filename)
+                        photo_file.save(dest)
+                        s.photo = filename
+                except Exception:
+                    pass
                 db.session.commit()
                 break
             except IntegrityError:
@@ -3867,6 +5480,43 @@ def staff_new():
                     flash("Could not generate a unique access code. Please try again.", "danger")
                     return render_template("staff/form.html", form=form, staff=None)
         flash("Staff saved", "success")
+        # Log staff created state
+        app.logger.info('Staff created id=%s active=%s email=%s', getattr(s, 'id', None), getattr(s, 'active', None), getattr(s, 'email', None))
+        # Create a linked User account automatically when staff created and active with an email
+        if s.active and (s.email or '').strip():
+            email = (s.email or '').strip().lower()
+            try:
+                existing = User.query.filter_by(email=email).first()
+                app.logger.info('Attempting to create linked user for email: %s existing=%s', email, bool(existing))
+                if not existing:
+                    print('DEBUG: no existing user found for', email)
+                    temp_pwd = _generate_temp_password()
+                    u = User(
+                        name=s.name or (email.split('@')[0] if email else 'User'),
+                        email=email,
+                        password_hash=generate_password_hash(temp_pwd),
+                        is_approved=True,
+                        is_active=True,
+                        role='staff',
+                    )
+                    if hasattr(u, 'force_password_reset'):
+                        u.force_password_reset = True
+                    db.session.add(u)
+                    db.session.flush()
+                    s.user_id = u.id
+                    print('DEBUG: setting s.user_id =', u.id, 'before commit s.id=', getattr(s,'id',None))
+                    app.logger.info('Linked user id %s will be associated to staff %s', u.id, s.id)
+                    db.session.commit()
+                    print('DEBUG: after commit s.user_id=', s.user_id)
+                    app.logger.info('Post-commit staff.user_id=%s', s.user_id)
+                    try:
+                        subject, html = _build_account_welcome_email_html(s.name, email, temp_pwd)
+                        send_email(email, subject, html)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                # Log and continue; do not rollback the main session which would remove the staff record
+                app.logger.exception('Failed to create linked user for staff %s: %s', s.id if s else None, exc)
         return redirect(url_for('staff_index'))
     return render_template("staff/form.html", form=form, staff=None)
 
@@ -3875,10 +5525,24 @@ def staff_new():
 def staff_edit(sid):
     s = Staff.query.get_or_404(sid)
     form = StaffForm()
+    # Ensure branch multiselect choices are populated
+    try:
+        from utils import ensure_form_branch_choices
+        ensure_form_branch_choices(form)
+    except Exception:
+        pass
     # Populate department choices
     dept_rows = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).order_by(Staff.department.asc()).all()]
     form.department.choices = [('', '-- None --')] + [(d, d) for d in dept_rows]
+    # Populate company choices
+    companies = Company.query.order_by(Company.name.asc()).all()
+    form.company_id.choices = [(0, '-- None --')] + [(c.id, c.name) for c in companies]
+    # Populate DBS checked-by choices
+    eligible = Staff.query.order_by(Staff.name.asc()).all()
+    form.dbs_checked_by_id.choices = [(0, '-- None --')] + [(st.id, (st.first_name or '') + ' ' + (st.last_name or st.name or '')) for st in eligible]
     if request.method == 'GET':
+        form.first_name.data = s.first_name or ''
+        form.last_name.data = s.last_name or ''
         form.name.data = s.name
         form.department.data = s.department
         form.email.data = s.email
@@ -3886,13 +5550,108 @@ def staff_edit(sid):
         form.branches.data = [b for b in (s.branch or '').split(',') if b]
         form.active.data = s.active
         form.access_code.data = s.access_code or ''
+        form.company_id.data = s.company_id or 0
+        form.whitechapel_machine_id.data = s.whitechapel_machine_id or ''
+        form.east_ham_machine_id.data = s.east_ham_machine_id or ''
+        form.stratford_machine_id.data = s.stratford_machine_id or ''
+        form.docklands_machine_id.data = s.docklands_machine_id or ''
+        # New fields
+        form.dob.data = s.dob
+        form.gender.data = s.gender
+        form.relationship_status.data = s.relationship_status
+        form.national_insurance.data = s.national_insurance or ''
+        form.salary_per_hour.data = s.salary_per_hour
+        form.salary_notes.data = s.salary_notes
+        form.employment_type.data = s.employment_type
+        form.joining_date.data = s.joining_date
+        form.medical_condition.data = s.medical_condition
+        form.medical_condition_other.data = s.medical_condition_other
+        form.address_line1.data = s.address_line1
+        form.address_line2.data = s.address_line2
+        form.town.data = s.town
+        form.region.data = s.region
+        form.country.data = s.country
+        form.postcode.data = s.postcode
+        form.address_lookup_id.data = s.address_lookup_id
+        form.emergency_first_name.data = s.emergency_first_name
+        form.emergency_last_name.data = s.emergency_last_name
+        form.emergency_mobile.data = s.emergency_mobile
+        form.emergency_email.data = s.emergency_email
+        form.emergency_relation.data = s.emergency_relation
+        form.bank_name_on_account.data = s.bank_name_on_account
+        form.bank_name.data = s.bank_name
+        form.bank_sort_code.data = s.bank_sort_code
+        form.bank_account_number.data = s.bank_account_number
+        form.dbs_number.data = s.dbs_number
+        form.dbs_start_date.data = s.dbs_start_date
+        form.dbs_expiry_date.data = s.dbs_expiry_date
+        form.dbs_checked_by_id.data = s.dbs_checked_by_id or 0
     if form.validate_on_submit():
+        s.first_name = form.first_name.data or None
+        s.last_name = form.last_name.data or None
         s.name = form.name.data
         s.department = form.department.data
         s.email = form.email.data
         s.phone = form.phone.data
         s.branch = ",".join(form.branches.data) if form.branches.data else ""
         s.active = form.active.data
+        # Mirror active flag to linked user if present
+        try:
+            if s.user_id:
+                u = User.query.get(s.user_id)
+                if u:
+                    u.is_active = bool(s.active)
+        except Exception:
+            db.session.rollback()
+        s.company_id = (form.company_id.data or None) if form.company_id.data != 0 else None
+        s.whitechapel_machine_id = form.whitechapel_machine_id.data or None
+        s.east_ham_machine_id = form.east_ham_machine_id.data or None
+        s.stratford_machine_id = form.stratford_machine_id.data or None
+        s.docklands_machine_id = form.docklands_machine_id.data or None
+        # New fields
+        s.dob = form.dob.data
+        s.gender = form.gender.data
+        s.relationship_status = form.relationship_status.data
+        s.national_insurance = form.national_insurance.data or None
+        s.salary_per_hour = form.salary_per_hour.data
+        s.salary_notes = form.salary_notes.data
+        s.employment_type = form.employment_type.data
+        s.joining_date = form.joining_date.data
+        s.medical_condition = form.medical_condition.data
+        s.medical_condition_other = form.medical_condition_other.data
+        s.address_line1 = form.address_line1.data
+        s.address_line2 = form.address_line2.data
+        s.town = form.town.data
+        s.region = form.region.data
+        s.country = form.country.data
+        s.postcode = form.postcode.data
+        s.address_lookup_id = form.address_lookup_id.data
+        s.emergency_first_name = form.emergency_first_name.data
+        s.emergency_last_name = form.emergency_last_name.data
+        s.emergency_mobile = form.emergency_mobile.data
+        s.emergency_email = form.emergency_email.data
+        s.emergency_relation = form.emergency_relation.data
+        s.bank_name_on_account = form.bank_name_on_account.data
+        s.bank_name = form.bank_name.data
+        s.bank_sort_code = form.bank_sort_code.data
+        s.bank_account_number = form.bank_account_number.data
+        s.dbs_number = form.dbs_number.data
+        s.dbs_start_date = form.dbs_start_date.data
+        s.dbs_expiry_date = form.dbs_expiry_date.data
+        s.dbs_checked_by_id = (form.dbs_checked_by_id.data or None) if form.dbs_checked_by_id.data != 0 else None
+        # Handle photo upload if provided
+        try:
+            photo_file = request.files.get('photo')
+            if photo_file and photo_file.filename:
+                from werkzeug.utils import secure_filename
+                filename = secure_filename(photo_file.filename)
+                uploads_dir = os.path.join(app.root_path, 'static', 'uploads')
+                os.makedirs(uploads_dir, exist_ok=True)
+                dest = os.path.join(uploads_dir, filename)
+                photo_file.save(dest)
+                s.photo = filename
+        except Exception:
+            pass
         # Access code validation and uniqueness enforcement
         raw = (form.access_code.data or '').strip()
         if raw:
@@ -3923,6 +5682,7 @@ def staff_edit(sid):
                     if tries > 5:
                         flash("Could not generate a unique access code. Please try again.", "danger")
                         return render_template("staff/form.html", form=form, staff=s)
+        # Before commit, ensure linked user active state matches
         db.session.commit()
         flash("Staff updated", "success")
         return redirect(url_for('staff_index'))
@@ -3944,6 +5704,15 @@ def staff_toggle_active(sid):
     s.active = not bool(s.active)
     db.session.commit()
     flash(f"{'Activated' if s.active else 'Deactivated'} {s.name}", 'success')
+    # Mirror activation to linked User account
+    try:
+        if s.user_id:
+            u = User.query.get(s.user_id)
+            if u:
+                u.is_active = bool(s.active)
+                db.session.commit()
+    except Exception:
+        db.session.rollback()
     # Preserve filters (except pagination) by redirecting back
     return redirect(request.referrer or url_for('staff_index'))
 
@@ -3954,6 +5723,12 @@ def staff_toggle_active_api(sid: int):
     s.active = not bool(s.active)
     try:
         db.session.commit()
+        # Mirror to linked user
+        if s.user_id:
+            u = User.query.get(s.user_id)
+            if u:
+                u.is_active = bool(s.active)
+                db.session.commit()
     except Exception as exc:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(exc)}), 500
@@ -4036,6 +5811,251 @@ def api_staff_email_access_codes_bulk():
                 return jsonify({'success': True, 'sent': sent, 'errors': errors})
         except Exception as exc:
                 return jsonify({'success': False, 'error': str(exc)}), 500
+
+# ---- Staff -> User conversion endpoints ---- #
+
+def _generate_temp_password(length: int = 10) -> str:
+    import secrets
+    import string
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+def _build_account_welcome_email_html(name: str, email: str, temp_password: str) -> tuple[str, str]:
+    subject = 'Your Excel Tutors account'
+    body = f"""
+<!DOCTYPE html>
+<html><body style="font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;padding:24px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+    <tr>
+      <td style="background:#0f172a;padding:20px 28px;color:#ffffff;font-weight:600;">Excel Tutors</td>
+    </tr>
+    <tr>
+      <td style="padding:28px;color:#0f172a;">
+        <p style="margin:0 0 12px;">Hello {name or 'there'},</p>
+        <p style="margin:0 0 12px;">An account has been created for you on the Excel Tutors portal.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 18px;">
+          <tr>
+            <td style="padding:6px 10px;color:#64748b;font-weight:600;">Username</td>
+            <td style="padding:6px 10px;color:#0f172a;">{email}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 10px;color:#64748b;font-weight:600;">Temporary Password</td>
+            <td style="padding:6px 10px;color:#0f172a;">{temp_password}</td>
+          </tr>
+        </table>
+        <p style="margin:0 0 12px;">For security, you'll be asked to change this password when you first log in.</p>
+        <div style="margin-top:18px;">
+          <a href="{url_for('login', _external=True)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;">Go to login</a>
+        </div>
+        <p style="margin:24px 0 0;font-size:12px;color:#64748b;">If you didn't expect this, please contact your centre manager.</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#f8fafc;color:#94a3b8;padding:16px 28px;text-align:center;font-size:11px;">&copy; {date.today().year} Excel Tutors</td>
+    </tr>
+  </table>
+</body></html>
+    """
+    return subject, body
+
+@app.route('/api/staff/convert-to-users', methods=['POST'])
+@login_required
+@permission_required('manage_staff')
+def api_staff_convert_to_users():
+    payload = request.get_json(silent=True) or {}
+    ids = payload.get('ids') or []
+    if not ids:
+        return jsonify({'success': False, 'error': 'No staff selected.'}), 400
+    results = {'created': 0, 'skipped': [], 'errors': []}
+    for sid in ids:
+        try:
+            s = Staff.query.get(int(sid))
+            if not s:
+                results['errors'].append({'id': sid, 'error': 'not_found'})
+                continue
+            if not s.active:
+                results['skipped'].append({'id': s.id, 'reason': 'inactive'})
+                continue
+            if s.user_id:
+                results['skipped'].append({'id': s.id, 'reason': 'already_mapped'})
+                continue
+            email = (s.email or '').strip().lower()
+            if not email:
+                results['skipped'].append({'id': s.id, 'reason': 'no_email'})
+                continue
+            existing = User.query.filter_by(email=email).first()
+            if existing:
+                results['skipped'].append({'id': s.id, 'reason': 'user_exists'})
+                continue
+            temp_pwd = _generate_temp_password()
+            u = User(
+                name=s.name or (email.split('@')[0] if email else 'User'),
+                email=email,
+                password_hash=generate_password_hash(temp_pwd),
+                is_approved=True,
+                is_active=True,
+                role='tutor',
+            )
+            if hasattr(u, 'force_password_reset'):
+                u.force_password_reset = True
+            db.session.add(u)
+            db.session.flush()
+            s.user_id = u.id
+            db.session.commit()
+            try:
+                subject, html = _build_account_welcome_email_html(s.name, email, temp_pwd)
+                send_email(email, subject, html)
+            except Exception as _em:
+                results['errors'].append({'id': s.id, 'error': f'email_failed: {_em}'})
+            results['created'] += 1
+        except Exception as exc:
+            db.session.rollback()
+            results['errors'].append({'id': sid, 'error': str(exc)})
+    return jsonify({'success': True, **results})
+
+
+@app.route('/api/postcodes/lookup')
+@login_required
+def api_postcodes_lookup():
+    # Simple proxy to postcodes.io lookup/suggest endpoint
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'success': False, 'error': 'missing_query'}), 400
+    try:
+        import requests
+
+        # Use the suggestions endpoint for partial terms
+        url = f'https://api.postcodes.io/postcodes/{q}/autocomplete'
+        resp = requests.get(url, timeout=5)
+        data = resp.json() if resp.status_code == 200 else {'result': []}
+        return jsonify({'success': True, 'data': data.get('result') or []})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/postcodes/details')
+@login_required
+def api_postcodes_details():
+    """Return full postcode details for a supplied postcode value. Query param: postcode=..."""
+    pc = (request.args.get('postcode') or '').strip()
+    if not pc:
+        return jsonify({'success': False, 'error': 'missing_postcode'}), 400
+    try:
+        import requests
+
+        # Normalize postcode for the API
+        url = f'https://api.postcodes.io/postcodes/{pc}'
+        resp = requests.get(url, timeout=5)
+        if resp.status_code != 200:
+            return jsonify({'success': False, 'error': 'not_found'}), 404
+        data = resp.json().get('result') or {}
+        # Map some useful fields
+        mapped = {
+            'postcode': data.get('postcode'),
+            'admin_district': data.get('admin_district'),
+            'region': data.get('region'),
+            'parish': data.get('parish'),
+            'longitude': data.get('longitude'),
+            'latitude': data.get('latitude'),
+        }
+        return jsonify({'success': True, 'data': mapped})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/postcodes/addresses')
+@login_required
+def api_postcodes_addresses():
+    """Return address-level results for a postcode using a configured provider.
+
+    If the environment variable GETADDRESS_IO_KEY is set, this will call
+    https://api.getaddress.io/find/{postcode}?api-key=KEY and return a list of
+    structured addresses. If no provider key is present, the endpoint returns
+    not_supported.
+    """
+    pc = (request.args.get('postcode') or '').strip()
+    if not pc:
+        return jsonify({'success': False, 'error': 'missing_postcode'}), 400
+    # Prefer GetAddress.io when key is configured
+    ga_key = os.environ.get('GETADDRESS_IO_KEY')
+    try:
+        if ga_key:
+            import requests
+
+            url = f'https://api.getaddress.io/find/{pc}?api-key={ga_key}&expand=true'
+            resp = requests.get(url, timeout=7)
+            if resp.status_code != 200:
+                return jsonify({'success': False, 'error': 'provider_error'}), 502
+            j = resp.json()
+            raw_addresses = j.get('addresses') or []
+            mapped = []
+            for a in raw_addresses:
+                # getaddress.io returns structured address components when expand=true
+                # fields like line_1, line_2, town_or_city, county, postcode
+                mapped.append({
+                    'summary': a.get('formatted_address') or ', '.join(filter(None, [a.get('line_1'), a.get('line_2'), a.get('town_or_city')])),
+                    'address_line_1': a.get('line_1') or '',
+                    'address_line_2': a.get('line_2') or '',
+                    'town': a.get('town_or_city') or a.get('post_town') or '',
+                    'region': a.get('county') or a.get('region') or '',
+                    'postcode': a.get('postcode') or pc,
+                })
+            return jsonify({'success': True, 'data': mapped})
+
+        # No supported provider configured
+        return jsonify({'success': False, 'error': 'no_address_provider_configured'}), 501
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/staff/<int:sid>/upload-photo', methods=['POST'])
+@login_required
+def staff_upload_photo(sid: int):
+    s = Staff.query.get_or_404(sid)
+    photo_file = request.files.get('photo')
+    if not photo_file or not photo_file.filename:
+        return jsonify({'success': False, 'error': 'no_file'}), 400
+    try:
+        from werkzeug.utils import secure_filename
+        filename = secure_filename(photo_file.filename)
+        uploads_dir = os.path.join(app.root_path, 'static', 'uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        dest = os.path.join(uploads_dir, filename)
+        photo_file.save(dest)
+        s.photo = filename
+        db.session.commit()
+        return jsonify({'success': True, 'photo': filename})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+@app.route('/staff/<int:sid>/map-user', methods=['GET','POST'])
+@login_required
+@permission_required('manage_staff')
+def staff_map_user(sid: int):
+    st = Staff.query.get_or_404(sid)
+    users = User.query.order_by(User.name.asc()).all()
+    preselect_id = None
+    if st.email:
+        m = User.query.filter_by(email=(st.email or '').strip().lower()).first()
+        preselect_id = m.id if m else None
+    if request.method == 'POST':
+        try:
+            user_id = int(request.form.get('user_id'))
+        except Exception:
+            user_id = None
+        if not user_id:
+            flash('Please select a user to map.', 'warning')
+            return render_template('staff/map_user.html', staff=st, users=users, preselect_id=preselect_id)
+        u = User.query.get(user_id)
+        if not u:
+            flash('Selected user not found.', 'danger')
+            return render_template('staff/map_user.html', staff=st, users=users, preselect_id=preselect_id)
+        st.user_id = u.id
+        db.session.commit()
+        flash('Staff mapped to the selected user.', 'success')
+        return redirect(url_for('staff_index'))
+    return render_template('staff/map_user.html', staff=st, users=users, preselect_id=preselect_id)
 
 @app.route('/staff/<int:sid>')
 @login_required
@@ -4214,7 +6234,7 @@ def _resource_next_numeric_id(length: int = 10) -> str:
 def resources_index():
     # Data for table rendered server-side, DataTables JS enhances it
     items = Resource.query.order_by(Resource.created_at.desc()).all()
-    return render_template('resources/index.html', items=items, branch_choices=BRANCH_CHOICES)
+    return render_template('resources/index.html', items=items, branch_choices=BRANCH_CHOICES())
 
 @app.route('/resources/loans')
 @login_required
@@ -4881,25 +6901,26 @@ def public_resource_loan():
 
 def _send_overdue_resource_emails():
     """Send reminder emails to staff with items still on loan past due time (19:30 UTC)."""
-    now = datetime.now(timezone.utc)
-    overdue_loans = (ResourceLoan.query
-                     .filter(ResourceLoan.status=='on_loan')
-                     .filter(ResourceLoan.due_at <= now)
-                     .all())
-    for ln in overdue_loans:
-        try:
-            staff = ln.staff
-            res = ln.resource
-            if staff and getattr(staff, 'email', None):
-                subject = f"Overdue Resource: {res.name if res else 'Item'}"
-                body = (
-                    f"Hello {staff.name},<br/><br/>"
-                    f"This is a reminder that the resource <strong>{res.name if res else ln.resource_id}</strong> is still on loan and was due back by 7:30 PM today. "
-                    f"Please return it as soon as possible.<br/><br/>Thanks."
-                )
-                _send_email_safe(staff.email, subject, body, log_prefix='Resource overdue')
-        except Exception as _exc:
-            print(f"[WARN] Overdue email failed: {_exc}")
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        overdue_loans = (ResourceLoan.query
+                         .filter(ResourceLoan.status=='on_loan')
+                         .filter(ResourceLoan.due_at <= now)
+                         .all())
+        for ln in overdue_loans:
+            try:
+                staff = ln.staff
+                res = ln.resource
+                if staff and getattr(staff, 'email', None):
+                    subject = f"Overdue Resource: {res.name if res else 'Item'}"
+                    body = (
+                        f"Hello {staff.name},<br/><br/>"
+                        f"This is a reminder that the resource <strong>{res.name if res else ln.resource_id}</strong> is still on loan and was due back by 7:30 PM today. "
+                        f"Please return it as soon as possible.<br/><br/>Thanks."
+                    )
+                    _send_email_safe(staff.email, subject, body, log_prefix='Resource overdue')
+            except Exception as _exc:
+                print(f"[WARN] Overdue email failed: {_exc}")
 
 # Schedule daily overdue check at 19:30 UTC if scheduler available
 if BackgroundScheduler is not None:
@@ -6364,61 +8385,9 @@ def cycle_delete(cid):
 @app.route('/availability')
 @login_required
 def availability_index():
-    # Real-time fetch & upsert from remote source each page load
-    sync_count = 0
+    # Remote API sync disabled – use only locally stored availability data
+    sync_count = None
     sync_error = None
-    try:
-        import requests
-        url = 'https://availability.pythonanywhere.com/data'
-        r = requests.get(url, timeout=12)
-        r.raise_for_status()
-        payload = r.json()
-        for row in payload.get('data', []):
-            name = (row.get('Name') or '').strip()
-            if not name:
-                continue
-            dept = (row.get('Department') or '').strip() or None
-            branches_raw = (row.get('Which Branch Take You Take Lesson In?') or '').replace('\n',' ').strip()
-            branches_parts = [p.strip() for p in branches_raw.split(',') if p.strip()]
-            # Normalize common branch variants/synonyms to canonical labels
-            normal_branches = []
-            synonyms = {
-                'Whitechapel': ['whitechapel','white chapel'],
-                'East Ham': ['east ham','eastham','east-ham'],
-                'Stratford': ['stratford','startford','strat ford'],
-                'Docklands': ['docklands','dock lands','dock-land']
-            }
-            for bp in branches_parts:
-                low = bp.lower()
-                for canonical, alts in synonyms.items():
-                    if any(alt in low for alt in alts):
-                        if canonical not in normal_branches:
-                            normal_branches.append(canonical)
-            branches = ",".join(normal_branches) if normal_branches else None
-            days = (row.get('Which Days Are You Available') or '').replace('\n',' ').strip() or None
-            subjects = (row.get('Which Subjects Can You Teach') or '').replace('\n',' ').strip() or None
-            notes = (row.get('NotesMessages?') or '').replace('\n',' ').strip() or None
-            existing = Availability.query.filter_by(name=name, department=dept).first()
-            if existing:
-                updated = False
-                if existing.branches != branches:
-                    existing.branches = branches; updated = True
-                if existing.days != days:
-                    existing.days = days; updated = True
-                if existing.subjects != subjects:
-                    existing.subjects = subjects; updated = True
-                if existing.notes != notes:
-                    existing.notes = notes; updated = True
-                if updated:
-                    sync_count += 1
-            else:
-                a = Availability(name=name, department=dept, branches=branches, days=days, subjects=subjects, notes=notes)
-                db.session.add(a)
-                sync_count += 1
-        db.session.commit()
-    except Exception as e:
-        sync_error = str(e)
-        # Do not abort—show whatever is in DB
     # Filters: department(s), branch(es), subject(s), day(s), plus free-text search
     q = Availability.query
     selected_departments = [d.strip() for d in request.args.getlist('department') if d.strip()]
@@ -6583,54 +8552,111 @@ def availability_index():
                            selected_days=selected_days,
                            sync_count=sync_count,
                            sync_error=sync_error,
-                           synced_at=datetime.now(timezone.utc),
+                           synced_at=None,
                            stats_departments=stats_departments,
                            stats_branches=stats_branches,
                            stats_subjects=stats_subjects,
                            stats_days=stats_days)
 
+# Safety: ensure new column exists for legacy databases (after deployment without restart)
+try:
+    from sqlalchemy import text as _text_av
+    with db.engine.begin() as _conn:
+        cols = {row[1] for row in _conn.execute(_text_av("PRAGMA table_info(availability)"))}
+        if 'staff_id' not in cols:
+            _conn.execute(_text_av("ALTER TABLE availability ADD COLUMN staff_id INTEGER"))
+except Exception:
+    # Non-fatal; app will continue and column will be created on next run if needed
+    pass
+
 @app.route('/availability/new', methods=['GET','POST'])
 @login_required
 def availability_new():
     form = AvailabilityForm()
+    # Populate department choices from existing distinct departments (Availability ∪ Staff)
+    dept_av = [r[0] for r in db.session.query(Availability.department).distinct().filter(Availability.department.isnot(None)).all()]
+    dept_st = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).all()]
+    dept_rows = sorted(set([d for d in dept_av + dept_st if d]))
+    form.department.choices = [('', '-- None --')] + [(d, d) for d in dept_rows]
+    # Staff for select/autocomplete
+    staff_rows = db.session.query(Staff.id, Staff.name, Staff.department).order_by(Staff.name.asc()).all()
+    staff_names = [r[1] for r in staff_rows]
+    # Prefill from query params or staff records
+    if request.method == 'GET':
+        q_name = (request.args.get('name') or '').strip()
+        q_dept = (request.args.get('department') or '').strip()
+        if q_name:
+            form.name.data = q_name
+        if q_dept and any(d == q_dept for d in dept_rows):
+            form.department.data = q_dept
+        # If name present, try to prefill branches from Staff record
+        if q_name:
+            cand = Staff.query
+            cand = cand.filter(Staff.name.ilike(q_name))
+            if q_dept:
+                cand = cand.filter(Staff.department == q_dept)
+            st = cand.first()
+            if st and (st.branch or ''):
+                form.branches.data = [b for b in (st.branch or '').split(',') if b]
     if form.validate_on_submit():
         a = Availability(
             name=form.name.data.strip(),
-            department=form.department.data.strip() or None,
+            department=(form.department.data or '').strip() or None,
             branches=",".join(form.branches.data) if form.branches.data else None,
             days=form.days.data.strip() if form.days.data else None,
             subjects=form.subjects.data.strip() if form.subjects.data else None,
             notes=form.notes.data.strip() if form.notes.data else None,
         )
+        # Explicit staff link if provided via hidden input 'staff_id' from template
+        sid = request.form.get('staff_id')
+        if sid and sid.isdigit():
+            a.staff_id = int(sid)
+            # If department is blank, inherit from staff for consistency
+            if not a.department:
+                st = Staff.query.get(a.staff_id)
+                if st and st.department:
+                    a.department = st.department
         db.session.add(a)
         db.session.commit()
         flash('Availability record created','success')
         return redirect(url_for('availability_index'))
-    return render_template('availability/form.html', form=form, record=None)
+    return render_template('availability/form.html', form=form, record=None, staff_names=staff_names, staff_rows=staff_rows)
 
 @app.route('/availability/<int:aid>/edit', methods=['GET','POST'])
 @login_required
 def availability_edit(aid):
     a = Availability.query.get_or_404(aid)
     form = AvailabilityForm()
+    dept_av = [r[0] for r in db.session.query(Availability.department).distinct().filter(Availability.department.isnot(None)).all()]
+    dept_st = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).all()]
+    dept_rows = sorted(set([d for d in dept_av + dept_st if d]))
+    form.department.choices = [('', '-- None --')] + [(d, d) for d in dept_rows]
+    staff_rows = db.session.query(Staff.id, Staff.name, Staff.department).order_by(Staff.name.asc()).all()
+    staff_names = [r[1] for r in staff_rows]
     if request.method == 'GET':
         form.name.data = a.name
-        form.department.data = a.department
+        form.department.data = a.department or ''
         form.branches.data = [b for b in (a.branches or '').split(',') if b]
         form.days.data = a.days
         form.subjects.data = a.subjects
         form.notes.data = a.notes
     if form.validate_on_submit():
         a.name = form.name.data.strip()
-        a.department = form.department.data.strip() or None
+        a.department = (form.department.data or '').strip() or None
         a.branches = ",".join(form.branches.data) if form.branches.data else None
         a.days = form.days.data.strip() if form.days.data else None
         a.subjects = form.subjects.data.strip() if form.subjects.data else None
         a.notes = form.notes.data.strip() if form.notes.data else None
+        # Update explicit link
+        sid = request.form.get('staff_id')
+        if sid == '':
+            a.staff_id = None
+        elif sid and sid.isdigit():
+            a.staff_id = int(sid)
         db.session.commit()
         flash('Availability updated','success')
         return redirect(url_for('availability_index'))
-    return render_template('availability/form.html', form=form, record=a)
+    return render_template('availability/form.html', form=form, record=a, staff_names=staff_names, staff_rows=staff_rows)
 
 @app.route('/availability/<int:aid>/delete')
 @login_required
@@ -6644,50 +8670,7 @@ def availability_delete(aid):
 @app.route('/availability/import_remote', methods=['POST'])
 @login_required
 def availability_import_remote():
-    import base64
-    import json
-
-    import requests
-    url = 'https://availability.pythonanywhere.com/data'
-    try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        payload = r.json()
-    except Exception as e:
-        flash(f'Remote fetch failed: {e}', 'danger')
-        return redirect(url_for('availability_index'))
-    count = 0
-    for row in payload.get('data', []):
-        name = (row.get('Name') or '').strip()
-        if not name:
-            continue
-        dept = (row.get('Department') or '').strip() or None
-        branches_raw = (row.get('Which Branch Take You Take Lesson In?') or '').replace('\n',' ').strip()
-        # Normalise branch names to our BRANCH_CHOICES keys where possible
-        branches_parts = [p.strip() for p in branches_raw.split(',') if p.strip()]
-        normal_branches = []
-        for bp in branches_parts:
-            # Extract canonical branch word (Whitechapel, East Ham, Stratford, Docklands)
-            for canonical in ['Whitechapel','East Ham','Stratford','Docklands']:
-                if canonical.lower() in bp.lower() and canonical not in normal_branches:
-                    normal_branches.append(canonical)
-        branches = ",".join(normal_branches) if normal_branches else None
-        days = (row.get('Which Days Are You Available') or '').replace('\n',' ').strip() or None
-        subjects = (row.get('Which Subjects Can You Teach') or '').replace('\n',' ').strip() or None
-        notes = (row.get('NotesMessages?') or '').replace('\n',' ').strip() or None
-        # Upsert semantics: if identical name+department exists, update; else create
-        existing = Availability.query.filter_by(name=name, department=dept).first()
-        if existing:
-            existing.branches = branches
-            existing.days = days
-            existing.subjects = subjects
-            existing.notes = notes
-        else:
-            a = Availability(name=name, department=dept, branches=branches, days=days, subjects=subjects, notes=notes)
-            db.session.add(a)
-        count += 1
-    db.session.commit()
-    flash(f'Imported/updated {count} availability records from remote source.', 'success')
+    flash('Remote availability import has been disabled. Use the New/Edit forms to manage availability data locally.', 'info')
     return redirect(url_for('availability_index'))
 
 # ---------------- Issues (tracker) ----------------
@@ -7032,7 +9015,17 @@ def todo_new():
                 html = build_task_notification_email(t, current_user, t.assigned_to)
                 # Subject line emphasises status & due date
                 subj_due = f" (Due {t.due_date.strftime('%Y-%m-%d')})" if t.due_date else ""
-                send_email(t.assigned_to.email, f"New Task Assigned: {t.description[:60]}{subj_due}", html)
+                from email_utils import send_with_template
+                try:
+                    send_with_template('task_notification', {
+                        'description': t.description,
+                        'due': (t.due_date.strftime('%Y-%m-%d') if t.due_date else ''),
+                        'assigned_to': t.assigned_to.name,
+                        'created_by': t.created_by.name if getattr(t, 'created_by', None) else '',
+                        'to_email': t.assigned_to.email,
+                    }, to_email=t.assigned_to.email, fallback=lambda: (f"New Task Assigned: {t.description[:60]}{subj_due}", html))
+                except Exception:
+                    send_email(t.assigned_to.email, f"New Task Assigned: {t.description[:60]}{subj_due}", html)
         except Exception as e:
             # Non-fatal: log to console; production could integrate proper logging
             print(f"[WARN] Task email failed: {e}")
@@ -7493,18 +9486,18 @@ def observation_email(oid):
     # Email body = standalone HTML (already includes styling & summary)
     body = email_html
     try:
+        from email_utils import send_email
         if pdf_bytes:
-            import smtplib
-            from email.message import EmailMessage
-
-            from email_utils import (FROM_EMAIL, FROM_NAME, SMTP_HOST,
-                                     SMTP_PASSWORD, SMTP_PORT, SMTP_USERNAME)
-            msg = EmailMessage(); msg['Subject'] = f"Observation Report - {obs.staff.name} ({obs.date})"; msg['From'] = f"{FROM_NAME} <{FROM_EMAIL}>"; msg['To'] = tutor_email
-            msg.set_content('Observation report attached (HTML + PDF).')
-            msg.add_alternative(body, subtype='html')
-            msg.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename=f'observation_{oid}.pdf')
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls(); server.login(SMTP_USERNAME, SMTP_PASSWORD); server.send_message(msg)
+            attachments = [(pdf_bytes, 'application', 'pdf', f'observation_{oid}.pdf')]
+            from email_utils import send_with_template
+            try:
+                send_with_template('observation_report', {
+                    'staff_name': obs.staff.name,
+                    'date': str(obs.date),
+                    'to_email': tutor_email,
+                }, to_email=tutor_email, fallback=lambda: (f"Observation Report - {obs.staff.name} ({obs.date})", body))
+            except Exception:
+                send_email(tutor_email, f"Observation Report - {obs.staff.name} ({obs.date})", body, attachments=attachments)
         else:
             send_email(tutor_email, f"Observation Report - {obs.staff.name} ({obs.date})", body)
         success_msg = 'Observation emailed to tutor'
@@ -8167,6 +10160,1617 @@ def invoice_edit(invoice_id):
         return redirect(url_for('invoice_detail', invoice_id=inv.id))
     return render_template('invoices/form.html', form=form, mode='edit', invoice=inv)
 
+# ---------------- Staff Invoice Management (Employee-submitted) ---------------- #
+
+def _is_staff_invoice_manager() -> bool:
+    try:
+        return getattr(current_user, 'is_superadmin', False) or user_can('manage_staff_invoices')
+    except Exception:
+        return False
+
+
+@app.route('/staff-invoices')
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoices_index():
+    # Any authenticated user: if manager -> see all, else show only own invoices
+    manager = _is_staff_invoice_manager()
+    q = StaffInvoice.query
+    if not manager:
+        q = q.filter(StaffInvoice.created_by_id == current_user.id)
+
+    # Filters / search / sort via GET params
+    # q=<query string> - search by invoice id, name or creator name
+    # employee=<user_id>, month=<1-12>, year=<YYYY>, company=<company_id>, status=<status>
+    args = request.args
+    search_q = (args.get('q') or '').strip()
+    employee = args.get('employee')
+    month = args.get('month')
+    year = args.get('year')
+    company_id = args.get('company')
+    status = args.get('status')
+    sort = args.get('sort') or 'created_at'
+    order = (args.get('order') or 'desc').lower()
+
+    # Join to User to allow searching by creator name
+    q = q.join(User, StaffInvoice.created_by)
+
+    if search_q:
+        # try numeric id match or partial name match
+        if search_q.isdigit():
+            q = q.filter(StaffInvoice.id == int(search_q))
+        else:
+            sq = f"%{search_q}%"
+            q = q.filter(db.or_(StaffInvoice.name.ilike(sq), User.name.ilike(sq)))
+
+    if employee:
+        try:
+            uid = int(employee)
+            q = q.filter(StaffInvoice.created_by_id == uid)
+        except Exception:
+            pass
+
+    if month:
+        try:
+            m = int(month)
+            q = q.filter(StaffInvoice.month == m)
+        except Exception:
+            pass
+
+    if year:
+        try:
+            y = int(year)
+            q = q.filter(StaffInvoice.year == y)
+        except Exception:
+            pass
+
+    if status:
+        q = q.filter(StaffInvoice.status == status)
+
+    # If company filter requested, join to Staff -> Company via Staff.user_id == User.id
+    company_map = {}
+    if company_id:
+        try:
+            cid = int(company_id)
+            # join through Staff to Company
+            q = q.join(Staff, Staff.user_id == User.id).join(Company, Company.id == Staff.company_id).filter(Company.id == cid)
+        except Exception:
+            pass
+
+    # Sorting
+    sort_map = {
+        'id': StaffInvoice.id,
+        'month': StaffInvoice.month,
+        'year': StaffInvoice.year,
+        'amount': StaffInvoice.amount,
+        'status': StaffInvoice.status,
+        'created_at': StaffInvoice.created_at,
+    }
+    col = sort_map.get(sort, StaffInvoice.created_at)
+    if order == 'asc':
+        q = q.order_by(col.asc())
+    else:
+        q = q.order_by(col.desc())
+
+    records = q.all()
+
+    # Build lists for filter controls
+    employees = User.query.join(StaffInvoice, StaffInvoice.created_by_id == User.id).distinct().order_by(User.name).all()
+    companies = Company.query.order_by(Company.name).all()
+    years = [r[0] for r in db.session.query(StaffInvoice.year).distinct().order_by(StaffInvoice.year.desc()).all()]
+    months = [(i, __import__('calendar').month_name[i]) for i in range(1,13)]
+    statuses = ['Draft','Pending','Approved','Rejected']
+
+    # Map user->company name for display
+    user_ids = list({inv.created_by_id for inv in records})
+    staff_rows = []
+    if user_ids:
+        staff_rows = Staff.query.filter(Staff.user_id.in_(user_ids)).all()
+    user_company = {s.user_id: (Company.query.get(s.company_id).name if s.company_id and Company.query.get(s.company_id) else None) for s in staff_rows}
+
+    return render_template(
+        'staff_invoices/index.html',
+        records=records,
+        manager=manager,
+        employees=employees,
+        companies=companies,
+        years=years,
+        months=months,
+        statuses=statuses,
+        filters={'q': search_q, 'employee': employee, 'month': month, 'year': year, 'company': company_id, 'status': status, 'sort': sort, 'order': order},
+        user_company=user_company,
+        branch_choices=BRANCH_CHOICES(),
+    )
+
+
+@app.route('/staff-invoices/new', methods=['GET','POST'])
+@login_required
+@permission_required('submit_staff_invoices', any=True, any_=True)
+def staff_invoice_new():
+    form = StaffInvoiceForm()
+    # Populate branch choices for item subform from DB
+    try:
+        from models import Branch
+        choices = [(b.name, b.name) for b in Branch.query.order_by(Branch.name).all()]
+        # Ensure an explicit empty choice exists so Optional SelectFields
+        # which render a blank option ('') validate correctly when user
+        # leaves branch blank. This avoids "Not a valid choice." errors.
+        if choices:
+            form.ItemForm.branch.choices = [('', '')] + choices
+        else:
+            # fallback to utils BRANCH_CHOICES list
+            form.ItemForm.branch.choices = [('', '')] + [(b,b) for b in BRANCH_CHOICES()]
+    except Exception:
+        form.ItemForm.branch.choices = [('', '')] + [(b,b) for b in BRANCH_CHOICES()]
+    # Ensure each existing item entry has the same choices set on its branch field
+    try:
+        for entry in form.items.entries:
+            try:
+                entry.form.branch.choices = form.ItemForm.branch.choices
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Default month/year and default rate from Staff.salary_per_hour (autofill editable)
+    default_rate = 0
+    try:
+        today = date.today()
+        # find staff record for current_user to pull salary_per_hour
+        try:
+            staff_rec = Staff.query.filter(Staff.user_id == current_user.id).first()
+            if staff_rec and getattr(staff_rec, 'salary_per_hour', None) is not None:
+                # convert to float for template/JS use
+                default_rate = float(staff_rec.salary_per_hour)
+        except Exception:
+            default_rate = 0
+        if request.method == 'GET':
+            form.month.data = today.month
+            form.year.data = today.year
+            # Prefill one empty line item with today's date and default rate
+            if len(form.items.entries) == 0:
+                form.items.append_entry({'date': today, 'day': today.strftime('%A'), 'branch': '', 'hours': 0, 'rate': default_rate, 'amount': 0})
+    except Exception:
+        pass
+    if request.method == 'POST' and form.validate_on_submit():
+        is_submit = 'submit_invoice' in request.form
+        status = 'Pending' if is_submit else 'Draft'
+        # Build a sensible automatic name (user + month year) since form no longer provides one
+        try:
+            import calendar as _cal
+            month_label = _cal.month_name[int(form.month.data or 0)]
+        except Exception:
+            month_label = str(form.month.data or '')
+        name_default = f"{getattr(current_user,'name', 'Invoice')} {month_label} {form.year.data}"
+        si = StaffInvoice(
+            name=name_default,
+            month=form.month.data,
+            year=form.year.data,
+            amount=0,
+            status=status,
+            created_by_id=current_user.id,
+            submitted_at=(datetime.utcnow() if is_submit else None),
+        )
+        db.session.add(si)
+        # Items
+        total = Decimal('0')
+        for idx, entry in enumerate(form.items.entries):
+            itf = entry.form
+            d = itf.date.data
+            try:
+                day = d.strftime('%A') if d else ''
+            except Exception:
+                day = ''
+            hours = Decimal(str(itf.hours.data or 0))
+            rate = Decimal(str(itf.rate.data or 0))
+            amount = (hours * rate).quantize(Decimal('0.01'))
+            total += amount
+            item = StaffInvoiceItem(
+                invoice=si,
+                date=d,
+                day=day,
+                branch=(itf.branch.data or '').strip() or None,
+                hours=float(hours),
+                description=(itf.description.data or '').strip() or None,
+                rate=float(rate),
+                amount=float(amount),
+            )
+            db.session.add(item)
+        si.amount = float(total)
+        db.session.commit()
+        if is_submit:
+            # Send confirmation email to the submitter (branded HTML)
+            try:
+                subj = f"Invoice submitted successfully (#{si.id})"
+                html = _build_staff_invoice_submitted_email(current_user.name, si)
+                if current_user.email:
+                    send_email(current_user.email, subj, html)
+            except Exception as _e:
+                print(f"[WARN] Staff invoice confirmation email failed: {_e}")
+        flash('Invoice saved as Draft' if not is_submit else 'Invoice submitted for approval', 'success')
+        return redirect(url_for('staff_invoice_detail', invoice_id=si.id))
+    return render_template('staff_invoices/form.html', form=form, default_rate=default_rate)
+
+
+def _get_staff_invoice_or_404(invoice_id: int) -> StaffInvoice:
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    if _is_staff_invoice_manager():
+        return inv
+    # Owner-only access for non-managers
+    if inv.created_by_id != current_user.id:
+        abort(403)
+    return inv
+
+
+@app.route('/staff-invoices/<int:invoice_id>')
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_detail(invoice_id):
+    inv = _get_staff_invoice_or_404(invoice_id)
+    manager = _is_staff_invoice_manager()
+    return render_template('staff_invoices/detail.html', inv=inv, manager=manager)
+
+
+@app.route('/staff-invoices/<int:invoice_id>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_edit(invoice_id):
+    inv = _get_staff_invoice_or_404(invoice_id)
+    manager = _is_staff_invoice_manager()
+    # Editing rules: owner can edit only if Draft; managers can edit any
+    if (not manager) and (inv.status != 'Draft'):
+        abort(403)
+    form = StaffInvoiceForm()
+    # Populate branch choices for item subform from DB
+    try:
+        from models import Branch
+        choices = [(b.name, b.name) for b in Branch.query.order_by(Branch.name).all()]
+        if choices:
+            form.ItemForm.branch.choices = [('', '')] + choices
+        else:
+            form.ItemForm.branch.choices = [('', '')] + [(b,b) for b in BRANCH_CHOICES()]
+    except Exception:
+        form.ItemForm.branch.choices = [('', '')] + [(b,b) for b in BRANCH_CHOICES()]
+    # Ensure each item entry has choices populated for validation on POST
+    try:
+        for entry in form.items.entries:
+            try:
+                entry.form.branch.choices = form.ItemForm.branch.choices
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    if request.method == 'GET':
+        # Invoice name is generated automatically; don't populate a removed form field
+        form.month.data = inv.month
+        form.year.data = inv.year
+        form.amount.data = inv.amount
+        # Populate items
+        if len(inv.items or []) == 0:
+            form.items.append_entry()
+        else:
+            for it in inv.items:
+                form.items.append_entry({
+                    'date': it.date,
+                    'day': it.day,
+                    'branch': it.branch or '',
+                    'hours': float(it.hours or 0),
+                    'description': it.description or '',
+                    'rate': float(it.rate or 0),
+                    'amount': float(it.amount or 0),
+                })
+    # Managers may also change status via 'status' field if provided
+    if request.method == 'POST':
+        # Debugging similar to new route: show posted keys and branch values
+        try:
+            print('[DEBUG] staff_invoice_edit POST keys:', list(request.form.keys()))
+            print('[DEBUG] staff_invoice_edit branch choices:', form.ItemForm.branch.choices)
+            posted_branch_fields = [(k, request.form.get(k)) for k in request.form.keys() if k.endswith('-branch') or k == 'branch']
+            print('[DEBUG] staff_invoice_edit posted branch fields:', posted_branch_fields)
+        except Exception as _e:
+            print('[DEBUG] staff_invoice_edit debug error:', _e)
+        # Accept status-only update (manager)
+        if 'status' in request.form and manager:
+            new_status = (request.form.get('status') or 'Pending').strip()
+            if new_status not in ['Pending','Approved','Rejected']:
+                flash('Invalid status', 'warning')
+            else:
+                inv.status = new_status
+                db.session.commit()
+                flash('Status updated', 'success')
+                return redirect(url_for('staff_invoice_detail', invoice_id=inv.id))
+        elif form.validate_on_submit():
+            is_submit = 'submit_invoice' in request.form
+            inv.month = form.month.data
+            inv.year = form.year.data
+            # Replace items
+            for old in list(inv.items or []):
+                db.session.delete(old)
+            total = Decimal('0')
+            for entry in form.items.entries:
+                itf = entry.form
+                d = itf.date.data
+                day = d.strftime('%A') if d else ''
+                hours = Decimal(str(itf.hours.data or 0))
+                rate = Decimal(str(itf.rate.data or 0))
+                amount = (hours * rate).quantize(Decimal('0.01'))
+                total += amount
+                db.session.add(StaffInvoiceItem(invoice=inv, date=d, day=day, branch=(itf.branch.data or '').strip() or None, hours=float(hours), description=(itf.description.data or '').strip() or None, rate=float(rate), amount=float(amount)))
+            inv.amount = float(total)
+            # If owner submitting now from Draft
+            if is_submit and inv.status == 'Draft':
+                inv.status = 'Pending'
+                inv.submitted_at = datetime.utcnow()
+                try:
+                    subj = f"Invoice submitted successfully (#{inv.id})"
+                    html = _build_staff_invoice_submitted_email(current_user.name, inv)
+                    if current_user.email:
+                        send_email(current_user.email, subj, html)
+                except Exception as _e:
+                    print(f"[WARN] Staff invoice confirmation email failed: {_e}")
+            db.session.commit()
+            flash('Invoice updated', 'success')
+            return redirect(url_for('staff_invoice_detail', invoice_id=inv.id))
+    # Provide a default_rate from staff record so new rows added client-side can default to it
+    default_rate = 0
+    try:
+        staff_rec = Staff.query.filter(Staff.user_id == inv.created_by_id).first()
+        if staff_rec and getattr(staff_rec, 'salary_per_hour', None) is not None:
+            default_rate = float(staff_rec.salary_per_hour)
+    except Exception:
+        default_rate = 0
+    return render_template('staff_invoices/form.html', form=form, inv=inv, manager=manager, default_rate=default_rate)
+
+
+@app.route('/staff-invoices/<int:invoice_id>/delete', methods=['POST'])
+@login_required
+def staff_invoice_delete(invoice_id):
+    if not getattr(current_user, 'is_superadmin', False):
+        abort(403)
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    db.session.delete(inv)
+    db.session.commit()
+    flash('Invoice deleted', 'success')
+    return redirect(url_for('staff_invoices_index'))
+
+
+@app.route('/staff-invoices/<int:invoice_id>/pdf')
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_pdf(invoice_id):
+    inv = _get_staff_invoice_or_404(invoice_id)
+    css_path = os.path.join(app.root_path, 'static', 'css', 'invoice.css')
+    inline_css = ''
+    try:
+        with open(css_path, 'r', encoding='utf-8') as f:
+            inline_css = f.read()
+    except Exception:
+        pass
+    resp = make_response(render_template('staff_invoices/pdf.html', inv=inv, inline_css=inline_css, print_view=True))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
+
+
+@app.route('/staff-invoices/dashboard')
+@login_required
+@permission_required('manage_staff_invoices')
+def staff_invoices_dashboard():
+    from datetime import date, timedelta
+
+    from sqlalchemy import and_, func, or_
+    today = date.today()
+    this_month = today.month
+    this_year = today.year
+
+    # Topline aggregates
+    totals = {
+        'Pending': db.session.query(func.count(StaffInvoice.id)).filter(StaffInvoice.status=='Pending').scalar() or 0,
+        'Approved': db.session.query(func.count(StaffInvoice.id)).filter(StaffInvoice.status=='Approved').scalar() or 0,
+        'Rejected': db.session.query(func.count(StaffInvoice.id)).filter(StaffInvoice.status=='Rejected').scalar() or 0,
+    }
+    total_amount = float(db.session.query(func.coalesce(func.sum(StaffInvoice.amount), 0)).scalar() or 0)
+    latest = StaffInvoice.query.order_by(StaffInvoice.created_at.desc()).limit(10).all()
+
+    # Employees by company (active)
+    emp_by_company_rows = (
+        db.session.query(Company.name, func.count(Staff.id))
+        .join(Staff, Staff.company_id == Company.id)
+        .filter(Staff.active == True)
+        .group_by(Company.id)
+        .order_by(Company.name.asc())
+        .all()
+    )
+    employees_by_company = [{'company': n, 'count': int(c or 0)} for (n, c) in emp_by_company_rows]
+
+    # Pending submissions by company for current month
+    pending_rows = (
+        db.session.query(Company.name, func.count(StaffInvoice.id))
+        .join(Staff, Staff.user_id == StaffInvoice.created_by_id)
+        .join(Company, Company.id == Staff.company_id)
+        .filter(StaffInvoice.year == this_year, StaffInvoice.month == this_month, StaffInvoice.status == 'Pending')
+        .group_by(Company.id)
+        .order_by(Company.name.asc())
+        .all()
+    )
+    pending_by_company = [{'company': n, 'count': int(c or 0)} for (n, c) in pending_rows]
+
+    # Missing (unsubmitted) employees for current month: active staff with a company and no invoice in Pending/Approved/Rejected
+    submitted_user_ids = [
+        uid for (uid,) in db.session.query(StaffInvoice.created_by_id)
+        .filter(StaffInvoice.year == this_year, StaffInvoice.month == this_month, StaffInvoice.status.in_(['Pending','Approved','Rejected']))
+        .distinct()
+        .all()
+    ]
+    missing_q = Staff.query.filter(Staff.active == True, Staff.company_id.isnot(None))
+    if submitted_user_ids:
+        missing_q = missing_q.filter(~Staff.user_id.in_(submitted_user_ids))
+    missing_staff = missing_q.all()
+    # Group missing by company
+    comp_map = {c.id: c.name for c in Company.query.all()}
+    missing_by_company = {}
+    for s in missing_staff:
+        cname = comp_map.get(s.company_id, 'Unassigned')
+        missing_by_company[cname] = missing_by_company.get(cname, 0) + 1
+    missing_by_company_list = [{'company': k, 'count': v} for k, v in sorted(missing_by_company.items())]
+
+    # Lateness summary for current month
+    # Date range for the current month
+    first_day = today.replace(day=1)
+    next_month = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1)
+    last_day = next_month - timedelta(days=1)
+    late_q = db.session.query(StaffAttendance).filter(
+        StaffAttendance.date >= first_day,
+        StaffAttendance.date <= last_day,
+        StaffAttendance.late_minutes.isnot(None),
+        StaffAttendance.late_minutes > 0,
+    )
+    total_late_days = late_q.count()
+    total_late_minutes = int(db.session.query(func.coalesce(func.sum(StaffAttendance.late_minutes), 0)).filter(
+        StaffAttendance.date >= first_day,
+        StaffAttendance.date <= last_day,
+        StaffAttendance.late_minutes.isnot(None),
+        StaffAttendance.late_minutes > 0,
+    ).scalar() or 0)
+    # Top late staff (by minutes)
+    top_late_rows = (
+        db.session.query(Staff.id, Staff.name, func.coalesce(func.sum(StaffAttendance.late_minutes), 0).label('mins'), func.count(StaffAttendance.id).label('days'))
+        .join(Staff, Staff.id == StaffAttendance.staff_id)
+        .filter(StaffAttendance.date >= first_day, StaffAttendance.date <= last_day, StaffAttendance.late_minutes.isnot(None), StaffAttendance.late_minutes > 0)
+        .group_by(Staff.id, Staff.name)
+        .order_by(func.coalesce(func.sum(StaffAttendance.late_minutes), 0).desc())
+        .limit(10)
+        .all()
+    )
+    top_late_staff = [{'staff_id': sid, 'name': nm, 'minutes': int(mins or 0), 'days': int(days or 0)} for (sid, nm, mins, days) in top_late_rows]
+
+    # Historic trends (last 12 months)
+    def _month_key(y, m):
+        return f"{y}-{m:02d}"
+    # Pre-fill 12 months window
+    labels = []
+    ym_keys = []
+    cy, cm = this_year, this_month
+    for i in range(11, -1, -1):
+        y = cy if cm - i > 0 else cy - ((i - cm) // 12 + 1)
+        m = ((cm - i - 1) % 12) + 1
+        ym_keys.append((y, m))
+        import calendar as _cal
+        labels.append(f"{_cal.month_abbr[m]} {str(y)[2:]}")
+    # Invoice aggregates by status and amount
+    inv_aggs = db.session.query(
+        StaffInvoice.year, StaffInvoice.month, StaffInvoice.status,
+        func.count(StaffInvoice.id), func.coalesce(func.sum(StaffInvoice.amount), 0)
+    ).group_by(StaffInvoice.year, StaffInvoice.month, StaffInvoice.status).all()
+    inv_counts = {(_y, _m, _s): int(c or 0) for (_y, _m, _s, c, _sum) in inv_aggs}
+    inv_sums = {(_y, _m, _s): float(_sum or 0) for (_y, _m, _s, c, _sum) in inv_aggs}
+    data_submitted = []  # count of non-draft submissions
+    data_approved = []   # count approved
+    data_amount = []     # approved amount
+    for (y, m) in ym_keys:
+        submitted_cnt = sum(inv_counts.get((y, m, s), 0) for s in ['Pending','Approved','Rejected'])
+        approved_cnt = inv_counts.get((y, m, 'Approved'), 0)
+        approved_amt = inv_sums.get((y, m, 'Approved'), 0.0)
+        data_submitted.append(submitted_cnt)
+        data_approved.append(approved_cnt)
+        data_amount.append(round(float(approved_amt or 0.0), 2))
+    # Lateness trend
+    late_aggs = db.session.query(
+        func.extract('year', StaffAttendance.date).label('y'),
+        func.extract('month', StaffAttendance.date).label('m'),
+        func.coalesce(func.sum(StaffAttendance.late_minutes), 0),
+        func.count(StaffAttendance.id)
+    ).filter(StaffAttendance.late_minutes.isnot(None), StaffAttendance.late_minutes > 0).group_by('y','m').all()
+    late_sum_map = {(int(y), int(m)): int(s or 0) for (y, m, s, c) in late_aggs}
+    late_days_map = {(int(y), int(m)): int(c or 0) for (y, m, s, c) in late_aggs}
+    data_late_minutes = [late_sum_map.get((y, m), 0) for (y, m) in ym_keys]
+    data_late_days = [late_days_map.get((y, m), 0) for (y, m) in ym_keys]
+
+    return render_template(
+        'staff_invoices/dashboard.html',
+        totals=totals,
+        total_amount=total_amount,
+        latest=latest,
+        employees_by_company=employees_by_company,
+        pending_by_company=pending_by_company,
+        missing_by_company=missing_by_company_list,
+        missing_total=len(missing_staff),
+        lateness={
+            'total_days': int(total_late_days or 0),
+            'total_minutes': int(total_late_minutes or 0),
+            'avg_minutes_per_day': (round((total_late_minutes / total_late_days), 1) if total_late_days else 0),
+            'top_staff': top_late_staff,
+        },
+        charts={
+            'labels': labels,
+            'submitted': data_submitted,
+            'approved': data_approved,
+            'approved_amount': data_amount,
+            'late_minutes': data_late_minutes,
+            'late_days': data_late_days,
+        }
+    )
+
+
+@app.route('/api/staff-invoices/remind-missing', methods=['POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def api_staff_invoices_remind_missing():
+    import json as _json
+    from datetime import date
+    payload = request.get_json(silent=True) or {}
+    try:
+        company_id = payload.get('company_id') or request.form.get('company_id')
+        company_id = int(company_id) if company_id not in (None, '', []) else None
+    except Exception:
+        company_id = None
+    try:
+        month = int(payload.get('month') or request.form.get('month') or date.today().month)
+        year = int(payload.get('year') or request.form.get('year') or date.today().year)
+    except Exception:
+        today = date.today(); month, year = today.month, today.year
+    # Determine missing staff
+    submitted_user_ids = [
+        uid for (uid,) in db.session.query(StaffInvoice.created_by_id)
+        .filter(StaffInvoice.year == year, StaffInvoice.month == month, StaffInvoice.status.in_(['Pending','Approved','Rejected']))
+        .distinct().all()
+    ]
+    q = Staff.query.filter(Staff.active == True, Staff.company_id.isnot(None))
+    if company_id:
+        q = q.filter(Staff.company_id == company_id)
+    if submitted_user_ids:
+        q = q.filter(~Staff.user_id.in_(submitted_user_ids))
+    targets = q.all()
+    sent = 0; errors = []
+    import calendar as _cal
+    month_name = _cal.month_name[int(month)] if 1 <= int(month) <= 12 else str(month)
+    link = url_for('staff_invoice_new', _external=True)
+    for s in targets:
+        email = (s.email or '').strip().lower()
+        if not email:
+            errors.append({'staff_id': s.id, 'name': s.name, 'reason': 'no_email'})
+            continue
+        subject = f"Reminder: Please submit your {month_name} {year} invoice"
+        try:
+            html = f"""
+                <p>Hi {s.name},</p>
+                <p>This is a friendly reminder to submit your staff invoice for <strong>{month_name} {year}</strong>.</p>
+                <p>Please click the button below to create your invoice now.</p>
+                <p><a href='{link}' style='display:inline-block;padding:10px 14px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px'>Create Invoice</a></p>
+                <p>If you've already submitted, you can ignore this email.</p>
+                <p>Thank you.</p>
+            """
+            send_email(email, subject, html)
+            sent += 1
+        except Exception as exc:
+            errors.append({'staff_id': s.id, 'name': s.name, 'reason': str(exc)})
+    return jsonify({'success': True, 'sent': sent, 'total': len(targets), 'errors': errors})
+
+
+@app.route('/invoice-submissions')
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submissions():
+    # Manager-facing list of all submitted staff invoices with simple filters
+    q = StaffInvoice.query
+    args = request.args
+    search_q = (args.get('q') or '').strip()
+    branch = (args.get('branch') or '').strip() or None
+    status = (args.get('status') or '').strip() or None
+    payment_status = (args.get('payment_status') or '').strip() or None
+    # New filters: month, year, company, date range
+    month = (args.get('month') or '').strip() or None
+    try:
+        month = int(month) if month else None
+    except Exception:
+        month = None
+    year = (args.get('year') or '').strip() or None
+    try:
+        year = int(year) if year else None
+    except Exception:
+        year = None
+    company_id = (args.get('company') or '').strip() or None
+    try:
+        company_id = int(company_id) if company_id else None
+    except Exception:
+        company_id = None
+    date_from = (args.get('date_from') or '').strip() or None
+    date_to = (args.get('date_to') or '').strip() or None
+    from datetime import datetime
+    try:
+        date_from_dt = datetime.strptime(date_from, '%Y-%m-%d').date() if date_from else None
+    except Exception:
+        date_from_dt = None
+    try:
+        date_to_dt = datetime.strptime(date_to, '%Y-%m-%d').date() if date_to else None
+    except Exception:
+        date_to_dt = None
+
+    # Basic search by id or submitter name
+    if search_q:
+        if search_q.isdigit():
+            q = q.filter(StaffInvoice.id == int(search_q))
+        else:
+            sq = f"%{search_q}%"
+            q = q.join(User, StaffInvoice.created_by).filter(User.name.ilike(sq))
+
+    if status:
+        q = q.filter(StaffInvoice.status == status)
+
+    if payment_status:
+        q = q.filter(StaffInvoice.payment_status == payment_status)
+
+    if month is not None:
+        q = q.filter(StaffInvoice.month == month)
+    if year is not None:
+        q = q.filter(StaffInvoice.year == year)
+
+    if company_id is not None:
+        # join to Staff to filter by Staff.company_id
+        q = q.join(Staff, Staff.user_id == StaffInvoice.created_by_id).filter(Staff.company_id == company_id)
+
+    if date_from_dt is not None or date_to_dt is not None:
+        from sqlalchemy import case
+        date_expr = case([(StaffInvoice.submitted_at != None, StaffInvoice.submitted_at)], else_=StaffInvoice.created_at)
+        if date_from_dt is not None:
+            q = q.filter(date_expr >= date_from_dt)
+        if date_to_dt is not None:
+            q = q.filter(date_expr <= date_to_dt)
+
+    records = q.order_by(StaffInvoice.created_at.desc()).all()
+
+    # helper lists
+    statuses = ['Draft','Pending','Approved','Rejected']
+
+    # Map user->company and staff record
+    user_ids = list({r.created_by_id for r in records})
+    staff_rows = Staff.query.filter(Staff.user_id.in_(user_ids)).all() if user_ids else []
+    user_company = {s.user_id: (Company.query.get(s.company_id).name if s.company_id and Company.query.get(s.company_id) else None) for s in staff_rows}
+    staff_map = {s.user_id: s for s in staff_rows}
+
+    # Companies for company filter dropdown
+    companies = Company.query.order_by(Company.name).all()
+    filters = {'q': search_q, 'branch': branch, 'status': status, 'payment_status': payment_status, 'month': month, 'year': year, 'company': company_id, 'date_from': date_from, 'date_to': date_to}
+    return render_template('invoice_management/submissions.html', records=records, statuses=statuses, filters=filters, user_company=user_company, branch_choices=BRANCH_CHOICES(), staff_map=staff_map, companies=companies)
+
+
+@app.route('/invoice-submissions/<int:invoice_id>')
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submission_view(invoice_id:int):
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    # Build attendance map for each line item (match by date and branch and staff)
+    attendance_map = {}
+    # Find staff record for the creator (via User -> Staff.user_id)
+    staff_rec = Staff.query.filter(Staff.user_id == inv.created_by_id).first()
+    for item in inv.items:
+        attendance_map[item.id] = {}
+        try:
+            att = None
+            # Primary: direct staff record mapping
+            if staff_rec:
+                att = StaffAttendance.query.filter(StaffAttendance.staff_id==staff_rec.id, StaffAttendance.date==item.date, StaffAttendance.branch==item.branch).order_by(StaffAttendance.check_in.asc()).first()
+
+            # Secondary: try to locate a staff by matching the submitter name
+            if not att:
+                try:
+                    candidate = Staff.query.filter(Staff.name.ilike(f"%{inv.created_by.name}%")).first()
+                    if candidate:
+                        att = StaffAttendance.query.filter(StaffAttendance.staff_id==candidate.id, StaffAttendance.date==item.date, StaffAttendance.branch==item.branch).order_by(StaffAttendance.check_in.asc()).first()
+                        if candidate and not staff_rec:
+                            staff_rec = candidate
+                except Exception:
+                    pass
+
+            # Tertiary: find any attendance row on that date+branch and map by machine_id -> staff
+            if not att:
+                att_row = StaffAttendance.query.filter(StaffAttendance.date==item.date, StaffAttendance.branch==item.branch).order_by(StaffAttendance.check_in.asc()).first()
+                if att_row:
+                    # If the attendance row has staff_id set, use it. Otherwise, try to map machine_id to Staff
+                    if att_row.staff_id:
+                        att = att_row
+                        if not staff_rec:
+                            staff_rec = Staff.query.get(att_row.staff_id)
+                    elif att_row.machine_id:
+                        # Try to find staff by machine id across known machine columns
+                        mid = att_row.machine_id.strip()
+                        s = Staff.query.filter(
+                            (Staff.whitechapel_machine_id==mid) | (Staff.east_ham_machine_id==mid) | (Staff.stratford_machine_id==mid) | (Staff.docklands_machine_id==mid) | (Staff.access_code==mid)
+                        ).first()
+                        if s:
+                            att = StaffAttendance.query.filter(StaffAttendance.staff_id==s.id, StaffAttendance.date==item.date, StaffAttendance.branch==item.branch).first() or att_row
+                            if not staff_rec:
+                                staff_rec = s
+
+            if att:
+                attendance_map[item.id] = {
+                    'check_in': att.check_in.strftime('%H:%M') if att.check_in else '',
+                    'check_out': att.check_out.strftime('%H:%M') if att.check_out else '',
+                    'hours': att.hours_hhmmss(),
+                    'late': (att.late_minutes and att.late_minutes>0) and 'Yes' or 'No'
+                }
+        except Exception:
+            attendance_map[item.id] = {}
+
+    # Company / department helper
+    staff_department = staff_rec.department if staff_rec else None
+    user_company = None
+    if staff_rec and staff_rec.company_id:
+        comp = Company.query.get(staff_rec.company_id)
+        user_company = comp.name if comp else None
+
+    # Totals: sum up hours and amounts from invoice items
+    try:
+        total_hours = sum((float(it.hours or 0) for it in inv.items))
+    except Exception:
+        total_hours = 0
+    try:
+        total_amount = sum((float(it.amount or 0) for it in inv.items))
+    except Exception:
+        total_amount = 0.0
+
+    # Branch-level breakdown: accumulate hours and amounts by branch
+    branch_acc = {}
+    try:
+        for it in inv.items:
+            b = it.branch or 'Unspecified'
+            rec = branch_acc.setdefault(b, {'hours': 0.0, 'amount': 0.0})
+            try:
+                rec['hours'] += float(it.hours or 0)
+            except Exception:
+                pass
+            try:
+                rec['amount'] += float(it.amount or 0)
+            except Exception:
+                pass
+    except Exception:
+        branch_acc = {}
+
+    # Convert to a sorted list for predictable display (branch name asc)
+    branch_breakdown = [{'branch': k, 'hours': v['hours'], 'amount': v['amount']} for k, v in sorted(branch_acc.items(), key=lambda x: x[0])]
+
+    # Compute staff age and map to NMW band (editable via settings 'nmw_bands')
+    try:
+        nmw_bands = get_setting('nmw_bands', None, as_json=True)
+    except Exception:
+        nmw_bands = None
+    if not nmw_bands:
+        nmw_bands = [
+            {"label": "aged 21 and over", "min_age": 21, "amount": "12.21"},
+            {"label": "aged 18 to 20", "min_age": 18, "amount": "10.00"},
+            {"label": "aged under 18", "min_age": 0, "amount": "7.55"},
+            {"label": "apprentice rate", "min_age": 0, "amount": "7.55"},
+        ]
+
+    staff_age = staff_rec.age if staff_rec else None
+    nmw_band_amount = 'N/A'
+    nmw_band_label = ''
+    if staff_age is not None:
+        selected = None
+        for b in nmw_bands:
+            try:
+                if int(b.get('min_age', 0)) <= int(staff_age):
+                    if selected is None or int(b.get('min_age', 0)) > int(selected.get('min_age', 0)):
+                        selected = b
+            except Exception:
+                continue
+        if selected:
+            nmw_band_amount = selected.get('amount')
+            nmw_band_label = selected.get('label')
+
+    return render_template('invoice_management/submission_detail.html', inv=inv, attendance_map=attendance_map, staff_department=staff_department, user_company=user_company, total_hours=total_hours, total_amount=total_amount, branch_breakdown=branch_breakdown, staff_rec=staff_rec, nmw_band_amount=nmw_band_amount, nmw_band_label=nmw_band_label)
+
+
+@app.route('/invoice-submissions/<int:invoice_id>/pdf')
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submission_pdf(invoice_id:int):
+    """Generate a branded PDF for a staff invoice submission (Exccel Tutors branding).
+
+    Falls back to returning HTML if PDF generation fails.
+    """
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    # Prepare totals and breakdown (reuse logic from view)
+    try:
+        total_hours = sum((float(it.hours or 0) for it in inv.items))
+    except Exception:
+        total_hours = 0
+    try:
+        total_amount = sum((float(it.amount or 0) for it in inv.items))
+    except Exception:
+        total_amount = 0.0
+    branch_acc = {}
+    try:
+        for it in inv.items:
+            b = it.branch or 'Unspecified'
+            rec = branch_acc.setdefault(b, {'hours': 0.0, 'amount': 0.0})
+            try:
+                rec['hours'] += float(it.hours or 0)
+            except Exception:
+                pass
+            try:
+                rec['amount'] += float(it.amount or 0)
+            except Exception:
+                pass
+    except Exception:
+        branch_acc = {}
+    branch_breakdown = [{'branch': k, 'hours': v['hours'], 'amount': v['amount']} for k, v in sorted(branch_acc.items(), key=lambda x: x[0])]
+
+    # Inline CSS path (use invoice.css for consistent look)
+    css_path = os.path.join(app.root_path, 'static', 'css', 'invoice.css')
+    inline_css = ''
+    try:
+        with open(css_path, 'r', encoding='utf-8') as f:
+            inline_css = f.read()
+    except Exception:
+        pass
+
+    # Build HTML with print_view flag so template can render a complete document
+    from datetime import datetime
+    gen_at = datetime.now()
+    # Attempt to locate staff record for consistent bank field rendering
+    staff_rec = Staff.query.filter(Staff.user_id == inv.created_by_id).first()
+    if not staff_rec:
+        # try by name fallback
+        try:
+            staff_rec = Staff.query.filter(Staff.name.ilike(f"%{inv.created_by.name}%")).first()
+        except Exception:
+            staff_rec = None
+
+    html = render_template('invoice_management/submission_pdf.html', inv=inv, total_hours=total_hours, total_amount=total_amount, branch_breakdown=branch_breakdown, inline_css=inline_css, print_view=True, generated_at=gen_at, staff_rec=staff_rec)
+
+    try:
+        from io import BytesIO
+
+        from xhtml2pdf import pisa
+        pdf_io = BytesIO()
+        pisa.CreatePDF(io.StringIO(html), dest=pdf_io)  # type: ignore[arg-type]
+        pdf_io.seek(0)
+        fname = f"staff_invoice_{inv.id}.pdf"
+        return send_file(pdf_io, as_attachment=True, download_name=fname, mimetype='application/pdf')
+    except Exception as exc:
+        # Fall back to returning the HTML view if PDF creation fails
+        flash(f'PDF generation failed: {exc}', 'warning')
+        return html
+
+
+@app.route('/invoice-submissions/<int:invoice_id>/history')
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submission_history_api(invoice_id:int):
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    try:
+        from models import StaffInvoiceChange
+        changes = StaffInvoiceChange.query.filter_by(invoice_id=invoice_id).order_by(StaffInvoiceChange.changed_at.asc()).all()
+        if changes:
+            hist = []
+            for c in changes:
+                hist.append({
+                    'at': c.changed_at.isoformat() if c.changed_at else None,
+                    'action': 'changed',
+                    'field': c.field,
+                    'old': c.old_value,
+                    'new': c.new_value,
+                    'by': (c.changed_by.name if getattr(c, 'changed_by', None) else None)
+                })
+            return jsonify(hist)
+    except Exception:
+        pass
+    # Fallback: synthetic history
+    hist = []
+    creator = (inv.created_by.name if getattr(inv, 'created_by', None) else None)
+    hist.append({'at': inv.created_at.isoformat() if inv.created_at else None, 'action': 'created', 'status': 'Draft', 'by': creator})
+    if inv.submitted_at:
+        hist.append({'at': inv.submitted_at.isoformat(), 'action': 'submitted', 'status': inv.status, 'by': creator})
+    hist.append({'at': inv.updated_at.isoformat() if inv.updated_at else None, 'action': 'last_updated', 'status': inv.status, 'by': creator})
+    return jsonify(hist)
+
+
+@app.route('/invoice-submissions/<int:invoice_id>/toggle-payment', methods=['POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submission_toggle_payment(invoice_id:int):
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    # Toggle payment_status between Paid and Unpaid and create audit row
+    try:
+        old = inv.payment_status
+        inv.payment_status = 'Paid' if (old or 'Unpaid') != 'Paid' else 'Unpaid'
+        db.session.add(inv)
+        # Write audit row
+        try:
+            from models import StaffInvoiceChange
+            change = StaffInvoiceChange(invoice_id=inv.id, field='payment_status', old_value=old, new_value=inv.payment_status, changed_by_id=current_user.id)
+            db.session.add(change)
+        except Exception:
+            # best-effort: continue if audit table missing
+            pass
+        db.session.commit()
+        return jsonify({'ok': True, 'payment_status': inv.payment_status})
+    except Exception:
+        db.session.rollback()
+
+
+# NMW bands admin
+@app.route('/admin/nmw-bands', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_pricing')
+def nmw_bands_index():
+    if request.method == 'POST':
+        # Expect structured form fields only (band-0-label, band-0-min_age, band-0-amount ...)
+        bands = []
+        idx = 0
+        while True:
+            prefix = f'band-{idx}-'
+            label = request.form.get(prefix + 'label')
+            if not label:
+                break
+            try:
+                min_age = int(request.form.get(prefix + 'min_age') or 0)
+            except Exception:
+                min_age = 0
+            amount = (request.form.get(prefix + 'amount') or '').strip()
+            bands.append({'label': label, 'min_age': min_age, 'amount': amount})
+            idx += 1
+        if bands:
+            set_setting('nmw_bands', bands, as_json=True)
+            flash('Saved NMW bands', 'success')
+    bands = get_setting('nmw_bands', None, as_json=True)
+    if not bands:
+        bands = [
+            {"label": "aged 21 and over", "min_age": 21, "amount": "12.21"},
+            {"label": "aged 18 to 20", "min_age": 18, "amount": "10.00"},
+            {"label": "aged under 18", "min_age": 0, "amount": "7.55"},
+            {"label": "apprentice rate", "min_age": 0, "amount": "7.55"},
+        ]
+    return render_template('admin/nmw_bands/index.html', bands=bands)
+
+
+@app.route('/invoice-submissions/<int:invoice_id>/print')
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submission_print(invoice_id:int):
+    # Render the PDF template in a browser-friendly print view (includes logo)
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    # Recompute totals and branch breakdown similarly to the view
+    total_hours = 0
+    total_amount = 0
+    branch_acc = {}
+    for it in inv.items:
+        h = float(it.hours or 0)
+        a = float(it.amount or 0)
+        total_hours += h
+        total_amount += a
+        k = it.branch or 'Unspecified'
+        entry = branch_acc.setdefault(k, {'hours': 0, 'amount': 0})
+        entry['hours'] += h
+        entry['amount'] += a
+    branch_breakdown = [{'branch': k, 'hours': v['hours'], 'amount': v['amount']} for k, v in sorted(branch_acc.items(), key=lambda x: x[0])]
+    inline_css = ''
+    gen_at = datetime.now(timezone.utc)
+    # Try to locate staff record for bank details display in print view
+    staff_rec = Staff.query.filter(Staff.user_id == inv.created_by_id).first()
+    if not staff_rec:
+        try:
+            staff_rec = Staff.query.filter(Staff.name.ilike(f"%{inv.created_by.name}%")).first()
+        except Exception:
+            staff_rec = None
+    return render_template('invoice_management/submission_pdf.html', inv=inv, total_hours=total_hours, total_amount=total_amount, branch_breakdown=branch_breakdown, inline_css=inline_css, print_view=True, generated_at=gen_at, staff_rec=staff_rec)
+
+
+@app.route('/invoice-submissions/<int:invoice_id>/accept', methods=['POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submission_accept(invoice_id:int):
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    try:
+        old = inv.status
+        inv.status = 'Approved'
+        db.session.add(inv)
+        try:
+            from models import StaffInvoiceChange
+            change = StaffInvoiceChange(invoice_id=inv.id, field='status', old_value=old, new_value=inv.status, changed_by_id=current_user.id)
+            db.session.add(change)
+        except Exception:
+            pass
+        db.session.commit()
+        # Send notification email to submitter
+        try:
+            from email_utils import send_with_template
+            subj, html = _build_staff_invoice_approved_email(inv.created_by.name if inv.created_by else '', inv)
+            send_with_template('staff_invoice_approved', {'name': inv.created_by.name if inv.created_by else '', 'to_email': inv.created_by.email if inv.created_by else None, 'invoice': inv}, to_email=(inv.created_by.email if inv.created_by else None), fallback=lambda: (subj, html))
+        except Exception:
+            try:
+                # best-effort plain send
+                subj, html = _build_staff_invoice_approved_email(inv.created_by.name if inv.created_by else '', inv)
+                _send_email_safe(inv.created_by.email if inv.created_by else None, subj, html, log_prefix='Invoice approved')
+            except Exception:
+                pass
+        return jsonify({'ok': True})
+    except Exception:
+        db.session.rollback()
+        return jsonify({'ok': False}), 500
+
+
+@app.route('/invoice-submissions/<int:invoice_id>/reject', methods=['POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def invoice_submission_reject(invoice_id:int):
+    inv = StaffInvoice.query.get_or_404(invoice_id)
+    reason = (request.form.get('reason') or '').strip()
+    try:
+        old = inv.status
+        inv.status = 'Rejected'
+        db.session.add(inv)
+        try:
+            from models import StaffInvoiceChange
+            change = StaffInvoiceChange(invoice_id=inv.id, field='status', old_value=old, new_value=inv.status, changed_by_id=current_user.id)
+            db.session.add(change)
+            if reason:
+                change2 = StaffInvoiceChange(invoice_id=inv.id, field='rejection_reason', old_value=None, new_value=reason, changed_by_id=current_user.id)
+                db.session.add(change2)
+        except Exception:
+            pass
+        db.session.commit()
+        # Send rejection email
+        try:
+            from email_utils import send_with_template
+            subj, html = _build_staff_invoice_rejected_email(inv.created_by.name if inv.created_by else '', inv, reason)
+            send_with_template('staff_invoice_rejected', {'name': inv.created_by.name if inv.created_by else '', 'to_email': inv.created_by.email if inv.created_by else None, 'invoice': inv, 'reason': reason}, to_email=(inv.created_by.email if inv.created_by else None), fallback=lambda: (subj, html))
+        except Exception:
+            try:
+                subj, html = _build_staff_invoice_rejected_email(inv.created_by.name if inv.created_by else '', inv, reason)
+                _send_email_safe(inv.created_by.email if inv.created_by else None, subj, html, log_prefix='Invoice rejected')
+            except Exception:
+                pass
+        flash('Invoice rejected', 'success')
+        return redirect(url_for('invoice_submission_view', invoice_id=inv.id))
+    except Exception:
+        db.session.rollback()
+        flash('Failed to reject invoice', 'danger')
+        return redirect(url_for('invoice_submission_view', invoice_id=inv.id))
+
+
+def _ensure_branches_exist():
+    """Seed default branches if none exist.
+
+    Flask 3 removed/changed the `before_first_request` hook in some server
+    contexts; register this function using the decorator when available, but
+    fall back to a one-shot `before_request` registration for compatibility.
+    """
+    try:
+        from models import Branch
+        defaults = ['Whitechapel','East Ham','Docklands','Stratford']
+        existing = {b.name for b in Branch.query.all()}
+        for d in defaults:
+            if d not in existing:
+                db.session.add(Branch(name=d, status='Active'))
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+
+# Register seeding to run once on first request in a way that's compatible
+# with Flask 2.x and 3.x runtime differences.
+try:
+    # Prefer direct registration where available.
+    app.before_first_request(_ensure_branches_exist)
+except Exception:
+    # Fallback: use a one-shot before_request guard.
+    _BRANCHES_SEEDED = False
+
+    @app.before_request
+    def _maybe_seed_branches_once():
+        nonlocal_flag = globals()
+        global _BRANCHES_SEEDED
+        if _BRANCHES_SEEDED:
+            return
+        try:
+            _ensure_branches_exist()
+        finally:
+            _BRANCHES_SEEDED = True
+
+
+@app.route('/branches')
+@login_required
+@permission_required('manage_staff_invoices')
+def branches_index():
+    from models import Branch
+    branches = Branch.query.order_by(Branch.name).all()
+    return render_template('branches/index.html', branches=branches)
+
+
+# ---------------- Email Settings CRUD ---------------- #
+@app.route('/system/email-settings')
+@login_required
+@permission_required('manage_supervisor_shifts')
+def email_settings_index():
+    from models import EmailSetting
+    items = EmailSetting.query.order_by(EmailSetting.name.asc()).all()
+    return render_template('email_settings/index.html', items=items)
+
+
+@app.route('/system/email-settings/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def email_settings_new():
+    from models import EmailSetting
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        provider = (request.form.get('provider') or 'smtp').strip()
+        host = (request.form.get('host') or '').strip()
+        port = int(request.form.get('port') or 0) or None
+        username = (request.form.get('username') or '').strip()
+        password = (request.form.get('password') or '').strip()
+        sender_name = (request.form.get('sender_name') or '').strip()
+        sender_email = (request.form.get('sender_email') or '').strip()
+        use_tls = bool(request.form.get('use_tls'))
+        use_ssl = bool(request.form.get('use_ssl'))
+        is_active = bool(request.form.get('is_active'))
+        if not name:
+            flash('Name is required', 'warning')
+            return render_template('email_settings/form.html', item=None)
+        es = EmailSetting(name=name, provider=provider, host=host, port=port, username=username, password=password, sender_name=sender_name, sender_email=sender_email, use_tls=use_tls, use_ssl=use_ssl, is_active=is_active)
+        db.session.add(es)
+        db.session.commit()
+        flash('Email setting created', 'success')
+        return redirect(url_for('email_settings_index'))
+    return render_template('email_settings/form.html', item=None)
+
+
+@app.route('/system/email-settings/<int:esid>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def email_settings_edit(esid: int):
+    from models import EmailSetting
+    es = EmailSetting.query.get_or_404(esid)
+    if request.method == 'POST':
+        es.name = (request.form.get('name') or es.name).strip()
+        es.provider = (request.form.get('provider') or es.provider).strip()
+        es.host = (request.form.get('host') or es.host).strip()
+        es.port = int(request.form.get('port') or es.port or 0) or None
+        es.username = (request.form.get('username') or es.username).strip()
+        pw = request.form.get('password')
+        if pw:
+            es.password = pw.strip()
+        es.sender_name = (request.form.get('sender_name') or es.sender_name).strip()
+        es.sender_email = (request.form.get('sender_email') or es.sender_email).strip()
+        es.use_tls = bool(request.form.get('use_tls'))
+        es.use_ssl = bool(request.form.get('use_ssl'))
+        es.is_active = bool(request.form.get('is_active'))
+        db.session.commit()
+        flash('Email setting updated', 'success')
+        return redirect(url_for('email_settings_index'))
+    return render_template('email_settings/form.html', item=es)
+
+
+# Backward-compatible alias (some links may use /edit/<id> order)
+@app.route('/system/email-settings/edit/<int:esid>', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def email_settings_edit_alias(esid: int):
+    return email_settings_edit(esid)
+
+
+@app.route('/system/email-settings/<int:esid>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def email_settings_delete(esid: int):
+    from models import EmailSetting
+    es = EmailSetting.query.get_or_404(esid)
+    db.session.delete(es)
+    db.session.commit()
+    flash('Email setting deleted', 'success')
+    return redirect(url_for('email_settings_index'))
+
+
+@app.route('/system/email-setup-audit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def email_setup_audit():
+    """Audit the codebase for common sender addresses and present suggestions.
+
+    GET: show discovered candidate sender addresses.
+    POST: create selected EmailSetting stubs (inactive) so admin can fill credentials.
+    """
+    # Build a conservative candidate list by inspecting known constants and common addresses
+    import email_utils as _eu
+    from models import EmailSetting
+    candidates = [
+        {'name': 'legacy-management', 'sender_email': getattr(_eu, 'FROM_EMAIL', None), 'host': getattr(_eu, 'SMTP_HOST', None)},
+        {'name': 'techsupport-sender', 'sender_email': 'techsupport@exceltutors.org.uk', 'host': None},
+        {'name': 'superadmin-sender', 'sender_email': 'superadmin@exceltutors.org.uk', 'host': None},
+    ]
+
+    # Filter out empty and duplicates
+    seen = set()
+    filtered = []
+    for c in candidates:
+        e = (c.get('sender_email') or '').strip()
+        if not e or e in seen:
+            continue
+        seen.add(e)
+        exists = EmailSetting.query.filter_by(sender_email=e).first()
+        filtered.append({'name': c.get('name'), 'sender_email': e, 'host': c.get('host'), 'exists': bool(exists)})
+
+    if request.method == 'POST':
+        picked = request.form.getlist('create')
+        created = 0
+        for p in picked:
+            # p will be the email address
+            if not p:
+                continue
+            if EmailSetting.query.filter_by(sender_email=p).first():
+                continue
+            new_name = f'sender-{p.split("@")[0]}'
+            es = EmailSetting(name=new_name, provider='smtp', host=None, port=None, username=None, password=None, use_tls=True, use_ssl=False, sender_name=None, sender_email=p, is_active=False)
+            db.session.add(es)
+            created += 1
+        if created:
+            db.session.commit()
+            flash(f'Created {created} email setting stub(s). Please complete credentials and activate.', 'success')
+        else:
+            flash('No new settings created.', 'info')
+        return redirect(url_for('email_settings_index'))
+
+    return render_template('email_settings/audit.html', candidates=filtered)
+
+
+@app.route('/api/email-setting/<int:setting_id>')
+@login_required
+@permission_required('manage_email_logs')
+def api_email_setting(setting_id):
+    from models import EmailSetting
+    s = EmailSetting.query.get(setting_id)
+    if not s:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify({
+        'id': s.id,
+        'name': s.name,
+        'sender_name': s.sender_name,
+        'sender_email': s.sender_email,
+        'username': s.username,
+        'host': s.host,
+    })
+
+
+def _extract_placeholders(text):
+    import re
+    if not text:
+        return []
+    return sorted(set(re.findall(r"\{([a-zA-Z0-9_\.]+)\}", text)))
+
+
+@app.route('/system/email-templates/<int:tid>/preview', methods=['POST'])
+@login_required
+@permission_required('manage_email_logs')
+def email_template_preview(tid: int):
+    from models import EmailTemplate
+    tmpl = EmailTemplate.query.get(tid)
+    if not tmpl:
+        return jsonify({'error': 'template not found'}), 404
+    data = request.get_json() or {}
+    subject = data.get('subject') or tmpl.subject_template or ''
+    html = data.get('html') or tmpl.html_template or ''
+    ctx = data.get('ctx') or {}
+    try:
+        subs = _extract_placeholders(subject) + _extract_placeholders(html)
+        missing = []
+        for p in subs:
+            parts = p.split('.')
+            v = ctx
+            ok = True
+            for part in parts:
+                if isinstance(v, dict) and part in v:
+                    v = v[part]
+                else:
+                    ok = False
+                    break
+            if not ok:
+                missing.append(p)
+        if missing:
+            return jsonify({'missing': missing})
+        try:
+            rendered_subject = subject.format(**ctx)
+        except Exception as e:
+            return jsonify({'error': f'subject render error: {e}'}), 400
+        try:
+            rendered_html = html.format(**ctx)
+        except Exception as e:
+            return jsonify({'error': f'html render error: {e}'}), 400
+        # Optionally return plain-text rendering
+        as_text = False
+        try:
+            js = request.get_json() or {}
+            as_text = bool(js.get('as_text'))
+        except Exception:
+            as_text = False
+        result = {'subject': rendered_subject, 'html': rendered_html}
+        if as_text:
+            # lightweight HTML->text: strip tags and unescape common entities
+            try:
+                import re
+                from html import unescape
+
+                text = re.sub(r'<script.*?>.*?</script>', '', rendered_html, flags=re.DOTALL|re.IGNORECASE)
+                text = re.sub(r'<style.*?>.*?</style>', '', text, flags=re.DOTALL|re.IGNORECASE)
+                text = re.sub(r'<[^>]+>', '', text)
+                text = unescape(text)
+                # collapse whitespace
+                text = re.sub(r'\s+', ' ', text).strip()
+            except Exception:
+                text = ''
+            result['text'] = text
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/system/email-templates/validate', methods=['POST'])
+@login_required
+@permission_required('manage_email_logs')
+def email_template_validate():
+    data = request.get_json() or {}
+    subject = data.get('subject') or ''
+    html = data.get('html') or ''
+    subs = _extract_placeholders(subject) + _extract_placeholders(html)
+    return jsonify({'missing': sorted(set(subs))})
+
+
+# ---------------- Email Management (sent logs) ---------------- #
+@app.route('/system/email-management')
+@login_required
+@permission_required('manage_email_logs')
+def email_management_index():
+    from models import EmailLog
+    q = (request.args.get('q') or '').strip()
+    status = (request.args.get('status') or '').strip()
+    query = EmailLog.query.order_by(EmailLog.created_at.desc())
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(EmailLog.to_email.ilike(like), EmailLog.subject.ilike(like)))
+    if status:
+        query = query.filter(EmailLog.status == status)
+    items = query.limit(200).all()
+    return render_template('email_management/index.html', items=items)
+
+
+@app.route('/system/email-management/<int:elog_id>')
+@login_required
+@permission_required('manage_email_logs')
+def email_management_detail(elog_id: int):
+    from models import EmailLog
+    el = EmailLog.query.get_or_404(elog_id)
+    return render_template('email_management/detail.html', item=el)
+
+
+@app.route('/system/email-management/<int:elog_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_email_logs')
+def email_management_delete(elog_id: int):
+    from models import EmailLog
+    el = EmailLog.query.get_or_404(elog_id)
+    try:
+        db.session.delete(el)
+        db.session.commit()
+        flash('Email log deleted', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete email log: {exc}', 'danger')
+    return redirect(url_for('email_management_index'))
+
+
+@app.route('/system/email-management/<int:elog_id>/resend', methods=['POST'])
+@login_required
+@permission_required('manage_email_logs')
+def email_management_resend(elog_id: int):
+    from models import EmailLog
+    el = EmailLog.query.get_or_404(elog_id)
+    try:
+        # Re-send using same subject/html. We avoid duplicating attachments here.
+        send_email(el.to_email, el.subject, el.html or '')
+        flash('Resend triggered', 'success')
+    except Exception as exc:
+        flash(f'Resend failed: {exc}', 'danger')
+    return redirect(url_for('email_management_detail', elog_id=elog_id))
+
+
+# ---------------- Email Template CRUD ---------------- #
+@app.route('/system/email-templates')
+@login_required
+@permission_required('manage_email_logs')
+def email_templates_index():
+    from models import EmailTemplate
+    items = EmailTemplate.query.order_by(EmailTemplate.name.asc()).all()
+    return render_template('email_templates/index.html', items=items)
+
+
+@app.route('/system/email-templates/<int:tid>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_email_logs')
+def email_templates_edit(tid: int):
+    from models import EmailTemplate
+    et = EmailTemplate.query.get_or_404(tid)
+    if request.method == 'POST':
+        et.name = (request.form.get('name') or et.name).strip()
+        et.subject_template = (request.form.get('subject_template') or et.subject_template)
+        et.html_template = (request.form.get('html_template') or et.html_template)
+        et.sender_name = (request.form.get('sender_name') or et.sender_name)
+        et.sender_email = (request.form.get('sender_email') or et.sender_email)
+        # Save linked EmailSetting if selected (empty -> unlink)
+        try:
+            raw_set = (request.form.get('email_setting_id') or '').strip()
+            if raw_set:
+                try:
+                    et.email_setting_id = int(raw_set)
+                except Exception:
+                    et.email_setting_id = None
+            else:
+                et.email_setting_id = None
+        except Exception:
+            et.email_setting_id = None
+        et.is_active = bool(request.form.get('is_active'))
+        db.session.commit()
+        flash('Template updated', 'success')
+        return redirect(url_for('email_templates_index'))
+    # Provide email settings for dropdown
+    from models import EmailSetting
+    settings = EmailSetting.query.order_by(EmailSetting.name.asc()).all()
+    return render_template('email_templates/form.html', item=et, settings=settings)
+
+
+@app.route('/system/email-templates/<int:tid>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_email_logs')
+def email_templates_delete(tid: int):
+    from models import EmailTemplate
+    et = EmailTemplate.query.get_or_404(tid)
+    try:
+        db.session.delete(et)
+        db.session.commit()
+        flash('Template deleted', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete template: {exc}', 'danger')
+    return redirect(url_for('email_templates_index'))
+
+
+@app.route('/branches/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def branch_new():
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        address = (request.form.get('address') or '').strip()
+        status = (request.form.get('status') or 'Active').strip()
+        phone = (request.form.get('phone') or '').strip()
+        email = (request.form.get('email') or '').strip()
+        if not name:
+            flash('Name is required', 'warning')
+            return render_template('branches/form.html', branch=None)
+        from models import Branch
+        b = Branch(name=name, address=address, status=status, phone=phone, email=email)
+        db.session.add(b)
+        db.session.commit()
+        flash('Branch created', 'success')
+        return redirect(url_for('branches_index'))
+    return render_template('branches/form.html', branch=None)
+
+
+@app.route('/branches/<int:branch_id>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def branch_edit(branch_id):
+    from models import Branch
+    b = Branch.query.get_or_404(branch_id)
+    if request.method == 'POST':
+        b.name = (request.form.get('name') or b.name).strip()
+        b.address = (request.form.get('address') or b.address).strip()
+        b.status = (request.form.get('status') or b.status).strip()
+        b.phone = (request.form.get('phone') or b.phone).strip()
+        b.email = (request.form.get('email') or b.email).strip()
+        db.session.commit()
+        flash('Branch updated', 'success')
+        return redirect(url_for('branches_index'))
+    return render_template('branches/form.html', branch=b)
+
+
+@app.route('/branches/<int:branch_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_staff_invoices')
+def branch_delete(branch_id):
+    from models import Branch
+    b = Branch.query.get_or_404(branch_id)
+    db.session.delete(b)
+    db.session.commit()
+    flash('Branch deleted', 'success')
+    return redirect(url_for('branches_index'))
+
+
+@app.route('/system/branches')
+@login_required
+@permission_required('manage_supervisor_shifts')
+def system_branches_index():
+    """System configuration view for branches (mirrors /branches)."""
+    from models import Branch
+    branches = Branch.query.order_by(Branch.name).all()
+    return render_template('branches/index.html', branches=branches)
+
+
+@app.route('/system/branches/new', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def system_branch_new():
+    from models import Branch
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        address = (request.form.get('address') or '').strip()
+        status = (request.form.get('status') or 'Active').strip()
+        phone = (request.form.get('phone') or '').strip()
+        email = (request.form.get('email') or '').strip()
+        if not name:
+            flash('Name is required', 'warning')
+            return render_template('branches/form.html', branch=None)
+        b = Branch(name=name, address=address, status=status, phone=phone, email=email)
+        db.session.add(b)
+        db.session.commit()
+        flash('Branch created', 'success')
+        return redirect(url_for('system_branches_index'))
+    return render_template('branches/form.html', branch=None)
+
+
+@app.route('/system/branches/<int:branch_id>/edit', methods=['GET','POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def system_branch_edit(branch_id):
+    from models import Branch
+    b = Branch.query.get_or_404(branch_id)
+    if request.method == 'POST':
+        b.name = (request.form.get('name') or b.name).strip()
+        b.address = (request.form.get('address') or b.address).strip()
+        b.status = (request.form.get('status') or b.status).strip()
+        b.phone = (request.form.get('phone') or b.phone).strip()
+        b.email = (request.form.get('email') or b.email).strip()
+        db.session.commit()
+        flash('Branch updated', 'success')
+        return redirect(url_for('system_branches_index'))
+    return render_template('branches/form.html', branch=b)
+
+
+@app.route('/system/branches/<int:branch_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_supervisor_shifts')
+def system_branch_delete(branch_id):
+    from models import Branch
+    b = Branch.query.get_or_404(branch_id)
+    db.session.delete(b)
+    db.session.commit()
+    flash('Branch deleted', 'success')
+    return redirect(url_for('system_branches_index'))
+
 @app.route('/invoices/<int:invoice_id>/delete', methods=['POST'])
 @login_required
 @permission_required('manage_invoices')
@@ -8295,18 +11899,15 @@ def invoice_pdf(invoice_id):
     return resp
 
 # ---------------- Invoice Emailing ---------------- #
-INVOICE_SMTP_HOST = "smtp.gmail.com"
-INVOICE_SMTP_PORT = 587
-INVOICE_SMTP_USER = "info@brightstarkidsclub.org.uk"
-INVOICE_SMTP_PASS = "txxi aajf fcug hcia"
-INVOICE_SMTP_USE_TLS = True
-EMAIL_FROM_NAME = "BrightStar Kids Club"
-EMAIL_FROM_ADDR = INVOICE_SMTP_USER
 EMAIL_SUBJECT_PREFIX = "[Invoice] "
 
-def send_invoice_email(inv: Invoice):
-    import smtplib
-    from email.message import EmailMessage
+
+def send_invoice_email(inv: Invoice, *, setting_name: str | None = None):
+    """Render invoice HTML and send using DB-backed EmailSetting when available.
+
+    Returns True on success or raises an exception on failure.
+    """
+    from email_utils import send_email
     if not inv.parent_email:
         raise ValueError("Recipient email missing (parent_email)")
     css_path = os.path.join(app.root_path, 'static', 'css', 'invoice.css')
@@ -8317,17 +11918,19 @@ def send_invoice_email(inv: Invoice):
     except Exception:
         pass
     html = render_template('invoices/invoice_document.html', invoice=inv, inline_css=inline_css, print_view=False, logo_abs=None)
-    msg = EmailMessage()
-    msg['Subject'] = f"{EMAIL_SUBJECT_PREFIX}{inv.invoice_no}"
-    msg['From'] = f"{EMAIL_FROM_NAME} <{EMAIL_FROM_ADDR}>"
-    msg['To'] = inv.parent_email
-    msg.set_content('HTML invoice attached. If you cannot view HTML, contact support.')
-    msg.add_alternative(html, subtype='html')
-    with smtplib.SMTP(INVOICE_SMTP_HOST, INVOICE_SMTP_PORT) as server:
-        if INVOICE_SMTP_USE_TLS:
-            server.starttls()
-        server.login(INVOICE_SMTP_USER, INVOICE_SMTP_PASS)
-        server.send_message(msg)
+    subj = f"{EMAIL_SUBJECT_PREFIX}{inv.invoice_no}"
+    # Prefer editable invoice template if present
+    try:
+        from email_utils import send_with_template
+        send_with_template('invoice', {
+            'invoice_no': inv.invoice_no,
+            'parent_name': inv.parent_name,
+            'total': str(inv.total),
+            'to_email': inv.parent_email,
+            'html_body': html,
+        }, to_email=inv.parent_email, fallback=lambda: (subj, html))
+    except Exception:
+        send_email(inv.parent_email, subj, html, setting_name=setting_name)
     return True
 
 @app.route('/invoices/<int:invoice_id>/email', methods=['POST'])
@@ -8345,6 +11948,16 @@ def invoice_email(invoice_id):
 # ---------------- Error Handlers ----------------
 @app.errorhandler(403)
 def forbidden(e):  # noqa: D401
+    # If the client is requesting an API endpoint, return JSON so callers
+    # that expect JSON won't see an HTML page (which would cause a parse
+    # error like `Unexpected token '<'`). Also respect explicit JSON
+    # Accept headers or X-Requested-With style signals.
+    try:
+        accept = (request.headers.get('Accept') or '').lower()
+    except Exception:
+        accept = ''
+    if (request.path or '').startswith('/api/') or 'application/json' in accept or request.is_json:
+        return jsonify({'error': 'forbidden', 'description': getattr(e, 'description', None)}), 403
     return render_template("errors/403.html", description=getattr(e, 'description', None)), 403
 
 @app.errorhandler(404)
@@ -8527,6 +12140,479 @@ def report_student_concern():
     # GET: fixed subjects list as requested
     subjects = ['Maths','English','Science','Computer Science','Economics','Business','Psychology','11+','Physics','Chemistry','Biology']
     return render_template('public/report_student_concern.html', subjects=subjects)
+
+
+# ---------------- Job Application (Public) ---------------- #
+@csrf.exempt
+@app.route('/jobs/apply', methods=['GET','POST'])
+def jobs_apply():
+    """Public job application form (mobile-first).
+
+    Stores submissions to JobApplication and shows a success flash.
+    """
+    from models import JobApplication
+    from utils import BRANCH_CHOICES
+
+    # Canonical subject choices from system
+    SUBJECTS = ['Maths','English','Science','Computer Science','Economics','Business','Psychology','11+','Physics','Chemistry','Biology']
+
+    if request.method == 'POST':
+        # Honeypot
+        if (request.form.get('website') or '').strip():
+            flash('Thanks for your application.', 'success')
+            return redirect(url_for('jobs_apply'))
+        first_name = (request.form.get('first_name') or '').strip()
+        last_name = (request.form.get('last_name') or '').strip()
+        email = (request.form.get('email') or '').strip()
+        confirm_email = (request.form.get('confirm_email') or '').strip()
+        phone = (request.form.get('phone') or '').strip()
+        address_line1 = (request.form.get('address_line1') or '').strip()
+        city = (request.form.get('city') or '').strip()
+        postcode = (request.form.get('postcode') or '').strip()
+        university = (request.form.get('university') or '').strip()
+        study_year_raw = (request.form.get('study_year') or '').strip()
+        course_name = (request.form.get('course_name') or '').strip()
+        a1_subject = (request.form.get('alevel1_subject') or '').strip()
+        a1_grade = (request.form.get('alevel1_grade') or '').strip()
+        a1_status = (request.form.get('alevel1_status') or '').strip()
+        a2_subject = (request.form.get('alevel2_subject') or '').strip()
+        a2_grade = (request.form.get('alevel2_grade') or '').strip()
+        a2_status = (request.form.get('alevel2_status') or '').strip()
+        a3_subject = (request.form.get('alevel3_subject') or '').strip()
+        a3_grade = (request.form.get('alevel3_grade') or '').strip()
+        a3_status = (request.form.get('alevel3_status') or '').strip()
+        g_maths_grade = (request.form.get('gcse_maths_grade') or '').strip()
+        g_maths_status = (request.form.get('gcse_maths_status') or '').strip()
+        g_eng_grade = (request.form.get('gcse_english_grade') or '').strip()
+        g_eng_status = (request.form.get('gcse_english_status') or '').strip()
+        g_sci_grade = (request.form.get('gcse_science_grade') or '').strip()
+        g_sci_status = (request.form.get('gcse_science_status') or '').strip()
+        # Checkboxes (yes/no groups) – treat *_yes checked as True
+        tutoring_experience = True if request.form.get('tutoring_experience_yes') else False
+        uk_work_eligible = True if request.form.get('uk_work_eligible_yes') else False
+        branches = [b for b in request.form.getlist('branches') if b in BRANCH_CHOICES()]
+        tutor_subjects = [s for s in request.form.getlist('subjects') if s in SUBJECTS]
+        heard_about = (request.form.get('heard_about') or '').strip()
+        # CV file (required)
+        cv_file = request.files.get('cv_file')
+
+        # Minimal validation
+        errors = []
+        if not first_name:
+            errors.append('First name is required.')
+        if not last_name:
+            errors.append('Last name is required.')
+        if not email:
+            errors.append('Email is required.')
+        if email and confirm_email and (email.lower() != confirm_email.lower()):
+            errors.append('Email and Confirm email must match.')
+        if not phone:
+            errors.append('Phone number is required.')
+        if not address_line1:
+            errors.append('First line of address is required.')
+        if not city:
+            errors.append('City is required.')
+        if not postcode:
+            errors.append('Postcode is required.')
+        # Education
+        if not university:
+            errors.append('University is required.')
+        if not study_year_raw:
+            errors.append('Current year of study is required.')
+        else:
+            try:
+                sy = int(study_year_raw)
+                if sy < 1 or sy > 10:
+                    errors.append('Current year of study must be a whole number between 1 and 10.')
+            except Exception:
+                errors.append('Current year of study must be a whole number (e.g., 1, 2, 3).')
+        if not course_name:
+            errors.append('Name of course is required.')
+        # A levels (all three required as per specification)
+        if not a1_subject or not a1_grade or not a1_status:
+            errors.append('All fields for A Level Subject 1 are required.')
+        if not a2_subject or not a2_grade or not a2_status:
+            errors.append('All fields for A Level Subject 2 are required.')
+        if not a3_subject or not a3_grade or not a3_status:
+            errors.append('All fields for A Level Subject 3 are required.')
+        # GCSE
+        if not g_maths_grade or not g_maths_status:
+            errors.append('GCSE Maths grade and status are required.')
+        if not g_eng_grade or not g_eng_status:
+            errors.append('GCSE English grade and status are required.')
+        if not g_sci_grade or not g_sci_status:
+            errors.append('GCSE Science grade and status are required.')
+        # Experience/Eligibility selections must be explicit
+        if not (request.form.get('tutoring_experience_yes') or request.form.get('tutoring_experience_no')):
+            errors.append('Please indicate if you have tutoring experience (Yes/No).')
+        if not (request.form.get('uk_work_eligible_yes') or request.form.get('uk_work_eligible_no')):
+            errors.append('Please indicate if you are eligible to work in the UK (Yes/No).')
+        if not branches:
+            errors.append('Please select at least one preferred branch.')
+        if not tutor_subjects:
+            errors.append('Please select at least one subject you can tutor.')
+        if not heard_about:
+            errors.append('Please tell us how you heard about us.')
+        # CV validation (required, PDF/DOC/DOCX)
+        def _cv_valid(f):
+            try:
+                ext = os.path.splitext(f.filename)[1].lower()
+                return ext in {'.pdf', '.doc', '.docx'}
+            except Exception:
+                return False
+        if not (cv_file and getattr(cv_file, 'filename', None)):
+            errors.append('Please upload your CV (PDF or DOCX).')
+        elif not _cv_valid(cv_file):
+            errors.append('CV must be a PDF or DOCX/DOC file.')
+
+        if errors:
+            for e in errors:
+                flash(e, 'warning')
+            return render_template('public/job_application.html', branch_choices=BRANCH_CHOICES(), subject_choices=SUBJECTS)
+
+        # Save CV to static/uploads (returns relative path under static)
+        cv_rel = None
+        try:
+            if cv_file and getattr(cv_file, 'filename', None):
+                ext = os.path.splitext(cv_file.filename)[1].lower()
+                if ext in {'.pdf', '.doc', '.docx'}:
+                    fname = f"cv_{uuid4().hex}{ext}"
+                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    path = os.path.join(upload_dir, fname)
+                    cv_file.save(path)
+                    cv_rel = f"uploads/{fname}"
+        except Exception as _cv_exc:
+            app.logger.warning('Failed to save CV file: %s', _cv_exc)
+
+        ja = JobApplication(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            phone=phone,
+            address_line1=address_line1,
+            city=city,
+            postcode=postcode,
+            cv_path=cv_rel,
+            university=university,
+            study_year=str(sy) if 'sy' in locals() else study_year_raw,
+            course_name=course_name,
+            alevel1_subject=a1_subject,
+            alevel1_grade=a1_grade,
+            alevel1_status=a1_status,
+            alevel2_subject=a2_subject,
+            alevel2_grade=a2_grade,
+            alevel2_status=a2_status,
+            alevel3_subject=a3_subject,
+            alevel3_grade=a3_grade,
+            alevel3_status=a3_status,
+            gcse_maths_grade=g_maths_grade,
+            gcse_maths_status=g_maths_status,
+            gcse_english_grade=g_eng_grade,
+            gcse_english_status=g_eng_status,
+            gcse_science_grade=g_sci_grade,
+            gcse_science_status=g_sci_status,
+            tutoring_experience=bool(tutoring_experience),
+            uk_work_eligible=bool(uk_work_eligible),
+            branches=','.join(sorted(set(branches))),
+            subjects=','.join(sorted(set(tutor_subjects))),
+            heard_about=heard_about
+        )
+        try:
+            db.session.add(ja)
+            db.session.commit()
+            # Send branded confirmation email from the recruitment email setting if configured
+            try:
+                from email_utils import (
+                    build_job_application_confirmation_email,
+                    send_recruitment_email)
+                subj, html = build_job_application_confirmation_email(ja)
+                # Always send job-related emails using the 'recruitment' EmailSetting
+                send_recruitment_email(ja.email, subj, html)
+            except Exception as mail_exc:  # pragma: no cover - do not block UX on email failures
+                app.logger.warning('Job application confirmation email failed for %s: %s', ja.email, mail_exc)
+            flash('Thank you. Your application has been submitted.', 'success')
+            return redirect(url_for('jobs_apply'))
+        except Exception as exc:
+            db.session.rollback()
+            flash('Failed to submit application. Please try again later.', 'danger')
+            app.logger.exception('Job application submit failed: %s', exc)
+            return render_template('public/job_application.html', branch_choices=BRANCH_CHOICES(), subject_choices=SUBJECTS)
+
+    # GET
+    return render_template('public/job_application.html', branch_choices=BRANCH_CHOICES(), subject_choices=SUBJECTS)
+
+
+# ---------------- Recruitment Applications (Admin) ---------------- #
+def _ordinal(n: int) -> str:
+    try:
+        return "%d%s" % (n, "tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
+    except Exception:
+        return str(n)
+
+def _compute_upcoming_interview_slots() -> list[tuple[str, list[str]]]:
+    """Return grouped interview slots for next Wed/Fri/Sat/Sun.
+
+    Each item: (day_heading, ["Friday, 24th October 2025 at 10:30 AM", ...])
+    """
+    try:
+        today = date.today()
+    except Exception:
+        from datetime import datetime as _dt
+        today = _dt.utcnow().date()
+    # Map weekday index: Monday=0 .. Sunday=6
+    target_days = [2, 4, 5, 6]  # Wed, Fri, Sat, Sun
+    times = [(10,30), (14,30), (17,0)]
+    groups: list[tuple[str, list[str]]] = []
+    for wd in target_days:
+        # find next date >= today that matches weekday wd
+        offset = (wd - today.weekday()) % 7
+        if offset == 0:
+            offset = 7
+        d = today + timedelta(days=offset)
+        day_label = d.strftime('%A')
+        date_label = f"{_ordinal(d.day)} {d.strftime('%B %Y')}"
+        lines = []
+        for hh, mm in times:
+            tm = datetime(d.year, d.month, d.day, hh, mm)
+            lines.append(f"{day_label}, {date_label} at {tm.strftime('%I:%M %p').lstrip('0')}")
+        groups.append((day_label, lines))
+    return groups
+
+
+@app.route('/recruitment/applications')
+@login_required
+@permission_required('manage_recruitment')
+def recruitment_applications_index():
+    """List job applications with filters and pagination hooks."""
+    from models import JobApplication
+    q = (request.args.get('q') or '').strip().lower()
+    statuses = request.args.getlist('status')
+    branch = (request.args.get('branch') or '').strip()
+    university = (request.args.get('university') or '').strip()
+    study_year = (request.args.get('study_year') or '').strip()
+
+    query = JobApplication.query
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (JobApplication.first_name.ilike(like)) |
+            (JobApplication.last_name.ilike(like)) |
+            (JobApplication.email.ilike(like)) |
+            (JobApplication.phone.ilike(like)) |
+            (JobApplication.university.ilike(like))
+        )
+    if statuses:
+        query = query.filter(JobApplication.status.in_(statuses))
+    if branch:
+        # CSV contains branch values; do a LIKE match
+        likeb = f"%{branch}%"
+        query = query.filter(JobApplication.branches.ilike(likeb))
+    if university:
+        query = query.filter(JobApplication.university == university)
+    if study_year:
+        query = query.filter(JobApplication.study_year == study_year)
+    query = query.order_by(JobApplication.created_at.desc())
+    apps = query.all()
+
+    # Filter options
+    try:
+        branches = BRANCH_CHOICES()
+    except Exception:
+        branches = []
+    universities = [u[0] for u in db.session.query(JobApplication.university).filter(JobApplication.university.isnot(None)).distinct().order_by(JobApplication.university.asc()).all()]
+    return render_template('recruitment/applications/index.html', apps=apps, branches=branches, universities=universities, active_statuses=statuses, active_branch=branch, active_university=university, active_study_year=study_year)
+
+
+@app.route('/recruitment/applications/bulk', methods=['POST'])
+@login_required
+@permission_required('manage_recruitment')
+def recruitment_applications_bulk():
+    from models import JobApplication
+    ids = request.form.getlist('ids')
+    action = (request.form.get('action') or '').strip()
+    if not ids or not action:
+        flash('Select at least one application and a bulk action.', 'warning')
+        return redirect(url_for('recruitment_applications_index'))
+    q = JobApplication.query.filter(JobApplication.id.in_([int(i) for i in ids]))
+    updated = 0
+    invited = 0
+    for a in q.all():
+        try:
+            if action == 'mark_reviewed':
+                a.status = 'Reviewed'
+            elif action == 'reject':
+                a.status = 'Rejected'
+            elif action == 'select':
+                a.status = 'Selected'
+            elif action == 'onboard':
+                a.status = 'Onboarded'
+            elif action == 'invite':
+                # Build and send invitation email (branded, via Recruitment)
+                slots = _compute_upcoming_interview_slots()
+                subject, html = build_interview_invitation_email(a, slots)
+                try:
+                    send_recruitment_email(a.email, subject, html)
+                    a.status = 'Invited for Interview'
+                    invited += 1
+                except Exception as exc:
+                    app.logger.warning('Failed to send invite to %s: %s', a.email, exc)
+                    # still mark reviewed to indicate action taken
+                    a.status = 'Reviewed'
+            else:
+                continue
+            a.updated_at = datetime.utcnow()
+            db.session.add(a)
+            updated += 1
+        except Exception:
+            continue
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    msg = f"Updated {updated} application(s)."
+    if invited:
+        msg += f" Sent {invited} invitation(s)."
+    flash(msg, 'success')
+    return redirect(url_for('recruitment_applications_index'))
+
+
+@app.route('/recruitment/applications/<int:aid>')
+@login_required
+@permission_required('manage_recruitment')
+def recruitment_application_detail(aid: int):
+    from models import JobApplication
+    a = JobApplication.query.get_or_404(aid)
+    return render_template('recruitment/applications/detail.html', a=a)
+
+
+@app.route('/recruitment/applications/<int:aid>/invite', methods=['POST'])
+@login_required
+@permission_required('manage_recruitment')
+def recruitment_application_invite(aid: int):
+    from models import JobApplication
+    a = JobApplication.query.get_or_404(aid)
+    slots = _compute_upcoming_interview_slots()
+    subject, html = build_interview_invitation_email(a, slots)
+    try:
+        send_recruitment_email(a.email, subject, html)
+        a.status = 'Invited for Interview'
+        a.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash('Invitation sent.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash('Failed to send invitation email.', 'danger')
+        app.logger.warning('Invite send failed for %s: %s', a.email, exc)
+    return redirect(url_for('recruitment_application_detail', aid=aid))
+
+
+@app.route('/recruitment/dashboard')
+@login_required
+@permission_required('manage_recruitment')
+def recruitment_dashboard():
+    from sqlalchemy import func
+
+    from models import JobApplication
+
+    # Top-level counts
+    total = JobApplication.query.count()
+    by_status_rows = db.session.query(JobApplication.status, func.count()).group_by(JobApplication.status).all()
+    by_status = { (k or 'Pending Review'): v for k, v in by_status_rows }
+    # Last 30 days
+    try:
+        since_30 = datetime.now(timezone.utc) - timedelta(days=30)
+    except Exception:
+        since_30 = datetime.utcnow() - timedelta(days=30)
+    last30_count = JobApplication.query.filter(JobApplication.created_at >= since_30).count()
+    invited = by_status.get('Invited for Interview', 0)
+    selected = by_status.get('Selected', 0)
+    onboarded = by_status.get('Onboarded', 0)
+    reviewed = by_status.get('Reviewed', 0)
+    # Monthly trend (last 12 months)
+    labels = []
+    submitted_series = []
+    invited_series = []
+    selected_series = []
+    onboarded_series = []
+    from calendar import month_name
+
+    # Determine 12-month window ending current month
+    today = date.today()
+    months = []
+    y = today.year; m = today.month
+    for _ in range(12):
+        months.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12; y -= 1
+    months.reverse()
+    for y, m in months:
+        labels.append(f"{month_name[m]} {y}")
+        start = datetime(y, m, 1)
+        if m == 12:
+            end = datetime(y+1, 1, 1)
+        else:
+            end = datetime(y, m+1, 1)
+        c_total = JobApplication.query.filter(JobApplication.created_at >= start, JobApplication.created_at < end).count()
+        c_invited = JobApplication.query.filter(JobApplication.created_at >= start, JobApplication.created_at < end, JobApplication.status == 'Invited for Interview').count()
+        c_selected = JobApplication.query.filter(JobApplication.created_at >= start, JobApplication.created_at < end, JobApplication.status == 'Selected').count()
+        c_onboarded = JobApplication.query.filter(JobApplication.created_at >= start, JobApplication.created_at < end, JobApplication.status == 'Onboarded').count()
+        submitted_series.append(c_total)
+        invited_series.append(c_invited)
+        selected_series.append(c_selected)
+        onboarded_series.append(c_onboarded)
+
+    # Branch distribution (count appearances of each branch token)
+    branch_counts = {}
+    for b in (BRANCH_CHOICES() or []):
+        branch_counts[b] = 0
+    for a in JobApplication.query.all():
+        try:
+            for b in (a.branches or '').split(','):
+                bt = b.strip()
+                if not bt:
+                    continue
+                branch_counts[bt] = branch_counts.get(bt, 0) + 1
+        except Exception:
+            continue
+    # Top universities and subjects
+    uni_rows = db.session.query(JobApplication.university, func.count()).filter(JobApplication.university.isnot(None)).group_by(JobApplication.university).order_by(func.count().desc()).limit(8).all()
+    subject_counts = {}
+    for a in JobApplication.query.all():
+        try:
+            for s in (a.subjects or '').split(','):
+                st = s.strip()
+                if st:
+                    subject_counts[st] = subject_counts.get(st, 0) + 1
+        except Exception:
+            continue
+    top_subjects = sorted(subject_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    kpis = {
+        'total': total,
+        'last30': last30_count,
+        'reviewed': reviewed,
+        'invited': invited,
+        'selected': selected,
+        'onboarded': onboarded,
+        'pending': by_status.get('Pending Review', 0),
+        'rejected': by_status.get('Rejected', 0),
+    }
+    charts = {
+        'labels': labels,
+        'submitted': submitted_series,
+        'invited': invited_series,
+        'selected': selected_series,
+        'onboarded': onboarded_series,
+        'status_labels': list(by_status.keys()),
+        'status_values': list(by_status.values()),
+        'branch_labels': list(branch_counts.keys()),
+        'branch_values': list(branch_counts.values()),
+        'top_universities': [(u or '—', c) for (u, c) in uni_rows],
+        'top_subjects': top_subjects,
+    }
+    return render_template('recruitment/dashboard.html', kpis=kpis, charts=charts)
 
 
 @app.route('/student-concerns')

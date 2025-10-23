@@ -1,0 +1,134 @@
+{% extends 'base.html' %} {% from 'components/forms_macros.html' import
+csrf_field %} {% block title %}Application #{{ a.id }}{% endblock %} {% block
+page_title %}Application #{{ a.id }} – {{ a.first_name }} {{ a.last_name }}{%
+endblock %} {% block content %}
+<div class="max-w-4xl mx-auto space-y-4">
+  <div class="soft-card p-4 flex items-center justify-between">
+    <div>
+      <div class="text-sm text-slate-500">
+        Submitted {{ a.created_at|fmt_datetime }}
+      </div>
+      <div class="text-lg font-semibold">
+        Status: {{ a.status or 'Pending Review' }}
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <form
+        method="post"
+        action="{{ url_for('recruitment_application_invite', aid=a.id) }}"
+      >
+        {{ csrf_field() }}
+        <button class="soft-btn">Invite for Interview</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="soft-card p-4">
+    <h2 class="font-semibold mb-2">Contact</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div>
+        <span class="text-slate-500">Name</span>
+        <div>{{ a.first_name }} {{ a.last_name }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">Email</span>
+        <div>{{ a.email }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">Phone</span>
+        <div>{{ a.phone }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">Address</span>
+        <div>{{ a.address_line1 }}, {{ a.city }} {{ a.postcode }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">Branches</span>
+        <div>{{ a.branches }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">Heard about us</span>
+        <div>{{ a.heard_about }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">CV</span>
+        {% if a.cv_path %}
+        <a
+          class="link"
+          href="{{ url_for('static', filename=a.cv_path) }}"
+          target="_blank"
+          >Download CV</a
+        >
+        {% else %}
+        <span class="text-slate-400">Not provided</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="soft-card p-4">
+    <h2 class="font-semibold mb-2">Education</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div>
+        <span class="text-slate-500">University</span>
+        <div>{{ a.university }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">Year of study</span>
+        <div>{{ a.study_year }}</div>
+      </div>
+      <div class="md:col-span-2">
+        <span class="text-slate-500">Course</span>
+        <div>{{ a.course_name }}</div>
+      </div>
+    </div>
+    <div class="mt-3">
+      <h3 class="font-medium">A Levels</h3>
+      <ul class="list-disc pl-5 text-sm">
+        <li>
+          {{ a.alevel1_subject }} — {{ a.alevel1_grade }} ({{ a.alevel1_status
+          }})
+        </li>
+        <li>
+          {{ a.alevel2_subject }} — {{ a.alevel2_grade }} ({{ a.alevel2_status
+          }})
+        </li>
+        <li>
+          {{ a.alevel3_subject }} — {{ a.alevel3_grade }} ({{ a.alevel3_status
+          }})
+        </li>
+      </ul>
+    </div>
+    <div class="mt-3">
+      <h3 class="font-medium">GCSE</h3>
+      <ul class="list-disc pl-5 text-sm">
+        <li>Maths: {{ a.gcse_maths_grade }} ({{ a.gcse_maths_status }})</li>
+        <li>
+          English: {{ a.gcse_english_grade }} ({{ a.gcse_english_status }})
+        </li>
+        <li>
+          Science: {{ a.gcse_science_grade }} ({{ a.gcse_science_status }})
+        </li>
+      </ul>
+    </div>
+    <div class="mt-3">
+      <h3 class="font-medium">Subjects they can tutor</h3>
+      <div class="text-sm">{{ a.subjects }}</div>
+    </div>
+  </div>
+
+  <div class="soft-card p-4">
+    <h2 class="font-semibold mb-2">Experience & Eligibility</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div>
+        <span class="text-slate-500">Tutoring experience</span>
+        <div>{{ 'Yes' if a.tutoring_experience else 'No' }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500">Eligible to work in UK</span>
+        <div>{{ 'Yes' if a.uk_work_eligible else 'No' }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

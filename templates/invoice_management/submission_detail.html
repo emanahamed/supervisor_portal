@@ -1,0 +1,232 @@
+{% extends 'base.html' %} {% block title %}Invoice #{{ inv.id }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('invoice_submissions') }}" class="btn btn-secondary mb-3"
+  >Back</a
+>
+
+<!-- Download PDF (branded) -->
+<a
+  href="{{ url_for('invoice_submission_pdf', invoice_id=inv.id) }}"
+  class="btn btn-primary mb-3 ms-2"
+  >Download PDF</a
+>
+<button class="btn btn-outline-secondary mb-3 ms-2" onclick="window.print();">
+  Print
+</button>
+
+<h1 class="text-xl font-semibold">Invoice #{{ inv.id }}</h1>
+{% if can('manage_staff_invoices') %}
+<div class="mb-3">
+  <button
+    id="accept-btn"
+    class="btn btn-success"
+    onclick="acceptInvoice({{ inv.id }})"
+  >
+    Accept
+  </button>
+  <button
+    id="reject-btn"
+    class="btn btn-danger ms-2"
+    onclick="openRejectModal('{{ url_for('invoice_submission_reject', invoice_id=inv.id) }}')"
+  >
+    Reject
+  </button>
+</div>
+{% endif %}
+<div class="grid grid-cols-2 gap-4">
+  <div>
+    <h3 class="font-semibold">Submitted by</h3>
+    <div>{{ inv.created_by.name }}</div>
+    <div class="text-xs text-slate-500">
+      Age: {{ staff_rec.age if staff_rec and staff_rec.age is not none else
+      'N/A' }}
+    </div>
+    <div class="text-xs text-slate-500">
+      NMW band: £{{ nmw_band_amount }} ({{ nmw_band_label }})
+    </div>
+    <div class="text-xs text-slate-500">Company: {{ user_company or '' }}</div>
+    <div class="text-xs text-slate-500">
+      Department: {{ staff_department or '' }}
+    </div>
+  </div>
+  <div>
+    <h3 class="font-semibold">Invoice</h3>
+    <div>Month: {{ inv.month_year_label() }}</div>
+    <div>Amount: £{{ '%.2f'|format(inv.amount or 0) }}</div>
+    {# Status and payment badges #}
+    <div class="mt-2">
+      <span class="badge badge-status badge-{{ inv.status|lower }}"
+        >{{ inv.status }}</span
+      >
+      <span class="badge badge-payment badge-{{ inv.payment_status|lower }}"
+        >{{ inv.payment_status }}</span
+      >
+    </div>
+    <div class="mt-2 text-sm text-slate-600">
+      Bank: {{ staff_rec.bank_name or '—' }} | A/C name: {{
+      staff_rec.bank_name_on_account or '—' }} | Sort: {{
+      staff_rec.bank_sort_code or '—' }} | A/C No: {{
+      staff_rec.bank_account_number or '—' }}
+    </div>
+  </div>
+</div>
+
+<table class="w-full table-auto text-sm invoice-items">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Day</th>
+      <th>Branch</th>
+      <th>Description</th>
+      <th>Hours</th>
+      <th>Rate</th>
+      <th>Amount</th>
+      <th>Clock In</th>
+      <th>Clock Out</th>
+      <th>Hours Worked</th>
+      <th>Late?</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for it in inv.items %}
+    <tr>
+      <td>{{ it.date|fmt_date }}</td>
+      <td>{{ it.day }}</td>
+      <td>{{ it.branch }}</td>
+      <td>{{ it.description }}</td>
+      <td>{{ it.hours }}</td>
+      <td>£{{ '%.2f'|format(it.rate or 0) }}</td>
+      <td>£{{ '%.2f'|format(it.amount or 0) }}</td>
+      <td>{{ attendance_map.get(it.id, {}).get('check_in') or '' }}</td>
+      <td>{{ attendance_map.get(it.id, {}).get('check_out') or '' }}</td>
+      <td>{{ attendance_map.get(it.id, {}).get('hours') or '' }}</td>
+      <td>{{ attendance_map.get(it.id, {}).get('late') or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# Totals and branch breakdown placed at the bottom of the detail view #}
+<div class="mt-6">
+  {% if branch_breakdown %}
+  <div class="mt-4">
+    <h4 class="font-semibold">Pay breakdown by branch</h4>
+    <table class="w-full text-sm mt-2 table-auto">
+      <thead>
+        <tr>
+          <th class="text-left px-2 py-1">Branch</th>
+          <th class="text-right px-2 py-1">Total Hours</th>
+          <th class="text-right px-2 py-1">Total Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in branch_breakdown %}
+        <tr>
+          <td class="px-2 py-1">{{ b.branch }}</td>
+          <td class="text-right px-2 py-1">
+            {{ '%.2f'|format(b.hours or 0) }}
+          </td>
+          <td class="text-right px-2 py-1">
+            £{{ '%.2f'|format(b.amount or 0) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="mt-4">
+    <div>
+      <strong class="text-lg">Total hours:</strong>
+      <span class="total-hours text-xl font-bold"
+        >{{ '%.2f'|format(total_hours or 0) }}</span
+      >
+    </div>
+    <div>
+      <strong class="text-lg">Total amount:</strong>
+      <span class="total-amount text-2xl font-bold"
+        >£{{ '%.2f'|format(total_amount or 0) }}</span
+      >
+    </div>
+  </div>
+</div>
+
+{# Include reject modal partial #} {% include
+'invoice_management/_reject_modal.html' %}
+
+<script>
+  function acceptInvoice(id) {
+    if (!confirm("Mark this invoice as Approved?")) return;
+    fetch(
+      `{{ url_for('invoice_submission_accept', invoice_id=0) }}`.replace(
+        "0",
+        id
+      ),
+      { method: "POST", headers: { "X-CSRFToken": "{{ csrf_token() }}" } }
+    )
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) {
+          location.reload();
+        } else {
+          alert("Failed to accept");
+        }
+      })
+      .catch((e) => alert("Failed to accept"));
+  }
+</script>
+
+<style>
+  .badge {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: #fff;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .badge-status.badge-pending {
+    background: #f59e0b;
+  }
+  .badge-status.badge-approved {
+    background: #10b981;
+  }
+  .badge-status.badge-rejected {
+    background: #ef4444;
+  }
+  .badge-payment.badge-paid {
+    background: #10b981;
+  }
+  .badge-payment.badge-unpaid {
+    background: #ef4444;
+  }
+  .invoice-items th {
+    background: #f8fafc;
+    text-align: left;
+    padding: 8px;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  .invoice-items td {
+    padding: 8px;
+    border-bottom: 1px solid #eef2ff;
+  }
+  .total-hours,
+  .total-amount {
+    color: #0f172a;
+  }
+  @media print {
+    /* show logo in print header */
+    body::before {
+      content: "";
+      display: block;
+      height: 80px;
+      background: url("{{ url_for('static', filename='img/excel tutors logo 2023.png') }}")
+        no-repeat left center;
+      background-size: 160px 60px;
+      margin-bottom: 12px;
+    }
+  }
+</style>
+
+{% endblock %}

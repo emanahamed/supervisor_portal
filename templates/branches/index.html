@@ -1,0 +1,47 @@
+{% extends 'base.html' %} {% block title %}Branches{% endblock %} {% block
+content %}
+<h1 class="text-xl font-semibold mb-4">Branches</h1>
+<div class="mb-4">
+  <a class="btn btn-primary" href="{{ url_for('branch_new') }}"
+    >Create branch</a
+  >
+</div>
+<table class="min-w-full bg-white border">
+  <thead>
+    <tr class="text-left text-sm bg-gray-50">
+      <th class="px-3 py-2">Name</th>
+      <th class="px-3 py-2">Address</th>
+      <th class="px-3 py-2">Phone</th>
+      <th class="px-3 py-2">Email</th>
+      <th class="px-3 py-2">Status</th>
+      <th class="px-3 py-2">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in branches %}
+    <tr class="border-t">
+      <td class="px-3 py-2">{{ b.name }}</td>
+      <td class="px-3 py-2">{{ b.address or '-' }}</td>
+      <td class="px-3 py-2">{{ b.phone or '-' }}</td>
+      <td class="px-3 py-2">{{ b.email or '-' }}</td>
+      <td class="px-3 py-2">{{ b.status }}</td>
+      <td class="px-3 py-2">
+        <a
+          class="btn btn-sm"
+          href="{{ url_for('branch_edit', branch_id=b.id) }}"
+          >Edit</a
+        >
+        <form
+          method="post"
+          action="{{ url_for('branch_delete', branch_id=b.id) }}"
+          style="display: inline"
+        >
+          {{ csrf_field() }}
+          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

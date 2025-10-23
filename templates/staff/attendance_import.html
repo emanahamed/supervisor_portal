@@ -1,0 +1,27 @@
+{% extends 'base.html' %} {% block content %}
+<h1 class="text-xl font-semibold mb-4">Import Staff Attendance</h1>
+
+<form method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <div class="mb-4">
+    <label class="label">Branch</label>
+    <select name="branch" class="input">
+      <option value="">(none)</option>
+      {% for b in branches %}
+      <option value="{{ b }}">{{ b }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-4">
+    <label class="label">Spreadsheet (XLSX/CSV)</label>
+    <input type="file" name="file" accept=".xlsx,.xls,.csv" class="input" />
+  </div>
+  <div>
+    <button type="submit" class="btn btn-primary">Upload and Import</button>
+    <a href="{{ url_for('staff_attendance_index') }}" class="btn btn-secondary"
+      >Cancel</a
+    >
+  </div>
+</form>
+
+{% endblock %}

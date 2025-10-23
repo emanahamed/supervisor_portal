@@ -15,23 +15,14 @@ page_title %}Availability{% endblock %} {% block content %}
   </div>
 </div>
 
-{% if sync_error %}
 <div
-  class="soft-card p-3 mb-4 border-l-4 border-rose-500 bg-rose-50 text-rose-700 text-sm"
+  class="soft-card p-3 mb-4 border-l-4 border-amber-500 bg-amber-50 text-amber-700 text-xs"
 >
-  Remote sync failed: {{ sync_error }} — showing last cached data.
+  Remote sync is disabled. Manage availability locally using New/Edit. {% if
+  sync_error %}<span class="ml-2">Last error: {{ sync_error }}</span>{% endif %}
+  {% if synced_at %}<span class="ml-2">Last sync at {{ synced_at }}</span>{%
+  endif %}
 </div>
-{% else %}
-<div
-  class="soft-card p-3 mb-4 border-l-4 border-emerald-500 bg-emerald-50 text-emerald-700 text-xs flex items-center justify-between"
->
-  <span
-    >Synced {{ sync_count }} update{{ '' if sync_count==1 else 's' }} just now
-    ({{ synced_at.strftime('%H:%M:%S') }} UTC)</span
-  >
-  <span class="text-slate-400">Refresh to fetch latest.</span>
-</div>
-{% endif %}
 
 <!-- Summary Cards -->
 <div class="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4 mb-6">

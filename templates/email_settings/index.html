@@ -1,0 +1,64 @@
+{% extends 'base.html' %} {% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-semibold">Email Settings</h1>
+    <a
+      class="soft-btn soft-btn-accent"
+      href="{{ url_for('email_settings_new') }}"
+      >Create new</a
+    >
+  </div>
+
+  <div class="soft-card overflow-x-auto">
+    <table class="min-w-full bg-white border">
+      <thead>
+        <tr class="text-left text-sm bg-gray-50">
+          <th class="px-3 py-2">Name</th>
+          <th class="px-3 py-2">Provider</th>
+          <th class="px-3 py-2">Sender</th>
+          <th class="px-3 py-2">Active</th>
+          <th class="px-3 py-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr class="border-t">
+          <td class="px-3 py-2">{{ it.name }}</td>
+          <td class="px-3 py-2">{{ it.provider }}</td>
+          <td class="px-3 py-2">
+            {{ it.sender_name }} &lt;{{ it.sender_email }}&gt;
+          </td>
+          <td class="px-3 py-2">{{ 'Yes' if it.is_active else 'No' }}</td>
+          <td class="px-3 py-2">
+            <a
+              class="soft-btn text-xs"
+              href="{{ url_for('email_settings_edit', esid=it.id) }}"
+              >Edit</a
+            >
+            <form
+              method="post"
+              action="{{ url_for('email_settings_delete', esid=it.id) }}"
+              style="display: inline"
+            >
+              {{ csrf_field() }}
+              <button
+                type="submit"
+                class="soft-btn danger text-xs"
+                onclick="return confirm('Delete this setting?');"
+              >
+                Delete
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="px-3 py-6" colspan="5">No email settings configured.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

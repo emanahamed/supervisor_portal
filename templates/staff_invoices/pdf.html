@@ -1,0 +1,53 @@
+{% if print_view %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ inline_css|safe }}
+    </style>
+  </head>
+  <body class="invoice">
+    {% endif %}
+
+    <div class="invoice-container">
+      <h1>Staff Invoice #{{ inv.id }}</h1>
+      <p><strong>Name:</strong> {{ inv.name }}</p>
+      <p><strong>Month/Year:</strong> {{ inv.month_year_label() }}</p>
+      <p><strong>Status:</strong> {{ inv.status }}</p>
+      <p><strong>Total Amount:</strong> {{ '%.2f'|format(inv.amount or 0) }}</p>
+      <p>
+        <strong>Submitted:</strong> {{ inv.submitted_at or inv.created_at }}
+      </p>
+
+      <h2>Line Items</h2>
+      <table class="w-full">
+        <thead>
+          <tr>
+            <th align="left">Date</th>
+            <th align="left">Day</th>
+            <th align="right">JHours</th>
+            <th align="right">Rate</th>
+            <th align="right">Amount</th>
+            <th align="left">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for it in inv.items %}
+          <tr>
+            <td>{{ it.date|fmt_date }}</td>
+            <td>{{ it.day }}</td>
+            <td align="right">{{ '%.2f'|format(it.hours or 0) }}</td>
+            <td align="right">{{ '%.2f'|format(it.rate or 0) }}</td>
+            <td align="right">{{ '%.2f'|format(it.amount or 0) }}</td>
+            <td>{{ it.description or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if print_view %}
+  </body>
+</html>
+{% endif %}

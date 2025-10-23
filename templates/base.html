@@ -21,6 +21,10 @@
       src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1"
       type="module"
     ></script>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/invoice_buttons.css') }}"
+    />
     <script>
       tailwind.config = {
         darkMode: "class",
@@ -33,7 +37,110 @@
           },
         },
       };
+      // Simple success/info modal helper
+      window.openInfo = function (options) {
+        try {
+          const { title, message, buttonText, onClose } = options || {};
+          const tEl = document.getElementById("info-title");
+          const mEl = document.getElementById("info-message");
+          const cBtn = document.getElementById("infoCloseBtn");
+          const oBtn = document.getElementById("openInfoBtn");
+          if (tEl && title) tEl.textContent = title;
+          if (mEl && message) mEl.textContent = message;
+          if (cBtn) {
+            cBtn.textContent = buttonText || "Okay";
+            const handler = () => {
+              try {
+                if (typeof onClose === "function") onClose();
+              } finally {
+                cBtn.removeEventListener("click", handler);
+              }
+            };
+            const newBtn = cBtn.cloneNode(true);
+            cBtn.parentNode.replaceChild(newBtn, cBtn);
+            newBtn.addEventListener("click", handler);
+          }
+          if (oBtn) oBtn.click();
+        } catch (e) {
+          console.warn("openInfo failed", e);
+        }
+      };
     </script>
+
+    <!-- Global Info Dialog (success-style) -->
+    <button
+      id="openInfoBtn"
+      command="show-modal"
+      commandfor="infoDialog"
+      hidden
+    ></button>
+    <el-dialog>
+      <dialog
+        id="infoDialog"
+        aria-labelledby="info-title"
+        class="fixed inset-0 size-auto max-h-none max-w-none overflow-y-auto bg-transparent backdrop:bg-transparent"
+      >
+        <el-dialog-backdrop
+          class="fixed inset-0 bg-gray-500/50 transition-opacity data-closed:opacity-0 dark:bg-gray-900/40"
+        ></el-dialog-backdrop>
+        <div
+          tabindex="0"
+          class="flex min-h-full items-end justify-center p-4 text-center focus:outline-none sm:items-center sm:p-0"
+        >
+          <el-dialog-panel
+            class="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-sm sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95 dark:bg-gray-800 dark:outline dark:-outline-offset-1 dark:outline-white/10"
+          >
+            <div>
+              <div
+                class="mx-auto flex size-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-500/10"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                  class="size-6 text-green-600 dark:text-green-400"
+                >
+                  <path
+                    d="m4.5 12.75 6 6 9-13.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+              <div class="mt-3 text-center sm:mt-5">
+                <h3
+                  id="info-title"
+                  class="text-base font-semibold text-gray-900 dark:text-white"
+                >
+                  Success
+                </h3>
+                <div class="mt-2">
+                  <p
+                    id="info-message"
+                    class="text-sm text-gray-600 dark:text-gray-300"
+                  >
+                    Your action was successful.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="mt-5 sm:mt-6">
+              <button
+                type="button"
+                id="infoCloseBtn"
+                command="close"
+                commandfor="infoDialog"
+                class="inline-flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:shadow-none dark:hover:bg-indigo-400 dark:focus-visible:outline-indigo-500"
+              >
+                Close
+              </button>
+            </div>
+          </el-dialog-panel>
+        </div>
+      </dialog>
+    </el-dialog>
     <script
       src="{{ url_for('static', filename='js/tables.js') }}"
       defer
@@ -281,6 +388,32 @@
       .hover-accent:hover {
         color: var(--c-hover-pink) !important;
       }
+      /* Icon action buttons: show label on hover/focus */
+      .icon-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.35rem;
+        border-radius: 0.375rem;
+      }
+      .icon-action:hover {
+        background: rgba(148, 163, 184, 0.15);
+      }
+      .dark .icon-action:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .icon-action .label {
+        max-width: 0;
+        opacity: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        transition: max-width 0.2s ease, opacity 0.2s ease;
+      }
+      .icon-action:hover .label,
+      .icon-action:focus-visible .label {
+        max-width: 8rem;
+        opacity: 1;
+      }
       .theme-icon {
         width: 16px;
         height: 16px;
@@ -474,6 +607,126 @@
               {% block page_subtitle %}{% endblock %}
             </div>
           </div>
+
+          <!-- Global Confirm Dialog (Tailwind Elements) -->
+          <button
+            id="openConfirmBtn"
+            command="show-modal"
+            commandfor="confirmDialog"
+            hidden
+          ></button>
+          <el-dialog>
+            <dialog
+              id="confirmDialog"
+              aria-labelledby="confirm-title"
+              class="fixed inset-0 size-auto max-h-none max-w-none overflow-y-auto bg-transparent backdrop:bg-transparent"
+            >
+              <el-dialog-backdrop
+                class="fixed inset-0 bg-gray-500/75 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in dark:bg-gray-900/50"
+              ></el-dialog-backdrop>
+
+              <div
+                tabindex="0"
+                class="flex min-h-full items-end justify-center p-4 text-center focus:outline-none sm:items-center sm:p-0"
+              >
+                <el-dialog-panel
+                  class="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-sm sm:p-6 data-closed:sm:translate-y-0 data-closed:sm:scale-95 dark:bg-gray-800 dark:outline dark:-outline-offset-1 dark:outline-white/10"
+                >
+                  <div>
+                    <div
+                      class="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-500/10"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        aria-hidden="true"
+                        class="size-6 text-amber-600 dark:text-amber-400"
+                      >
+                        <path
+                          d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div class="mt-3 text-center sm:mt-5">
+                      <h3
+                        id="confirm-title"
+                        class="text-base font-semibold text-gray-900 dark:text-white"
+                      >
+                        Confirm action
+                      </h3>
+                      <div class="mt-2">
+                        <p
+                          id="confirm-message"
+                          class="text-sm text-gray-600 dark:text-gray-300"
+                        >
+                          Are you sure?
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mt-5 sm:mt-6 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      command="close"
+                      commandfor="confirmDialog"
+                      class="inline-flex w-full justify-center rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-300 dark:bg-white/10 dark:text-white dark:shadow-none dark:hover:bg-white/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      id="confirmProceedBtn"
+                      class="inline-flex w-full justify-center rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600 dark:bg-rose-500 dark:shadow-none dark:hover:bg-rose-400 dark:focus-visible:outline-rose-500"
+                    >
+                      Confirm
+                    </button>
+                  </div>
+                </el-dialog-panel>
+              </div>
+            </dialog>
+          </el-dialog>
+
+          <script>
+            // Simple global confirmation helper
+            window.openConfirm = function (options) {
+              try {
+                const { title, message, confirmText, onConfirm } =
+                  options || {};
+                const titleEl = document.getElementById("confirm-title");
+                const msgEl = document.getElementById("confirm-message");
+                const btn = document.getElementById("confirmProceedBtn");
+                const openBtn = document.getElementById("openConfirmBtn");
+                if (titleEl && title) titleEl.textContent = title;
+                if (msgEl && message) msgEl.textContent = message;
+                if (btn) {
+                  btn.textContent = confirmText || "Confirm";
+                  const handler = async () => {
+                    try {
+                      if (typeof onConfirm === "function") await onConfirm();
+                    } finally {
+                      // Close dialog
+                      const closeBtn = document.querySelector(
+                        "[command='close'][commandfor='confirmDialog']"
+                      );
+                      if (closeBtn) closeBtn.click();
+                      btn.removeEventListener("click", handler);
+                    }
+                  };
+                  // Remove any prior handlers by cloning
+                  const newBtn = btn.cloneNode(true);
+                  btn.parentNode.replaceChild(newBtn, btn);
+                  newBtn.addEventListener("click", handler);
+                }
+                if (openBtn) openBtn.click();
+              } catch (e) {
+                console.warn("openConfirm failed", e);
+              }
+            };
+          </script>
           <div class="flex items-center gap-4 ml-auto">
             <button
               type="button"
@@ -591,6 +844,16 @@
               const d = e.detail || {};
               pushToast(d.message || "Notice", d.type || "info");
             });
+            // Convenience global function so templates/scripts can call showToast(msg, type)
+            window.showToast = function (message, type) {
+              try {
+                window.dispatchEvent(
+                  new CustomEvent("toast", {
+                    detail: { message: message, type: type || "info" },
+                  })
+                );
+              } catch (e) {}
+            };
           })();
         </script>
         {% block content %}{% endblock %} {# Error report inline form removed;
@@ -1019,24 +1282,29 @@
       })();
     </script>
     <script>
-      (function(){
-        const $=s=>document.querySelector(s); const modal=$('#versionModal'); const body=$('#versionBody');
-        const searchInput=$('#versionSearch'); const scopeSelect=$('#versionScope'); const versionIndex=$('#versionIndex');
-        const copyBtn=$('#copyCurrentVersion'); const expandAllBtn=$('#expandAll'); const collapseAllBtn=$('#collapseAll');
-        let rawChangelog=''; let sections=[];
-        function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-        function parseChangelog(md){const lines=md.split(/\n/); let current=null,buf=[],out=[]; for(const line of lines){const m=line.match(/^##\s+([0-9A-Za-z\.-]+)\s*-\s*(.+)$/); if(m){ if(current){current.markdown=buf.join('\n').trim(); out.push(current); buf=[];} current={version:m[1],date:m[2],markdown:'',node:null}; } else if(current){ buf.push(line);} } if(current){current.markdown=buf.join('\n').trim(); out.push(current);} return out; }
-        function renderInner(md){const lines=md.split(/\n/); let html='',inList=false; for(const line of lines){ if(/^-/.test(line)){ if(!inList){html+='<ul class="list-disc pl-5 mt-1 space-y-1">'; inList=true;} html+='<li>'+esc(line.replace(/^-\s*/,'').trim())+'</li>'; } else if(line.trim()===''){ if(inList){html+='</ul>'; inList=false;} } else { if(inList){html+='</ul>'; inList=false;} html+='<p class="mt-2">'+esc(line)+'</p>'; } } if(inList) html+='</ul>'; return html||'<p class="italic text-slate-400">No notes.</p>'; }
-        function buildUI(){ body.innerHTML=''; versionIndex.innerHTML='<div class="text-[10px] font-semibold text-slate-500 mb-2 uppercase tracking-wide">Versions</div>'; const scope=scopeSelect.value; const q=(searchInput.value||'').toLowerCase(); const relevant=sections.filter((s,i)=>scope==='all'||i===0); const frag=document.createDocumentFragment(); relevant.forEach(sec=>{ const hay=(sec.version+' '+sec.date+' '+sec.markdown).toLowerCase(); if(q && !hay.includes(q)) return; const wrap=document.createElement('div'); wrap.className='border border-slate-200 rounded-lg mb-4 overflow-hidden'; wrap.dataset.version=sec.version; wrap.innerHTML=`<button type="button" class="w-full flex items-center justify-between px-4 py-2 text-left bg-slate-100 hover:bg-slate-200 group" data-accordion><span class="flex items-center gap-2"><span class="font-mono text-indigo-600">v${esc(sec.version)}</span><span class="text-[10px] text-slate-500">${esc(sec.date)}</span>${sec.version==='{{ APP_VERSION }}'?'<span class=\"ml-2 px-2 py-0.5 rounded bg-indigo-600 text-white text-[10px]\">Current</span>':''}</span><span class="text-slate-500 group-hover:text-slate-700 transition-transform" data-chevron>▾</span></button><div class="p-4 pt-2 hidden" data-panel>${renderInner(sec.markdown)}</div>`; frag.appendChild(wrap); sec.node=wrap; }); body.appendChild(frag); sections.forEach(sec=>{ const btn=document.createElement('button'); btn.type='button'; btn.className='block w-full text-left px-2 py-1 rounded hover:bg-indigo-100 hover:text-indigo-700 truncate'; btn.textContent='v'+sec.version; btn.dataset.jump=sec.version; versionIndex.appendChild(btn); }); }
-        function openModal(){ if(!modal) return; modal.classList.remove('hidden'); modal.classList.add('flex'); if(!rawChangelog){ body.innerHTML='<div class="animate-pulse text-slate-400">Loading…</div>'; fetch('{{ url_for('version_history') }}').then(r=>r.json()).then(data=>{ rawChangelog=data.changelog||''; sections=parseChangelog(rawChangelog); buildUI(); }).catch(err=>{ body.innerHTML='<div class="text-red-600">Failed to load: '+esc(String(err))+'</div>'; }); } else { buildUI(); } setTimeout(()=> searchInput&&searchInput.focus(),120); }
-        function closeModal(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
-        document.addEventListener('click',e=>{ if(e.target.matches('#versionLink')||e.target.matches('#versionLinkMobile')) openModal(); if(e.target.hasAttribute('data-v-close')) closeModal(); const acc=e.target.closest('[data-accordion]'); if(acc){ const panel=acc.parentElement.querySelector('[data-panel]'); const chev=acc.querySelector('[data-chevron]'); panel.classList.toggle('hidden'); chev.style.transform=panel.classList.contains('hidden')?'rotate(0deg)':'rotate(180deg)'; } if(e.target.dataset.jump){ const sec=body.querySelector('[data-version="'+e.target.dataset.jump+'"]'); if(sec){ sec.scrollIntoView({behavior:'smooth',block:'start'}); } } });
-        document.addEventListener('keydown',e=>{ if(modal.classList.contains('hidden')) return; if(e.key==='Escape') closeModal(); if(e.key==='/' && document.activeElement!==searchInput){ e.preventDefault(); searchInput.focus(); } if(e.key==='Enter' && document.activeElement===searchInput){ const first=body.querySelector('[data-panel].hidden'); if(first){ first.classList.remove('hidden'); const chev=first.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(180deg)'; } } });
-        searchInput&&searchInput.addEventListener('input',buildUI); scopeSelect&&scopeSelect.addEventListener('change',buildUI);
-        copyBtn&&copyBtn.addEventListener('click',()=>{ const current=sections.find(s=>s.version==='{{ APP_VERSION }}'); if(!current) return; const text=`Version ${current.version} - ${current.date}\n\n${current.markdown}`; navigator.clipboard.writeText(text).then(()=>{ copyBtn.textContent='Copied'; setTimeout(()=>copyBtn.textContent='Copy',1500); }); });
-        expandAllBtn&&expandAllBtn.addEventListener('click',()=>{ body.querySelectorAll('[data-panel]').forEach(p=>{ if(p.classList.contains('hidden')){ p.classList.remove('hidden'); const chev=p.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(180deg)'; } }); });
-        collapseAllBtn&&collapseAllBtn.addEventListener('click',()=>{ body.querySelectorAll('[data-panel]').forEach(p=>{ if(!p.classList.contains('hidden')){ p.classList.add('hidden'); const chev=p.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(0deg)'; } }); });
-      })();
+        (function(){
+          const $=s=>document.querySelector(s); const modal=$('#versionModal'); const body=$('#versionBody');
+          const searchInput=$('#versionSearch'); const scopeSelect=$('#versionScope'); const versionIndex=$('#versionIndex');
+          const copyBtn=$('#copyCurrentVersion'); const expandAllBtn=$('#expandAll'); const collapseAllBtn=$('#collapseAll');
+          let rawChangelog=''; let sections=[];
+          function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+          function parseChangelog(md){const lines=md.split(/\n/); let current=null,buf=[],out=[]; for(const line of lines){const m=line.match(/^##\s+([0-9A-Za-z\.-]+)\s*-\s*(.+)$/); if(m){ if(current){current.markdown=buf.join('\n').trim(); out.push(current); buf=[];} current={version:m[1],date:m[2],markdown:'',node:null}; } else if(current){ buf.push(line);} } if(current){current.markdown=buf.join('\n').trim(); out.push(current);} return out; }
+          function renderInner(md){const lines=md.split(/\n/); let html='',inList=false; for(const line of lines){ if(/^-/.test(line)){ if(!inList){html+='<ul class="list-disc pl-5 mt-1 space-y-1">'; inList=true;} html+='<li>'+esc(line.replace(/^-\s*/,'').trim())+'</li>'; } else if(line.trim()===''){ if(inList){html+='</ul>'; inList=false;} } else { if(inList){html+='</ul>'; inList=false;} html+='<p class="mt-2">'+esc(line)+'</p>'; } } if(inList) html+='</ul>'; return html||'<p class="italic text-slate-400">No notes.</p>'; }
+          function buildUI(){ body.innerHTML=''; versionIndex.innerHTML='<div class="text-[10px] font-semibold text-slate-500 mb-2 uppercase tracking-wide">Versions</div>'; const scope=scopeSelect.value; const q=(searchInput.value||'').toLowerCase(); const relevant=sections.filter((s,i)=>scope==='all'||i===0); const frag=document.createDocumentFragment(); relevant.forEach(sec=>{ const hay=(sec.version+' '+sec.date+' '+sec.markdown).toLowerCase(); if(q && !hay.includes(q)) return; const wrap=document.createElement('div'); wrap.className='border border-slate-200 rounded-lg mb-4 overflow-hidden'; wrap.dataset.version=sec.version; wrap.innerHTML=`<button type="button" class="w-full flex items-center justify-between px-4 py-2 text-left bg-slate-100 hover:bg-slate-200 group" data-accordion><span class="flex items-center gap-2"><span class="font-mono text-indigo-600">v${esc(sec.version)}</span><span class="text-[10px] text-slate-500">${esc(sec.date)}</span>${sec.version==='{{ APP_VERSION }}'?'<span class=\"ml-2 px-2 py-0.5 rounded bg-indigo-600 text-white text-[10px]\">Current</span>':''}</span><span class="text-slate-500 group-hover:text-slate-700 transition-transform" data-chevron>▾</span></button><div class="p-4 pt-2 hidden" data-panel>${renderInner(sec.markdown)}</div>`; frag.appendChild(wrap); sec.node=wrap; }); body.appendChild(frag); sections.forEach(sec=>{ const btn=document.createElement('button'); btn.type='button'; btn.className='block w-full text-left px-2 py-1 rounded hover:bg-indigo-100 hover:text-indigo-700 truncate'; btn.textContent='v'+sec.version; btn.dataset.jump=sec.version; versionIndex.appendChild(btn); }); }
+      function openModal(){ if(!modal) return; modal.classList.remove('hidden'); modal.classList.add('flex'); if(!rawChangelog){ body.innerHTML='<div class="animate-pulse text-slate-400">Loading…</div>'; fetch('{{ url_for('api_changelog') }}', { credentials: 'same-origin' }).then(async r=>{ if(!r.ok){ // Try to parse JSON error body, otherwise throw
+        try{ const errBody = await r.json(); throw new Error((errBody && errBody.error) ? errBody.error : r.status + ' ' + r.statusText); }catch(_){ throw new Error(r.status + ' ' + r.statusText); } }
+        return r.json(); }).then(data=>{ // Build a markdown-like string from structured entries for the existing parser
+          const entries = data.entries || [];
+          rawChangelog = entries.map(e => '## '+(e.version||'') + (e.date? ' - '+e.date : '') + '\n' + (e.body||'')).join('\n\n');
+          sections=parseChangelog(rawChangelog); buildUI(); }).catch(err=>{ body.innerHTML='<div class="text-red-600">Failed to load: '+esc(String(err))+'</div>'; }); } else { buildUI(); } setTimeout(()=> searchInput&&searchInput.focus(),120); }
+          function closeModal(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
+          document.addEventListener('click',e=>{ if(e.target.matches('#versionLink')||e.target.matches('#versionLinkMobile')) openModal(); if(e.target.hasAttribute('data-v-close')) closeModal(); const acc=e.target.closest('[data-accordion]'); if(acc){ const panel=acc.parentElement.querySelector('[data-panel]'); const chev=acc.querySelector('[data-chevron]'); panel.classList.toggle('hidden'); chev.style.transform=panel.classList.contains('hidden')?'rotate(0deg)':'rotate(180deg)'; } if(e.target.dataset.jump){ const sec=body.querySelector('[data-version="'+e.target.dataset.jump+'"]'); if(sec){ sec.scrollIntoView({behavior:'smooth',block:'start'}); } } });
+          document.addEventListener('keydown',e=>{ if(modal.classList.contains('hidden')) return; if(e.key==='Escape') closeModal(); if(e.key==='/' && document.activeElement!==searchInput){ e.preventDefault(); searchInput.focus(); } if(e.key==='Enter' && document.activeElement===searchInput){ const first=body.querySelector('[data-panel].hidden'); if(first){ first.classList.remove('hidden'); const chev=first.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(180deg)'; } } });
+          searchInput&&searchInput.addEventListener('input',buildUI); scopeSelect&&scopeSelect.addEventListener('change',buildUI);
+          copyBtn&&copyBtn.addEventListener('click',()=>{ const current=sections.find(s=>s.version==='{{ APP_VERSION }}'); if(!current) return; const text=`Version ${current.version} - ${current.date}\n\n${current.markdown}`; navigator.clipboard.writeText(text).then(()=>{ copyBtn.textContent='Copied'; setTimeout(()=>copyBtn.textContent='Copy',1500); }); });
+          expandAllBtn&&expandAllBtn.addEventListener('click',()=>{ body.querySelectorAll('[data-panel]').forEach(p=>{ if(p.classList.contains('hidden')){ p.classList.remove('hidden'); const chev=p.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(180deg)'; } }); });
+          collapseAllBtn&&collapseAllBtn.addEventListener('click',()=>{ body.querySelectorAll('[data-panel]').forEach(p=>{ if(!p.classList.contains('hidden')){ p.classList.add('hidden'); const chev=p.parentElement.querySelector('[data-chevron]'); if(chev) chev.style.transform='rotate(0deg)'; } }); });
+        })();
     </script>
     <script>
       (function () {

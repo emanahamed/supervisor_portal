@@ -1,0 +1,50 @@
+<div
+  id="attendance-import-modal"
+  class="modal hidden fixed inset-0 z-50 flex items-center justify-center"
+>
+  <div class="modal-backdrop absolute inset-0 bg-black opacity-50"></div>
+  <div
+    class="modal-panel relative bg-white rounded-lg shadow-lg w-full max-w-2xl p-6"
+  >
+    <button
+      type="button"
+      class="modal-close absolute top-3 right-3 text-gray-600"
+    >
+      ✕
+    </button>
+    <h2 class="text-lg font-semibold mb-4">Import Staff Attendance</h2>
+    <form
+      method="post"
+      enctype="multipart/form-data"
+      id="attendance-import-form"
+      action="/staff/attendance/import"
+      onsubmit="this.action='/staff/attendance/import'; this.querySelector('[type=submit]')?.setAttribute('disabled','true');"
+    >
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div class="mb-3">
+        <label class="label">Branch</label>
+        <select name="branch" class="input w-full">
+          <option value="">(none)</option>
+          {% for b in branches %}
+          <option value="{{ b }}">{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="label">Spreadsheet (XLSX/CSV)</label>
+        <input
+          type="file"
+          name="file"
+          accept=".xlsx,.xls,.csv"
+          class="input w-full"
+        />
+      </div>
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn btn-secondary modal-close">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">Upload & Preview</button>
+      </div>
+    </form>
+  </div>
+</div>

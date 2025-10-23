@@ -126,7 +126,7 @@
                 <label class="block text-xs font-medium mb-1">Branch</label>
                 <select name="branch" class="soft-input" x-model="form.branch">
                   <option value="">Select branch</option>
-                  {% for b in BRANCH_CHOICES %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+                  {% for b in branch_choices %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
                 </select>
               </div>
               <div>
@@ -164,7 +164,7 @@
         fetch(`{{ url_for('api_supervisor_shift', shift_id=0) }}`.replace('/0', `/${id}`))
           .then(r => r.json())
           .then(data => {
-            if (data.is_past) { alert('Cannot edit past shifts'); return; }
+            if (data.is_past) { showToast('Cannot edit past shifts', 'warning'); return; }
             this.form = {
               id: data.id,
               staff_user_id: String(data.staff_user_id || ''),
@@ -176,7 +176,7 @@
             };
             this.showModal = true;
           })
-          .catch(() => { alert('Failed to load shift details'); });
+          .catch(() => { showToast('Failed to load shift details', 'error'); });
       },
       closeModal() { this.showModal = false; },
       onDateChange(e) {

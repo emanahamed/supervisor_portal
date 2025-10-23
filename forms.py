@@ -1,19 +1,21 @@
 from flask_wtf import FlaskForm
 from wtforms import (BooleanField, DateField, DecimalField, FieldList,
-                     FloatField, FormField, HiddenField, IntegerField,
-                     PasswordField, SelectField, SelectMultipleField,
-                     StringField, SubmitField, TextAreaField, TimeField)
+                     FileField, FloatField, FormField, HiddenField,
+                     IntegerField, PasswordField, SelectField,
+                     SelectMultipleField, StringField, SubmitField,
+                     TextAreaField, TimeField)
 from wtforms.validators import (DataRequired, Email, Length, NumberRange,
                                 Optional)
 from wtforms.widgets import CheckboxInput, ListWidget
 
-BRANCH_CHOICES = [("Whitechapel","Whitechapel"),("East Ham","East Ham"),("Stratford","Stratford"),("Docklands","Docklands")]
+# Branch choices are injected at runtime from the Branch table (views should set SelectField.choices)
 ISSUE_STATUS_CHOICES = [("Pending","Pending"),("In Progress","In Progress"),("Resolved","Resolved")]
 ISSUE_CRITICALITY_CHOICES = [("Minor","Minor"),("Significant","Significant"),("Medium","Medium"),("Critical","Critical")]
 ISSUE_URGENCY_CHOICES = [("Low","Low"),("Medium","Medium"),("High","High")]
 TODO_STATUS_CHOICES = [("Pending","Pending"),("Done","Done")]
 RESOURCE_TYPE_CHOICES = [("Laptop","Laptop"),("Walkie Talkie","Walkie Talkie"),("Tablet","Tablet"),("Other","Other")]
 RESOURCE_STATUS_CHOICES = [("functional","Functional"),("need_repair","Need Repair"),("lost","Lost"),("archived","Archived")]
+STAFF_INVOICE_STATUS_CHOICES = [("Pending","Pending"),("Approved","Approved"),("Rejected","Rejected")]
 
 class LoginForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email()])
@@ -28,15 +30,65 @@ class RegisterForm(FlaskForm):
     submit = SubmitField("Create account")
 
 class StaffForm(FlaskForm):
-    name = StringField("Name", validators=[DataRequired()])
+    # Name split
+    first_name = StringField("First name", validators=[Optional(), Length(max=120)])
+    last_name = StringField("Last name", validators=[Optional(), Length(max=120)])
+    # Either provide full name or first+last; DataRequired kept to ensure legacy flows continue
+    name = StringField("Full name", validators=[DataRequired()])
     # department choices will be injected dynamically in view (distinct existing depts + blank)
     department = SelectField("Department", validators=[Optional()], choices=[])
     email = StringField("Email", validators=[Optional(), Email()])
     phone = StringField("Phone", validators=[Optional()])
+    dob = DateField("Date of birth", validators=[Optional()])
+    # age computed server-side
+    gender = SelectField("Gender", choices=[('', ''), ('male','Male'), ('female','Female'), ('non_binary','Non-binary'), ('prefer_not','Prefer not to say')], validators=[Optional()])
+    relationship_status = SelectField("Relationship status", choices=[('', ''), ('single','Single'), ('married','Married'), ('civil_partnership','Civil partnership'), ('divorced','Divorced'), ('widowed','Widowed'), ('other','Other')], validators=[Optional()])
+    national_insurance = StringField("National Insurance Number", validators=[Optional(), Length(max=40)])
+    company_id = SelectField("Company", coerce=int, validators=[Optional()], choices=[])
+    whitechapel_machine_id = StringField("Whitechapel Machine ID", validators=[Optional(), Length(max=120)])
+    east_ham_machine_id = StringField("East Ham Machine ID", validators=[Optional(), Length(max=120)])
+    stratford_machine_id = StringField("Stratford Machine ID", validators=[Optional(), Length(max=120)])
+    docklands_machine_id = StringField("Docklands Machine ID", validators=[Optional(), Length(max=120)])
     # Ensure data is always a list (avoids NoneType membership tests in template)
-    branches = SelectMultipleField("Branch(es)", choices=BRANCH_CHOICES, validators=[Optional()], default=[])
+    branches = SelectMultipleField("Branch(es)", choices=[], validators=[Optional()], default=[])
     access_code = StringField("Access Code", validators=[Optional(), Length(min=6, max=6)])
     active = BooleanField("Active", default=True)
+    # Employment
+    salary_per_hour = DecimalField("Salary per hour", validators=[Optional()], places=2)
+    salary_notes = TextAreaField("Salary notes", validators=[Optional(), Length(max=2000)])
+    employment_type = SelectField("Employment type", choices=[('', ''), ('permanent','Permanent'), ('temporary','Temporary'), ('contract','Contract'), ('zero_hours','Zero-hours')], validators=[Optional()])
+    joining_date = DateField("Joining date", validators=[Optional()])
+    # Medical
+    medical_condition = SelectField("Medical condition", choices=[('', ''), ('none','None'), ('asthma','Asthma'), ('diabetes','Diabetes'), ('epilepsy','Epilepsy'), ('other','Other')], validators=[Optional()])
+    medical_condition_other = StringField("If other, specify", validators=[Optional(), Length(max=255)])
+    # Address
+    address_line1 = StringField("Address line 1", validators=[DataRequired(), Length(max=255)])
+    address_line2 = StringField("Address line 2", validators=[Optional(), Length(max=255)])
+    town = StringField("Town/City", validators=[Optional(), Length(max=120)])
+    region = StringField("State / Province / Region", validators=[Optional(), Length(max=120)])
+    country = StringField("Country", validators=[DataRequired(), Length(max=120)])
+    postcode = StringField("Postcode", validators=[DataRequired(), Length(max=40)])
+    address_lookup_id = StringField("Address lookup id", validators=[Optional(), Length(max=255)])
+    # Emergency contact
+    emergency_first_name = StringField("Emergency first name", validators=[DataRequired(), Length(max=120)])
+    emergency_last_name = StringField("Emergency last name", validators=[DataRequired(), Length(max=120)])
+    emergency_mobile = StringField("Emergency mobile", validators=[DataRequired(), Length(max=50)])
+    emergency_email = StringField("Emergency email", validators=[Optional(), Email(), Length(max=255)])
+    emergency_relation = StringField("Relation with staff", validators=[Optional(), Length(max=80)])
+    # Bank details
+    bank_name_on_account = StringField("Name on account", validators=[DataRequired(), Length(max=255)])
+    bank_name = StringField("Name of bank", validators=[DataRequired(), Length(max=255)])
+    bank_sort_code = StringField("Sort code", validators=[Optional(), Length(max=20)])
+    bank_account_number = StringField("Account number", validators=[DataRequired(), Length(max=40)])
+    # DBS
+    dbs_number = StringField("DBS number", validators=[Optional(), Length(max=120)])
+    dbs_start_date = DateField("DBS start date", validators=[Optional()])
+    dbs_expiry_date = DateField("DBS expiry date", validators=[Optional()])
+    # choices populated in views; only staff with admin-like roles should be listed
+    dbs_checked_by_id = SelectField("DBS checked by", coerce=int, validators=[Optional()], choices=[])
+    # Photo upload handled in template via name="photo"
+    # Use FileField so uploaded FileStorage objects are handled correctly
+    photo = FileField("Photo", validators=[Optional()])
     submit = SubmitField("Save")
 
 class CycleForm(FlaskForm):
@@ -59,6 +111,7 @@ class UserProfileForm(FlaskForm):
     role = SelectField(
         "Role",
         choices=[
+            ('tutor','Tutor'),
             ('staff','Staff'),
             ('supervisor','Supervisor'),
             ('centre_manager','Centre Manager'),
@@ -74,8 +127,9 @@ class UserProfileForm(FlaskForm):
 
 class AvailabilityForm(FlaskForm):
     name = StringField("Name", validators=[DataRequired(), Length(max=200)])
-    department = StringField("Department", validators=[Optional(), Length(max=120)])
-    branches = SelectMultipleField("Branch(es)", choices=BRANCH_CHOICES, validators=[Optional()], default=[])
+    # Populated dynamically in view from distinct Staff/Availability departments
+    department = SelectField("Department", validators=[Optional()], choices=[])
+    branches = SelectMultipleField("Branch(es)", choices=[], validators=[Optional()], default=[])
     days = TextAreaField("Days / Time Slots", validators=[Optional(), Length(max=1000)])
     subjects = TextAreaField("Subjects", validators=[Optional(), Length(max=1000)])
     notes = TextAreaField("Notes", validators=[Optional(), Length(max=2000)])
@@ -88,7 +142,7 @@ class IssueForm(FlaskForm):
     status = SelectField("Status", choices=ISSUE_STATUS_CHOICES, validators=[DataRequired()])
     criticality = SelectField("Criticality", choices=ISSUE_CRITICALITY_CHOICES, validators=[DataRequired()])
     urgency = SelectField("Urgency", choices=ISSUE_URGENCY_CHOICES, validators=[DataRequired()])
-    branch = SelectField("Branch", choices=[(b,b) for b,_ in BRANCH_CHOICES], validators=[Optional()])
+    branch = SelectField("Branch", choices=[], validators=[Optional()])
     action_taken = TextAreaField("Action Taken", validators=[Optional(), Length(max=5000)])
     submit = SubmitField("Save")
 
@@ -194,6 +248,41 @@ class InvoiceForm(FlaskForm):
     submit = SubmitField("Save Invoice")
 
 
+import calendar
+import datetime
+
+
+class StaffInvoiceForm(FlaskForm):
+    # Invoice name removed per UI decision; month uses names and year defaults to current year
+    month = SelectField(
+        "Month",
+        coerce=int,
+        validators=[DataRequired()],
+        choices=[(i, calendar.month_name[i]) for i in range(1, 13)],
+    )
+    year = IntegerField(
+        "Year",
+        validators=[DataRequired(), NumberRange(min=2000, max=2100)],
+        default=datetime.date.today().year,
+    )
+    amount = DecimalField("Amount", validators=[Optional()], places=2)
+    # Line items
+    class ItemForm(FlaskForm):
+        class Meta:
+            csrf = False
+        date = DateField("Date", validators=[DataRequired()])
+        day = StringField("Day", validators=[Optional()])
+        branch = SelectField("Branch", choices=[], validators=[Optional()])
+        hours = DecimalField("JHours Worked", places=2, validators=[DataRequired()])
+        description = StringField("Description", validators=[Optional(), Length(max=400)])
+        rate = DecimalField("Rate/Hour", places=2, validators=[DataRequired()])
+        amount = DecimalField("Amount", places=2, validators=[Optional()])
+    items = FieldList(FormField(ItemForm), min_entries=1)
+    # Actions
+    save_draft = SubmitField("Save as Draft")
+    submit_invoice = SubmitField("Submit Invoice")
+
+
 class StudentForm(FlaskForm):
     student_id = StringField("Student ID", validators=[DataRequired(), Length(max=64)])
     name = StringField("Name", validators=[DataRequired(), Length(max=255)])
@@ -276,7 +365,7 @@ class BookForm(FlaskForm):
 class ResourceForm(FlaskForm):
     type = SelectField("Resource Type", choices=RESOURCE_TYPE_CHOICES, validators=[DataRequired()])
     type_other = StringField("If Other, specify", validators=[Optional(), Length(max=120)])
-    branch = SelectField("Branch", choices=[(b,b) for b,_ in BRANCH_CHOICES], validators=[DataRequired()])
+    branch = SelectField("Branch", choices=[], validators=[DataRequired()])
     name = StringField("Resource Name", validators=[Optional(), Length(max=120)])  # server will auto-generate if blank
     status = SelectField("Status", choices=RESOURCE_STATUS_CHOICES, validators=[DataRequired()], default='functional')
     submit = SubmitField("Save")
@@ -285,7 +374,7 @@ class ResourceForm(FlaskForm):
 class ResourceBulkForm(FlaskForm):
     type = SelectField("Resource Type", choices=RESOURCE_TYPE_CHOICES, validators=[DataRequired()])
     type_other = StringField("If Other, specify", validators=[Optional(), Length(max=120)])
-    branch = SelectField("Branch", choices=[(b,b) for b,_ in BRANCH_CHOICES], validators=[DataRequired()])
+    branch = SelectField("Branch", choices=[], validators=[DataRequired()])
     status = SelectField("Status", choices=RESOURCE_STATUS_CHOICES, validators=[DataRequired()], default='functional')
     quantity = IntegerField("Quantity", validators=[DataRequired(), NumberRange(min=1, max=500)], default=1)
     submit = SubmitField("Create Resources")

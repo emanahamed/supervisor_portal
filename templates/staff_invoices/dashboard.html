@@ -1,0 +1,299 @@
+{% extends 'base.html' %} {% block title %}Staff Invoice · Dashboard{% endblock
+%} {% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Staff Invoice Dashboard</h1>
+  <div class="flex gap-2">
+    <a href="{{ url_for('staff_invoices_index') }}" class="btn btn-secondary"
+      >Back to List</a
+    >
+  </div>
+</div>
+
+<!-- Top KPIs -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+  <div class="soft-card p-4">
+    <div class="text-slate-500">Pending</div>
+    <div class="text-2xl font-semibold">{{ totals['Pending'] }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-slate-500">Approved</div>
+    <div class="text-2xl font-semibold">{{ totals['Approved'] }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-slate-500">Rejected</div>
+    <div class="text-2xl font-semibold">{{ totals['Rejected'] }}</div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-slate-500">Approved Amount (All-time)</div>
+    <div class="text-2xl font-semibold">
+      £{{ '%.2f'|format(total_amount or 0) }}
+    </div>
+  </div>
+</div>
+
+<!-- Companies snapshot -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+  <div class="soft-card p-4">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-semibold">Employees by Company (Active)</h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full table-auto">
+        <thead>
+          <tr class="text-left">
+            <th class="px-2 py-1">Company</th>
+            <th class="px-2 py-1">Employees</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in employees_by_company %}
+          <tr class="border-t">
+            <td class="px-2 py-1">{{ row.company }}</td>
+            <td class="px-2 py-1">{{ row.count }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td class="px-2 py-4 text-center text-slate-500" colspan="2">
+              No data
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-semibold">Pending Submissions (This Month)</h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full table-auto">
+        <thead>
+          <tr class="text-left">
+            <th class="px-2 py-1">Company</th>
+            <th class="px-2 py-1">Pending</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in pending_by_company %}
+          <tr class="border-t">
+            <td class="px-2 py-1">{{ row.company }}</td>
+            <td class="px-2 py-1">{{ row.count }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td class="px-2 py-4 text-center text-slate-500" colspan="2">
+              No pending submissions
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Reminders & Lateness -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+  <div class="soft-card p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold">Remind Unsubmitted (This Month)</h3>
+    </div>
+    <p class="text-sm text-slate-600 mb-3">
+      Employees who haven't submitted an invoice this month:
+      <span class="font-semibold">{{ missing_total }}</span>
+    </p>
+    <div class="overflow-x-auto mb-3">
+      <table class="w-full table-auto">
+        <thead>
+          <tr class="text-left">
+            <th class="px-2 py-1">Company</th>
+            <th class="px-2 py-1">Missing</th>
+            <th class="px-2 py-1">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in missing_by_company %}
+          <tr class="border-t">
+            <td class="px-2 py-1">{{ row.company }}</td>
+            <td class="px-2 py-1">{{ row.count }}</td>
+            <td class="px-2 py-1">
+              <button
+                class="btn btn-primary btn-sm"
+                data-remind-company="{{ row.company }}"
+              >
+                Send Reminders
+              </button>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td class="px-2 py-4 text-center text-slate-500" colspan="3">
+              No missing employees 🎉
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="remindAll" class="btn">Send to All Missing</button>
+    </div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-semibold">Lateness Summary (This Month)</h3>
+    </div>
+    <div class="grid grid-cols-3 gap-2 mb-3">
+      <div class="p-3 rounded bg-slate-50">
+        <div class="text-xs text-slate-500">Late days</div>
+        <div class="text-lg font-semibold">{{ lateness.total_days }}</div>
+      </div>
+      <div class="p-3 rounded bg-slate-50">
+        <div class="text-xs text-slate-500">Total late minutes</div>
+        <div class="text-lg font-semibold">{{ lateness.total_minutes }}</div>
+      </div>
+      <div class="p-3 rounded bg-slate-50">
+        <div class="text-xs text-slate-500">Avg min per late day</div>
+        <div class="text-lg font-semibold">
+          {{ lateness.avg_minutes_per_day }}
+        </div>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full table-auto">
+        <thead>
+          <tr class="text-left">
+            <th class="px-2 py-1">Staff</th>
+            <th class="px-2 py-1">Late days</th>
+            <th class="px-2 py-1">Late minutes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in lateness.top_staff %}
+          <tr class="border-t">
+            <td class="px-2 py-1">{{ s.name }}</td>
+            <td class="px-2 py-1">{{ s.days }}</td>
+            <td class="px-2 py-1">{{ s.minutes }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td class="px-2 py-4 text-center text-slate-500" colspan="3">
+              No lateness recorded
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Charts: Invoices timeline & Lateness trend -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+  <div class="soft-card p-4">
+    <h3 class="font-semibold mb-2">Invoices Timeline (Last 12 months)</h3>
+    <canvas id="invChart" height="140"></canvas>
+  </div>
+  <div class="soft-card p-4">
+    <h3 class="font-semibold mb-2">Lateness Trend (Last 12 months)</h3>
+    <canvas id="lateChart" height="140"></canvas>
+  </div>
+</div>
+
+<!-- Latest submissions -->
+<div class="soft-card p-4 mb-10">
+  <h3 class="font-semibold mb-2">Latest Invoices</h3>
+  <div class="overflow-x-auto">
+    <table class="min-w-full table-auto">
+      <thead>
+        <tr class="text-left">
+          <th class="px-3 py-2">ID</th>
+          <th class="px-3 py-2">Name</th>
+          <th class="px-3 py-2">Month/Year</th>
+          <th class="px-3 py-2">Status</th>
+          <th class="px-3 py-2">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in latest %}
+        <tr class="border-t">
+          <td class="px-3 py-2">{{ inv.id }}</td>
+          <td class="px-3 py-2">{{ inv.name }}</td>
+          <td class="px-3 py-2">{{ inv.month_year_label() }}</td>
+          <td class="px-3 py-2">{{ inv.status }}</td>
+          <td class="px-3 py-2">£{{ '%.2f'|format(inv.amount or 0) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="px-3 py-6 text-center text-slate-500" colspan="5">
+            No recent invoices.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  (function(){
+    // Reminder actions
+    async function remind(companyName){
+      // We only have company names here; server expects company_id or none.
+      // For bulk by name, send without company_id (all) and rely on filters by name is not available.
+      // Better: try to resolve via data attribute on button later if needed.
+      const res = await fetch('/api/staff-invoices/remind-missing', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({})});
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed');
+      const msg = `Sent ${data.sent}/${data.total} reminder email(s)`;
+      if (window.showToast) showToast(msg, 'success'); else alert(msg);
+    }
+    document.getElementById('remindAll')?.addEventListener('click', ()=>remind(null));
+    document.querySelectorAll('[data-remind-company]')?.forEach(btn=>{
+      btn.addEventListener('click', ()=>remind(btn.getAttribute('data-remind-company')));
+    });
+
+    // Charts
+    const labels = {{ (charts.labels or [])|tojson }};
+    const dataSubmitted = {{ (charts.submitted or [])|tojson }};
+    const dataApproved = {{ (charts.approved or [])|tojson }};
+    const dataAmount = {{ (charts.approved_amount or [])|tojson }};
+    const dataLateMinutes = {{ (charts.late_minutes or [])|tojson }};
+    const dataLateDays = {{ (charts.late_days or [])|tojson }};
+
+    const ctx1 = document.getElementById('invChart');
+    if (ctx1) new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {label:'Submitted', data: dataSubmitted, backgroundColor: 'rgba(59,130,246,0.4)', borderColor:'#3b82f6', borderWidth:1},
+          {label:'Approved', data: dataApproved, backgroundColor: 'rgba(16,185,129,0.4)', borderColor:'#10b981', borderWidth:1},
+          {label:'Approved £', data: dataAmount, type:'line', yAxisID:'y1', borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,0.2)', tension:0.2},
+        ]
+      },
+      options:{
+        responsive:true,
+        scales:{
+          y:{beginAtZero:true},
+          y1:{position:'right', beginAtZero:true, grid:{drawOnChartArea:false}}
+        },
+        plugins:{legend:{position:'bottom'}}
+      }
+    });
+
+    const ctx2 = document.getElementById('lateChart');
+    if (ctx2) new Chart(ctx2, {
+      type: 'bar',
+      data: {labels, datasets:[
+        {label:'Late days', data: dataLateDays, backgroundColor:'rgba(244,63,94,0.4)', borderColor:'#f43f5e', borderWidth:1},
+        {label:'Late minutes', data: dataLateMinutes, type:'line', yAxisID:'y1', borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.2)', tension:0.2},
+      ]},
+      options:{responsive:true, scales:{y:{beginAtZero:true}, y1:{position:'right', beginAtZero:true, grid:{drawOnChartArea:false}}}, plugins:{legend:{position:'bottom'}}}
+    });
+  })();
+</script>
+{% endblock %}

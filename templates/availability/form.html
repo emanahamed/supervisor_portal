@@ -10,16 +10,35 @@ content %}
       <label class="block text-xs font-semibold text-slate-500 uppercase mb-1"
         >Name</label
       >
-      {{ form.name(class='w-full border rounded px-3 py-2') }} {% for e in
-      form.name.errors %}
+      {{ form.name(class='w-full border rounded px-3 py-2', placeholder='e.g.
+      Adit Hossain Mintu', list='staffNames') }}
+      <datalist id="staffNames">
+        {% for n in staff_names %}
+        <option value="{{ n }}">{% endfor %}</option>
+      </datalist>
+
+      {% for e in form.name.errors %}
       <div class="text-xs text-rose-600">{{ e }}</div>
       {% endfor %}
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Linked Staff</label>
+      <select name="staff_id" class="w-full border rounded px-3 py-2">
+        <option value="">-- None --</option>
+        {% for sid, sname, sdept in staff_rows %}
+          <option value="{{ sid }}" {% if record and record.staff_id==sid %}selected{% endif %}>{{ sname }}{% if sdept %} — {{ sdept }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      <div class="text-[11px] text-slate-400 mt-1">Link this availability directly to a staff member.</div>
     </div>
     <div>
       <label class="block text-xs font-semibold text-slate-500 uppercase mb-1"
         >Department</label
       >
       {{ form.department(class='w-full border rounded px-3 py-2') }}
+      <div class="text-[11px] text-slate-400 mt-1">
+        Choose an existing department or leave blank.
+      </div>
     </div>
     <div>
       <label class="block text-xs font-semibold text-slate-500 uppercase mb-1"
@@ -27,18 +46,23 @@ content %}
       >
       {{ form.branches(class='w-full border rounded px-3 py-2 h-32',
       multiple=true) }}
+      <div class="text-[11px] text-slate-400 mt-1">
+        Hold Cmd/Ctrl to select multiple branches.
+      </div>
     </div>
     <div>
       <label class="block text-xs font-semibold text-slate-500 uppercase mb-1"
         >Days / Time Slots</label
       >
-      {{ form.days(class='w-full border rounded px-3 py-2 h-32') }}
+      {{ form.days(class='w-full border rounded px-3 py-2 h-32',
+      placeholder='e.g. Monday 3-6pm, Wednesday 5-7pm') }}
     </div>
     <div>
       <label class="block text-xs font-semibold text-slate-500 uppercase mb-1"
         >Subjects</label
       >
-      {{ form.subjects(class='w-full border rounded px-3 py-2 h-32') }}
+      {{ form.subjects(class='w-full border rounded px-3 py-2 h-32',
+      placeholder='e.g. Maths, English, Science') }}
     </div>
     <div>
       <label class="block text-xs font-semibold text-slate-500 uppercase mb-1"

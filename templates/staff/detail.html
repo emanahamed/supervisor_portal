@@ -1,11 +1,66 @@
-{% extends 'base.html' %} {% block page_title %}Staff Detail{% endblock %} {%
-block content %}
-<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
-  <div class="flex items-center gap-3">
-    <h2 class="text-lg font-semibold text-slate-700">{{ staff.name }}</h2>
-    <span class="text-xs text-slate-400">Staff ID: {{ staff.id }}</span>
+{% extends 'base.html' %} {% block page_title %}Staff — {{ staff.full_name() or
+staff.name }}{% endblock %} {% block content %}
+
+<div class="mb-6 flex items-start justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-4">
+    <div
+      class="w-28 h-28 bg-slate-100 rounded-md overflow-hidden flex items-center justify-center relative"
+    >
+      {% if staff.photo %}
+      <img
+        id="staffPhotoImg"
+        src="{{ url_for('static', filename='uploads/' ~ staff.photo) }}"
+        alt="{{ staff.full_name() }}"
+        class="w-full h-full object-cover"
+      />
+      {% else %}
+      <div id="staffPhotoImg" class="text-slate-400">No photo</div>
+      {% endif %}
+      <form
+        id="photoUploadForm"
+        class="absolute right-1 bottom-1"
+        enctype="multipart/form-data"
+      >
+        <input
+          type="file"
+          name="photo"
+          id="photoInput"
+          accept="image/*"
+          class="hidden"
+        />
+        <button
+          type="button"
+          class="soft-btn bg-white text-xs"
+          id="photoUploadBtn"
+        >
+          Change
+        </button>
+      </form>
+      <div id="photoProgressWrap" class="absolute left-1 bottom-1 w-40 hidden">
+        <div class="w-full bg-white/30 rounded overflow-hidden h-2">
+          <div id="photoProgressBar" class="h-2 bg-indigo-500 w-0"></div>
+        </div>
+        <div id="photoProgressText" class="text-xs text-white mt-1">0%</div>
+      </div>
+    </div>
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">
+        {{ staff.full_name() or staff.name }}
+      </h1>
+      <div class="text-sm text-slate-500">
+        Staff ID: {{ staff.id }} • {{ staff.department or '—' }}
+      </div>
+      <div class="mt-1">
+        <span
+          class="soft-badge {% if staff.active %}!bg-emerald-100 !text-emerald-700{% else %}!bg-slate-200 !text-slate-600{% endif %}"
+        >
+          {{ 'Active' if staff.active else 'Inactive' }}
+        </span>
+      </div>
+    </div>
   </div>
-  <div class="flex items-center gap-2 flex-wrap">
+
+  <div class="flex items-center gap-2">
     <a class="soft-btn bg-slate-100" href="{{ url_for('staff_index') }}"
       >Back</a
     >
@@ -13,6 +68,44 @@ block content %}
       class="soft-btn soft-btn-primary"
       href="{{ url_for('staff_edit', sid=staff.id) }}"
       >Edit</a
+    >
+    <a
+      class="soft-btn bg-amber-100"
+      href="mailto:{{ staff.email }}"
+      {%
+      if
+      not
+      staff.email
+      %}onclick="return false"
+      {%
+      endif
+      %}
+      >Email</a
+    >
+    <a
+      class="soft-btn bg-sky-100"
+      href="tel:{{ staff.phone }}"
+      {%
+      if
+      not
+      staff.phone
+      %}onclick="return false"
+      {%
+      endif
+      %}
+      >Call</a
+    >
+    <button
+      id="emailAccessCodeBtn"
+      class="soft-btn bg-indigo-100"
+      data-sid="{{ staff.id }}"
+    >
+      Email access code
+    </button>
+    <a
+      class="soft-btn bg-slate-100"
+      href="{{ url_for('staff_map_user', sid=staff.id) }}"
+      >Map User</a
     >
     <a
       class="soft-btn bg-rose-100 text-rose-700"
@@ -23,148 +116,336 @@ block content %}
   </div>
 </div>
 
-<div class="grid md:grid-cols-3 gap-6 mb-8">
-  <div class="soft-card p-4 md:col-span-1">
-    <h3 class="text-sm font-semibold text-slate-600 mb-3">Profile</h3>
-    <dl class="text-sm space-y-2">
+<div class="grid lg:grid-cols-3 gap-6 mb-6">
+  <div class="soft-card p-4 lg:col-span-1">
+    <h3 class="text-sm font-semibold text-slate-600 mb-3">Personal</h3>
+    <dl class="text-sm space-y-3">
       <div>
-        <dt class="font-medium text-slate-500">Name</dt>
-        <dd>{{ staff.name }}</dd>
+        <dt class="font-medium text-slate-500">Full name</dt>
+        <dd>{{ staff.full_name() or '—' }}</dd>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">Department</dt>
-        <dd>{{ staff.department or '—' }}</dd>
+        <dt class="font-medium text-slate-500">Date of birth</dt>
+        <dd>{{ staff.dob or '—' }}</dd>
       </div>
+      <div>
+        <dt class="font-medium text-slate-500">Age</dt>
+        <dd>{{ staff.age or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Gender</dt>
+        <dd>{{ staff.gender or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Relationship</dt>
+        <dd>{{ staff.relationship_status or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">NI number</dt>
+        <dd>{{ staff.national_insurance or '—' }}</dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="soft-card p-4 lg:col-span-2">
+    <h3 class="text-sm font-semibold text-slate-600 mb-3">Contact & Address</h3>
+    <div class="grid md:grid-cols-2 gap-4">
       <div>
         <dt class="font-medium text-slate-500">Email</dt>
-        <dd>{{ staff.email or '—' }}</dd>
+        <div class="text-sm">{{ staff.email or '—' }}</div>
+        <dt class="font-medium text-slate-500 mt-3">Phone</dt>
+        <div class="text-sm">{{ staff.phone or '—' }}</div>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">Phone</dt>
-        <dd>{{ staff.phone or '—' }}</dd>
+        <dt class="font-medium text-slate-500">Address</dt>
+        <div class="text-sm">
+          {{ staff.address_line1 or '' }}{% if staff.address_line2 %}, {{
+          staff.address_line2 }}{% endif %}<br />
+          {{ staff.town or '' }}{% if staff.region %}, {{ staff.region }}{%
+          endif %}<br />
+          {{ staff.postcode or '' }}{% if staff.country %}, {{ staff.country
+          }}{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-6 mb-6">
+  <div class="soft-card p-4">
+    <h3 class="text-sm font-semibold text-slate-600 mb-3">Employment</h3>
+    <dl class="text-sm space-y-2">
+      <div>
+        <dt class="font-medium text-slate-500">Type</dt>
+        <dd>{{ staff.employment_type or '—' }}</dd>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">Access Code</dt>
-        <dd>{{ staff.access_code or '—' }}</dd>
+        <dt class="font-medium text-slate-500">Salary / hour</dt>
+        <dd>{{ staff.salary_per_hour or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Joining</dt>
+        <dd>{{ staff.joining_date or '—' }}</dd>
       </div>
       <div>
         <dt class="font-medium text-slate-500">Branches</dt>
         <dd>{{ staff.branch or '—' }}</dd>
       </div>
+    </dl>
+  </div>
+
+  <div class="soft-card p-4">
+    <h3 class="text-sm font-semibold text-slate-600 mb-3">Emergency Contact</h3>
+    <dl class="text-sm space-y-2">
       <div>
-        <dt class="font-medium text-slate-500">Status</dt>
+        <dt class="font-medium text-slate-500">Name</dt>
         <dd>
-          <span
-            class="soft-badge {% if staff.active %}!bg-emerald-100 !text-emerald-700{% else %}!bg-slate-200 !text-slate-600{% endif %}"
-            >{{ 'Active' if staff.active else 'Inactive' }}</span
-          >
+          {{ staff.emergency_first_name or '—' }} {{ staff.emergency_last_name
+          or '' }}
         </dd>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">Created</dt>
-        <dd>{{ staff.created_at|fmt_date }}</dd>
+        <dt class="font-medium text-slate-500">Mobile</dt>
+        <dd>{{ staff.emergency_mobile or '—' }}</dd>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">Updated</dt>
-        <dd>{{ staff.updated_at|fmt_date }}</dd>
+        <dt class="font-medium text-slate-500">Email</dt>
+        <dd>{{ staff.emergency_email or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Relation</dt>
+        <dd>{{ staff.emergency_relation or '—' }}</dd>
       </div>
     </dl>
   </div>
-  <div class="soft-card p-4 md:col-span-2">
-    <div class="flex items-center justify-between mb-3 flex-wrap gap-3">
-      <h3 class="text-sm font-semibold text-slate-600">Recent Changes</h3>
-      {% if total is not none %}
-      <span class="text-xs text-slate-400">{{ total }} total</span>
-      {% endif %}
-    </div>
-    <form method="get" class="grid md:grid-cols-6 gap-3 mb-4 text-xs">
-      <input type="hidden" name="page" value="1" />
-      <div class="flex flex-col gap-1">
-        <label class="font-medium text-slate-500">Field</label>
-        <select name="field" class="soft-input py-1">
-          <option value="">All</option>
-          {% for f in distinct_fields %}
-          <option value="{{ f }}" {% if f==field_filter %}selected{% endif %}>{{ f }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="font-medium text-slate-500">Actor</label>
-        <select name="actor" class="soft-input py-1">
-          <option value="">All</option>
-          {% for a_id, a_name in actor_rows %}
-          <option value="{{ a_id }}" {% if actor_filter and a_id==actor_filter %}selected{% endif %}>{{ a_name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="font-medium text-slate-500">Start</label>
-        <input type="date" name="start" class="soft-input py-1" value="{{ start_date }}" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="font-medium text-slate-500">End</label>
-        <input type="date" name="end" class="soft-input py-1" value="{{ end_date }}" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="font-medium text-slate-500">Per Page</label>
-        <select name="per_page" class="soft-input py-1">
-          {% for size in [25,50,100] %}
-          <option value="{{ size }}" {% if per_page==size %}selected{% endif %}>{{ size }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="flex items-end gap-2">
-        <button class="soft-btn soft-btn-primary w-full">Filter</button>
-        <a href="{{ url_for('staff_detail', sid=staff.id) }}" class="soft-btn bg-slate-100">Reset</a>
-        <a href="{{ url_for('staff_changes_export', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None) }}" class="soft-btn bg-slate-100" title="Download filtered CSV">CSV</a>
-      </div>
-    </form>
-    {% if changes %}
-    <div class="overflow-x-auto">
-      <table class="min-w-full text-xs">
-        <thead class="bg-slate-100 text-slate-600 uppercase tracking-wide">
-          <tr>
-            <th class="py-2 px-2 text-left">When</th>
-            <th class="py-2 px-2 text-left">Field</th>
-            <th class="py-2 px-2 text-left">Old</th>
-            <th class="py-2 px-2 text-left">New</th>
-            <th class="py-2 px-2 text-left">By</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          {% for ch in changes %}
-          <tr>
-            <td class="py-1 px-2 whitespace-nowrap">
-              {{ ch.changed_at.strftime('%Y-%m-%d %H:%M') if ch.changed_at else '' }}
-            </td>
-            <td class="py-1 px-2 whitespace-nowrap">{{ ch.field }}</td>
-            <td class="py-1 px-2">{{ ch.old_value if ch.old_value is not none else '—' }}</td>
-            <td class="py-1 px-2">{{ ch.new_value if ch.new_value is not none else '—' }}</td>
-            <td class="py-1 px-2 whitespace-nowrap">{{ ch.changed_by.name if ch.changed_by else '—' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="mt-4 flex items-center justify-between text-xs">
+
+  <div class="soft-card p-4">
+    <h3 class="text-sm font-semibold text-slate-600 mb-3">Bank & DBS</h3>
+    <dl class="text-sm space-y-2">
       <div>
-        Page {{ page }} of {{ total_pages }}
+        <dt class="font-medium text-slate-500">Bank</dt>
+        <dd>{{ staff.bank_name or '—' }}</dd>
       </div>
-      <div class="flex gap-2">
-        {% if page > 1 %}
-          <a class="soft-btn bg-slate-100" href="{{ url_for('staff_detail', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None, page=page-1, per_page=per_page) }}">Prev</a>
-        {% endif %}
-        {% if page < total_pages %}
-          <a class="soft-btn bg-slate-100" href="{{ url_for('staff_detail', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None, page=page+1, per_page=per_page) }}">Next</a>
-        {% endif %}
-        {% if page < total_pages %}
-          <a class="soft-btn soft-btn-primary" href="{{ url_for('staff_detail', sid=staff.id, field=field_filter or None, actor=actor_filter or None, start=start_date or None, end=end_date or None, page=page+1, per_page=per_page) }}">Load more</a>
-        {% endif %}
+      <div>
+        <dt class="font-medium text-slate-500">Account name</dt>
+        <dd>{{ staff.bank_name_on_account or '—' }}</dd>
       </div>
-    </div>
-    {% else %}
-    <p class="text-sm text-slate-500">No changes recorded.</p>
-    {% endif %}
+      <div>
+        <dt class="font-medium text-slate-500">Sort code</dt>
+        <dd>{{ staff.bank_sort_code or '—' }}</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">Account number</dt>
+        <dd>{{ staff.bank_account_number or '—' }}</dd>
+      </div>
+      <hr class="my-2" />
+      <div>
+        <dt class="font-medium text-slate-500">DBS</dt>
+        <dd>
+          {{ staff.dbs_number or '—' }} ({{ staff.dbs_start_date or '—' }} – {{
+          staff.dbs_expiry_date or '—' }})
+        </dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-500">DBS checked by</dt>
+        <dd>
+          {{ staff.dbs_checked_by.full_name() if staff.dbs_checked_by else '—'
+          }}
+        </dd>
+      </div>
+    </dl>
   </div>
 </div>
+
+<div class="soft-card p-4">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-sm font-semibold text-slate-600">Recent changes</h3>
+    {% if total is not none %}<span class="text-xs text-slate-400"
+      >{{ total }} total</span
+    >{% endif %}
+  </div>
+  {% if changes %}
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead
+        class="bg-slate-100 text-slate-600 uppercase tracking-wide text-xs"
+      >
+        <tr>
+          <th class="py-2 px-2 text-left">When</th>
+          <th class="py-2 px-2 text-left">Field</th>
+          <th class="py-2 px-2 text-left">Old</th>
+          <th class="py-2 px-2 text-left">New</th>
+          <th class="py-2 px-2 text-left">By</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 text-xs">
+        {% for ch in changes %}
+        <tr>
+          <td class="py-1 px-2 whitespace-nowrap">
+            {{ ch.changed_at.strftime('%Y-%m-%d %H:%M') if ch.changed_at else ''
+            }}
+          </td>
+          <td class="py-1 px-2 whitespace-nowrap">{{ ch.field }}</td>
+          <td class="py-1 px-2">
+            {{ ch.old_value if ch.old_value is not none else '—' }}
+          </td>
+          <td class="py-1 px-2">
+            {{ ch.new_value if ch.new_value is not none else '—' }}
+          </td>
+          <td class="py-1 px-2 whitespace-nowrap">
+            {{ ch.changed_by.name if ch.changed_by else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-500">No changes recorded.</p>
+  {% endif %}
+</div>
+
+<div
+  id="toast"
+  class="fixed right-6 bottom-6 hidden max-w-sm w-80 bg-slate-900 text-white px-4 py-3 rounded shadow-lg"
+></div>
+<script>
+  // small toast helper
+  function showToast(msg, kind = "info") {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.style.background =
+      kind === "error" ? "#b91c1c" : kind === "success" ? "#065f46" : "#0f172a";
+    t.classList.remove("hidden");
+    setTimeout(() => t.classList.add("hidden"), 3500);
+  }
+
+  (function () {
+    const btn = document.getElementById("emailAccessCodeBtn");
+    if (btn) {
+      btn.addEventListener("click", function () {
+        const sid = this.dataset.sid;
+        if (!confirm("Email access code to staff?")) return;
+        fetch(`/api/staff/${sid}/email-access-code`, {
+          method: "POST",
+          headers: { "X-CSRFToken": "{{ csrf_token() }}" },
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            if (j && j.success) showToast("Access code emailed", "success");
+            else showToast("Failed to email access code", "error");
+          })
+          .catch(() => showToast("Failed to email access code", "error"));
+      });
+    }
+
+    // Photo upload UI with preview and progress
+    const photoBtn = document.getElementById("photoUploadBtn");
+    const photoInput = document.getElementById("photoInput");
+    const form = document.getElementById("photoUploadForm");
+    const progressWrap = document.getElementById("photoProgressWrap");
+    const progressBar = document.getElementById("photoProgressBar");
+    const progressText = document.getElementById("photoProgressText");
+    if (photoBtn && photoInput && form) {
+      let lastObjectUrl = null;
+      photoBtn.addEventListener("click", () => photoInput.click());
+      photoInput.addEventListener("change", () => {
+        if (!photoInput.files.length) return;
+        const file = photoInput.files[0];
+        // Show client-side preview immediately
+        try {
+          const current = document.getElementById("staffPhotoImg");
+          if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+          const objUrl = URL.createObjectURL(file);
+          lastObjectUrl = objUrl;
+          const previewImg = document.createElement("img");
+          previewImg.id = "staffPhotoPreview";
+          previewImg.src = objUrl;
+          previewImg.className = "w-full h-full object-cover";
+          if (current) {
+            current.replaceWith(previewImg);
+          } else {
+            // fallback: append
+            form.parentElement.insertBefore(previewImg, form);
+          }
+        } catch (e) {
+          console.warn("preview failed", e);
+        }
+
+        // Prepare XHR upload to show progress
+        const xhr = new XMLHttpRequest();
+        const url = `/staff/{{ staff.id }}/upload-photo`;
+        const fd = new FormData();
+        fd.append("photo", file);
+
+        xhr.upload.addEventListener("progress", (ev) => {
+          if (ev.lengthComputable) {
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            if (progressWrap) {
+              progressWrap.classList.remove("hidden");
+              progressBar.style.width = pct + "%";
+              progressText.textContent = pct + "%";
+            }
+          }
+        });
+
+        xhr.addEventListener("load", () => {
+          try {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const j = JSON.parse(xhr.responseText || "{}");
+              if (j && j.success) {
+                // Replace preview with server-stored image
+                const preview = document.getElementById("staffPhotoPreview");
+                if (preview && j.photo) {
+                  const final = document.createElement("img");
+                  final.id = "staffPhotoImg";
+                  final.src = `/static/uploads/${j.photo}`;
+                  final.className = "w-full h-full object-cover";
+                  preview.replaceWith(final);
+                }
+                showToast("Photo uploaded", "success");
+              } else {
+                showToast("Upload failed", "error");
+              }
+            } else {
+              showToast("Upload failed", "error");
+            }
+          } catch (e) {
+            console.warn("upload finish error", e);
+            showToast("Upload failed", "error");
+          } finally {
+            // hide progress after short delay
+            setTimeout(() => {
+              if (progressWrap) {
+                progressWrap.classList.add("hidden");
+                progressBar.style.width = "0%";
+                progressText.textContent = "0%";
+              }
+            }, 800);
+            if (lastObjectUrl) {
+              URL.revokeObjectURL(lastObjectUrl);
+              lastObjectUrl = null;
+            }
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          showToast("Upload failed", "error");
+          if (progressWrap) progressWrap.classList.add("hidden");
+          if (lastObjectUrl) {
+            URL.revokeObjectURL(lastObjectUrl);
+            lastObjectUrl = null;
+          }
+        });
+
+        xhr.open("POST", url);
+        try {
+          xhr.setRequestHeader("X-CSRFToken", "{{ csrf_token() }}");
+        } catch (_) {}
+        xhr.send(fd);
+      });
+    }
+  })();
+</script>
+
 {% endblock %}

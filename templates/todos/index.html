@@ -186,7 +186,7 @@
       const fd = new FormData(); fd.append('status', sel.value);
       fetch(`/todos/${tid}/status`, {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
         .then(r=>r.json())
-        .then(resp=>{ if(!resp.success){ alert('Status update failed'); }});
+  .then(resp=>{ if(!resp.success){ showToast('Status update failed', 'error'); }});
     });
   });
   // Modal logic

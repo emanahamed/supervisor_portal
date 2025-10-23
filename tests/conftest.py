@@ -17,6 +17,11 @@ def app_instance():
     # Disable CSRF in tests for simplicity
     flask_app.config['WTF_CSRF_ENABLED'] = False
     with flask_app.app_context():
+        # Ensure a clean schema for tests (drop existing tables then recreate). This makes tests reproducible
+        try:
+            db.drop_all()
+        except Exception:
+            pass
         db.create_all()
     yield flask_app
 
@@ -58,3 +63,11 @@ def login_superadmin(app_instance, client):
     with client.session_transaction() as sess:
         sess['_user_id'] = str(uid)
     return uid
+
+
+@pytest.fixture()
+def logged_in_superadmin_client(app_instance, client, login_superadmin):
+    """Compatibility fixture for older tests expecting `logged_in_superadmin_client`.
+    Returns the test client with a superadmin user id set in session.
+    """
+    return client

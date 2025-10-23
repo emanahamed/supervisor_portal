@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Staff Attendance</h1>
+  <div class="flex items-center gap-2">
+    <button id="open-import-modal" class="btn btn-primary">Import Attendance</button>
+    <a href="{{ url_for('staff_attendance_index') }}?branch=Whitechapel" class="btn btn-ghost">Run: Whitechapel</a>
+  </div>
+</div>
+
+<form method="get" class="mb-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+  <div>
+    <label class="label">Branch</label>
+    <select name="branch" class="input">
+      <option value="">All</option>
+      {% for b in branches %}
+      <option value="{{ b }}" {% if filters.get('branch')==b %}selected{% endif %}>{{ b }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="label">Staff ID</label>
+    <input type="text" name="staff_id" value="{{ filters.get('staff_id','') }}" class="input" />
+  </div>
+  <div>
+    <label class="label">Late</label>
+    <select name="late" class="input">
+      <option value="">Any</option>
+      <option value="yes" {% if filters.get('late')=='yes' %}selected{% endif %}>Yes</option>
+    </select>
+  </div>
+  <div>
+    <label class="label">Start Date (dd/mm/yyyy)</label>
+    <input type="text" name="start" value="{{ filters.get('start','') }}" class="input" />
+  </div>
+  <div>
+    <label class="label">End Date (dd/mm/yyyy)</label>
+    <input type="text" name="end" value="{{ filters.get('end','') }}" class="input" />
+  </div>
+  <div class="flex items-end">
+    <button type="submit" class="btn btn-primary">Filter</button>
+    <a href="{{ url_for('staff_attendance_index') }}" class="ml-2 btn btn-secondary">Reset</a>
+  </div>
+</form>
+
+<div class="overflow-x-auto bg-white rounded shadow">
+  <table class="table-auto w-full text-sm divide-y">
+  <thead>
+    <tr>
+      <th>Staff ID</th>
+      <th>Name</th>
+      <th>Branch</th>
+      <th>Day</th>
+      <th>Date</th>
+      <th>Check In</th>
+      <th>Check Out</th>
+      <th>Late</th>
+      <th>Hours</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in records %}
+    <tr>
+      <td>{{ r.staff_id or r.machine_id or '—' }}</td>
+      <td>{{ staff_map.get(r.staff_id).name if r.staff_id and staff_map.get(r.staff_id) else '—' }}</td>
+      <td>{{ r.branch or '—' }}</td>
+      <td>{{ r.day or '—' }}</td>
+      <td>{{ r.date.strftime('%d/%m/%Y') if r.date else '—' }}</td>
+      <td>{{ r.check_in.strftime('%H:%M:%S') if r.check_in else '—' }}</td>
+      <td>{{ r.check_out.strftime('%H:%M:%S') if r.check_out else '—' }}</td>
+      <td>{{ r.late_minutes or '—' }}</td>
+      <td>{{ r.hours_hhmmss() }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9">No records found</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+</div>
+
+<div class="mt-4 flex items-center justify-between text-sm text-gray-600">
+  <div>Showing page {{ page }} ({{ per_page }} per page) — total {{ total }}</div>
+  <div class="flex items-center gap-2">
+    {% if page|int > 1 %}
+    <a href="?page={{ page-1 }}" class="btn btn-sm btn-secondary">Prev</a>
+    {% endif %}
+    <a href="?page={{ page+1 }}" class="btn btn-sm btn-secondary">Next</a>
+  </div>
+</div>
+
+{% include 'staff/_attendance_import_modal.html' %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  const open = document.getElementById('open-import-modal');
+  const modal = document.getElementById('attendance-import-modal');
+  function closeModal(){ modal.classList.add('hidden'); }
+  function openModal(){ modal.classList.remove('hidden'); }
+  open && open.addEventListener('click', function(e){ e.preventDefault(); openModal(); });
+  document.querySelectorAll('.modal-close').forEach(btn=>btn.addEventListener('click', closeModal));
+  // click backdrop to close
+  modal && modal.querySelector('.modal-backdrop') && modal.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+  // Defensive: ensure modal form posts to the import endpoint, not the current page
+  try{
+    const importForm = document.getElementById('attendance-import-form');
+    if(importForm){
+      importForm.addEventListener('submit', function(ev){
+        // ensure explicit action (server-side URL)
+        importForm.action = "{{ url_for('staff_attendance_import') }}";
+      });
+    }
+  }catch(e){console.warn('import form binding failed', e)}
+});
+</script>
+
+{% endblock %}

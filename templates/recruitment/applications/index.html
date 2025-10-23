@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% from 'components/forms_macros.html' import csrf_field %}
+{% block title %}Job Applications{% endblock %}
+{% block page_title %}Job Applications{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto">
+  <div class="soft-card p-4 mb-4">
+    <form method="get" class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+      <div class="md:col-span-2">
+        <label class="block text-xs font-semibold mb-1">Search</label>
+        <input class="soft-input w-full" type="text" name="q" value="{{ request.args.get('q','') }}" placeholder="Name, email, phone, university" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Status</label>
+        <select class="soft-input w-full" name="status" multiple>
+          {% set statuses = ['Pending Review','Reviewed','Rejected','Invited for Interview','Interviewed','Selected','Onboarded'] %}
+          {% for s in statuses %}
+          <option value="{{ s }}" {{ 'selected' if s in (active_statuses or []) else '' }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Branch</label>
+        <select class="soft-input w-full" name="branch">
+          <option value="">All</option>
+          {% for b in branches %}
+          <option {{ 'selected' if active_branch==b else '' }}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">University</label>
+        <select class="soft-input w-full" name="university">
+          <option value="">All</option>
+          {% for u in universities %}
+          <option {{ 'selected' if active_university==u else '' }}>{{ u }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">Year of Study</label>
+        <input class="soft-input w-full" type="number" min="1" step="1" name="study_year" value="{{ active_study_year or '' }}" />
+      </div>
+      <div class="md:col-span-1">
+        <button class="soft-btn soft-btn-primary w-full">Filter</button>
+      </div>
+    </form>
+  </div>
+
+  <form method="post" action="{{ url_for('recruitment_applications_bulk') }}" class="soft-card p-4">
+    {{ csrf_field() }}
+    <div class="flex items-center justify-between mb-3 gap-2">
+      <div class="flex items-center gap-2">
+        <select name="action" class="soft-input">
+          <option value="">Bulk action</option>
+          <option value="mark_reviewed">Mark Reviewed</option>
+          <option value="invite">Invite for Interview</option>
+          <option value="reject">Reject</option>
+          <option value="select">Select</option>
+          <option value="onboard">Onboard</option>
+        </select>
+        <button class="soft-btn">Apply</button>
+      </div>
+      <div>
+        <input id="appsSearch" oninput="filterTable('appsSearch','appsTable')" class="soft-input" placeholder="Quick search..." />
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table id="appsTable" class="min-w-full border" data-sortable data-paginate data-page-size="25">
+        <thead>
+          <tr class="bg-gray-50 text-left text-xs">
+            <th class="px-3 py-2"><input type="checkbox" onclick="document.querySelectorAll('.rowchk').forEach(c=>c.checked=this.checked)" /></th>
+            <th class="px-3 py-2">Submitted</th>
+            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2">Name</th>
+            <th class="px-3 py-2">Phone</th>
+            <th class="px-3 py-2">Email</th>
+            <th class="px-3 py-2">University</th>
+            <th class="px-3 py-2">Year</th>
+            <th class="px-3 py-2">Branches</th>
+            <th class="px-3 py-2 no-sort">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in apps %}
+          <tr class="border-t">
+            <td class="px-3 py-2"><input class="rowchk" type="checkbox" name="ids" value="{{ a.id }}" /></td>
+            <td class="px-3 py-2">{{ a.created_at|fmt_datetime }}</td>
+            <td class="px-3 py-2">
+              <span class="px-2 py-1 rounded text-xs {{ 'bg-yellow-100 text-yellow-800' if a.status=='Pending Review' else 'bg-slate-100 text-slate-700' }}">{{ a.status or 'Pending Review' }}</span>
+            </td>
+            <td class="px-3 py-2">{{ a.first_name }} {{ a.last_name }}</td>
+            <td class="px-3 py-2">{{ a.phone }}</td>
+            <td class="px-3 py-2">{{ a.email }}</td>
+            <td class="px-3 py-2">{{ a.university }}</td>
+            <td class="px-3 py-2">{{ a.study_year }}</td>
+            <td class="px-3 py-2">{{ a.branches }}</td>
+            <td class="px-3 py-2">
+              <a class="soft-btn text-xs" href="{{ url_for('recruitment_application_detail', aid=a.id) }}">View</a>
+              <button formaction="{{ url_for('recruitment_application_invite', aid=a.id) }}" formmethod="post" class="soft-btn text-xs">Invite</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="px-3 py-6 text-center text-slate-500">No applications found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+</div>
+{% endblock %}

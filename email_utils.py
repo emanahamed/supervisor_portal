@@ -1,9 +1,12 @@
 import smtplib
 from datetime import datetime
+from datetime import datetime as _dt
 from email.message import EmailMessage
-from typing import Tuple
+from typing import Optional, Tuple
 
-# SMTP / SENDER CONFIG (constants)
+from models import EmailLog, EmailSetting, db
+
+# Legacy default constants (used as fallback if DB is unavailable)
 SMTP_HOST     = "smtp.gmail.com"
 SMTP_PORT     = 587
 SMTP_USERNAME = "management@exceltutors.org.uk"
@@ -12,20 +15,250 @@ FROM_NAME     = "Excel Tutors"
 FROM_EMAIL    = "management@exceltutors.org.uk"
 REPLY_TO      = "management@exceltutors.org.uk"
 
-def send_email(to_email: str, subject: str, html: str):
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = f"{FROM_NAME} <{FROM_EMAIL}>"
-    msg["To"] = to_email
-    if REPLY_TO:
-        msg["Reply-To"] = REPLY_TO
-    msg.set_content("This email contains HTML content. Please view in an HTML-capable client.")
-    msg.add_alternative(html, subtype="html")
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.send_message(msg)
+def _get_active_email_setting(name: Optional[str] = None) -> Optional[EmailSetting]:
+    """Return the named EmailSetting or the first active one.
+
+    Returns None if the DB is not available or no active settings exist.
+    """
+    try:
+        if name:
+            # Try exact match first
+            s = EmailSetting.query.filter_by(name=name).first()
+            if s:
+                return s
+            # Fallback to case-insensitive match on name
+            try:
+                from sqlalchemy import func
+                s = EmailSetting.query.filter(func.lower(EmailSetting.name) == name.lower()).first()
+                if s:
+                    return s
+            except Exception:
+                pass
+        # No specific name provided or not found: return most recently updated active setting
+        return EmailSetting.query.filter_by(is_active=True).order_by(EmailSetting.updated_at.desc()).first()
+    except Exception:
+        return None
+
+
+def _populate_msg_headers(msg: EmailMessage, subject: str, to_email: str, setting: Optional[EmailSetting] = None):
+    if setting and setting.sender_email:
+        from_addr = setting.sender_email
+        from_name = setting.sender_name or ''
+        msg['From'] = f"{from_name} <{from_addr}>" if from_name else from_addr
+    else:
+        msg['From'] = f"{FROM_NAME} <{FROM_EMAIL}>"
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    if setting and setting.sender_email:
+        msg['Reply-To'] = setting.sender_email
+    else:
+        if REPLY_TO:
+            msg['Reply-To'] = REPLY_TO
+
+
+def send_email(to_email: str, subject: str, html: str, *, setting_name: Optional[str] = None, attachments: Optional[list] = None) -> None:
+    """Send an HTML email using DB-backed EmailSetting when available.
+
+    attachments: list of tuples (bytes, maintype, subtype, filename)
+    """
+    setting = _get_active_email_setting(name=setting_name)
+    msg = EmailMessage()
+    _populate_msg_headers(msg, subject, to_email, setting)
+    msg.set_content("This email contains HTML content. Please view in an HTML-capable client.")
+    msg.add_alternative(html, subtype='html')
+
+    # Attach files if provided
+    if attachments:
+        for data, maintype, subtype, fname in attachments:
+            try:
+                msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=fname)
+            except Exception:
+                continue
+
+    # If we have a DB-backed SMTP config, use it; otherwise fall back to constants
+    host = SMTP_HOST
+    port = SMTP_PORT
+    username = SMTP_USERNAME
+    password = SMTP_PASSWORD
+    use_tls = True
+    use_ssl = False
+    if setting:
+        ci = setting.connection_info()
+        host = ci.get('host') or host
+        port = ci.get('port') or port
+        username = ci.get('username') or username
+        password = ci.get('password') or password
+        use_tls = ci.get('use_tls', True)
+        use_ssl = ci.get('use_ssl', False)
+    # Create a pending log record before attempting to send. If DB is
+    # unavailable, continue without logging.
+    log = None
+    try:
+        log = EmailLog(
+            to_email=to_email,
+            subject=subject,
+            body_snippet=(html[:800] if html else None),
+            html=html,
+            status='pending',
+            provider=(setting.provider if setting else None),
+            email_setting_id=(setting.id if setting else None),
+            attachments_count=(len(attachments) if attachments else 0),
+        )
+        db.session.add(log)
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+    # Attempt to send and update the log accordingly.
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, port) as server:
+                if username and password:
+                    server.login(username, password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port) as server:
+                if use_tls:
+                    try:
+                        server.starttls()
+                    except Exception:
+                        pass
+                if username and password:
+                    try:
+                        server.login(username, password)
+                    except Exception:
+                        pass
+                server.send_message(msg)
+        # Mark as sent
+        try:
+            if log:
+                log.status = 'sent'
+                log.sent_at = _dt.utcnow()
+                db.session.commit()
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+    except Exception as exc:  # pragma: no cover - environment specific
+        # Mark log as failed and surface the exception
+        try:
+            if log:
+                log.status = 'failed'
+                log.error_message = str(exc)
+                log.sent_at = _dt.utcnow()
+                db.session.commit()
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+        raise
+
+
+def send_recruitment_email(to_email: str, subject: str, html: str, *, attachments: Optional[list] = None) -> None:
+    """Shorthand for sending via the 'recruitment' EmailSetting.
+
+    Ensures job-related communications use the Recruitment mailbox identity
+    (from name/address) configured in Email Settings.
+    """
+    send_email(to_email, subject, html, setting_name='recruitment', attachments=attachments)
+
+
+def build_interview_invitation_email(applicant, slots: list[tuple[str, list[str]]]) -> Tuple[str, str]:
+    """Build the interview invitation email body with grouped date/time slots.
+
+    slots: list of (day_heading, ["Friday, 24th October, 2025 at 10:30 AM", ...])
+    """
+    subject = "Invitation to interview – Excel Tutors"
+    intro = f"Dear {applicant.first_name},<br/><br/>Thank you for your recent application to Excel Tutors.<br/><br/>We have now progressed to the subsequent stage of our recruitment process, having reviewed and shortlisted candidates for the position.<br/><br/>Consequently, we would like to extend an invitation to you for an interview.<br/><br/>Could you please respond with your availability during one of the following time slots?"
+    lines = []
+    for day, options in slots:
+        for i, opt in enumerate(options):
+            # Keep a blank line between day blocks (like the provided example)
+            if i == 0 and lines:
+                lines.append("&nbsp;")
+            lines.append(opt)
+    details = (
+        "<br/><br/>This is an excellent opportunity for you to meet with our director and head of department, as well as for us to get better acquainted with you."
+        "<br/><br/>The interview will last approximately 1 hour and will encompass a basic test on the subject you have elected to teach at Excel Tutors. Please revise the subject you want to teach at GCSE Level."
+        "<br/><br/>The interviews will take place at 161-163 Commercial Road, London E1 2DA."
+        "<br/><br/>Please ensure you bring the most current version of your CV."
+    )
+    footer = (
+        "<br/><br/>Best Regards<br/><br/>"
+        "Recruitment Administrator<br/>Excel Tutors<br/>161-163 Commercial Road<br/>London, E1 2DA<br/>"
+        "Tel: 0207 0011 411<br/>"
+        "Recruitment Enquiries: recruitment@exceltutors.org.uk<br/>"
+        "Exam Enquiries: exams@exceltutors.org.uk<br/>"
+        "General Enquiries: info@exceltutors.org.uk<br/>"
+        "www.exceltutors.org.uk"
+    )
+    body_inner = [
+        f"<p style='margin:0 0 8px 0;font-size:14px;color:#334155;'>{intro}</p>",
+        "<div style='font-family:monospace; font-size:13px; line-height:1.6; color:#0f172a;'>" + "<br/>".join(lines) + "</div>",
+        f"<div style='font-size:13px;color:#334155;'>{details}</div>",
+        f"<div style='font-size:13px;color:#334155;'>{footer}</div>",
+    ]
+    html = _render_email_shell('Interview invitation', 'Interview invitation', '', ''.join(body_inner))
+    return (subject, html)
+
+
+def send_with_template(template_key: str, ctx: dict, *, to_email: Optional[str] = None, fallback=None, attachments: Optional[list] = None) -> None:
+    """Render an EmailTemplate by key and send it.
+
+    - template_key: EmailTemplate.key to find (only active templates considered)
+    - ctx: mapping used for Python str.format rendering
+    - to_email: optional override recipient; if not provided will use ctx.get('to_email')
+    - fallback: optional callable returning (subject, html) when template missing or rendering fails
+    - attachments: optional attachments list forwarded to send_email
+
+    This helper is defensive: if DB is unavailable or template rendering fails it will
+    fall back to the provided fallback or raise the original exception depending on call.
+    """
+    try:
+        # Import here to avoid circular imports at module import time
+        from models import EmailTemplate
+        et = EmailTemplate.query.filter_by(key=template_key, is_active=True).first()
+    except Exception:
+        et = None
+
+    # Determine recipient
+    recipient = to_email or (ctx.get('to_email') if isinstance(ctx, dict) else None)
+
+    if et:
+        try:
+            subject = et.render_subject(**ctx)
+            html = et.render_html(**ctx)
+            # If template specifies a setting, use it by name
+            setting_name = None
+            if et.email_setting and et.email_setting.name:
+                setting_name = et.email_setting.name
+            # Allow template-level sender overrides by injecting headers via send_email's behaviour
+            # send_email populates From/Reply-To from the EmailSetting; for simple overrides we rely on the EmailSetting.
+            send_email(recipient or ctx.get('to_email'), subject, html, setting_name=setting_name, attachments=attachments)
+            return
+        except Exception:
+            # If rendering or send failed, fall through to fallback
+            pass
+
+    # Fallback path: call provided fallback to build subject/html, else raise
+    if fallback:
+        subj_html = None
+        try:
+            subj_html = fallback()
+        except Exception:
+            subj_html = None
+        if subj_html and isinstance(subj_html, tuple) and len(subj_html) == 2:
+            subj, html = subj_html
+            send_email(recipient or ctx.get('to_email'), subj, html, attachments=attachments)
+            return
+    # If we reach here, no template and no usable fallback; raise an informative error
+    raise RuntimeError(f"Email template '{template_key}' not found or failed to render and no fallback provided")
 
 def build_task_notification_email(task, created_by, assigned_to):
         """Return branded HTML for task creation notification."""
@@ -157,6 +390,50 @@ def _render_email_shell(title: str, headline: str, intro: str, body_inner: str, 
 </body>
 </html>
 """
+
+
+def build_job_application_confirmation_email(applicant) -> Tuple[str, str]:
+    """Return branded subject/html for job application confirmation.
+
+    Uses the shared _render_email_shell for consistent branding.
+    """
+    subject = "Application received – Excel Tutors"
+    intro = f"Hello {applicant.first_name} {applicant.last_name},<br/><br/>Thanks for applying to join Excel Tutors. We've received your application and our recruitment team will review it shortly."
+    # Summarise key details
+    def row(label, value):
+        safe = (value or '').replace('\n','<br/>')
+        return (f"<tr>"
+                f"<td style='padding:6px 0;width:200px;color:#64748b;font-weight:600;'>{label}</td>"
+                f"<td style='padding:6px 0;color:#0f172a;'>{safe}</td>"
+                f"</tr>")
+    branches = ', '.join(applicant.branches_list()) or '—'
+    subjects = ', '.join([s.strip() for s in (getattr(applicant, 'subjects', '') or '').split(',') if s.strip()]) or '—'
+    body_inner = [
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Here is a quick summary of your submission:</p>",
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>",
+        row('Email', applicant.email),
+        row('Phone', applicant.phone),
+        row('Address', f"{applicant.address_line1}, {applicant.city} {applicant.postcode}".strip()),
+        row('University', applicant.university),
+        row('Year of Study', applicant.study_year),
+        row('Course', applicant.course_name),
+        row('A Level 1', f"{applicant.alevel1_subject} – {applicant.alevel1_grade} ({applicant.alevel1_status})"),
+        row('A Level 2', f"{applicant.alevel2_subject} – {applicant.alevel2_grade} ({applicant.alevel2_status})"),
+        row('A Level 3', f"{applicant.alevel3_subject} – {applicant.alevel3_grade} ({applicant.alevel3_status})"),
+        row('GCSE Maths', f"{applicant.gcse_maths_grade} ({applicant.gcse_maths_status})"),
+        row('GCSE English', f"{applicant.gcse_english_grade} ({applicant.gcse_english_status})"),
+    row('GCSE Science', f"{getattr(applicant, 'gcse_science_grade', '')} ({getattr(applicant, 'gcse_science_status', '')})"),
+        row('Tutoring Experience', 'Yes' if applicant.tutoring_experience else 'No'),
+        row('Eligible to Work in UK', 'Yes' if applicant.uk_work_eligible else 'No'),
+    row('Subjects you can tutor', subjects),
+        row('Preferred Branches', branches),
+        row('How you heard about us', applicant.heard_about or '—'),
+        "</table>",
+        "<p style='margin:16px 0 0;font-size:13px;color:#475569;'>We aim to get back to you within 7 business days. If you have any questions, reply to this email.</p>",
+        "<p style='margin:10px 0 0;font-size:13px;color:#475569;'>Best regards,<br/>Excel Tutors Recruitment Team</p>",
+    ]
+    html = _render_email_shell('Application received', 'Application received', intro, ''.join(body_inner))
+    return subject, html
 
 
 _CUSTOMER_COPY = {

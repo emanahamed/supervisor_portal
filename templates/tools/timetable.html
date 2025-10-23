@@ -73,7 +73,7 @@
       )
       .join("\n");
     navigator.clipboard.writeText(rows).then(() => {
-      alert("Copied timetable as TSV");
+      showToast("Copied timetable as TSV", "success");
     });
   }
 </script>

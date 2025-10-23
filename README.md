@@ -175,6 +175,13 @@ The full changelog lives in `VERSION.md` and is rendered inside the app (Profile
 
 Earlier versions: see `VERSION.md` for full history.
 
+#### Recent (2.0.8 / 2.0.9) highlights
+
+- Manager review controls for staff invoices (Accept / Reject) with rejection reason modal and branded notification emails.
+- Admin UI to manage National Minimum Wage (NMW) bands and selection shown on invoice detail pages.
+- Invoice template fixes: consolidated totals and more reliable bank detail rendering in detail and PDF/print outputs.
+- DB safety helper added to back up and add missing nullable `staff` columns when required.
+
 ---
 
 ## 5. Versioning & Bumping
@@ -184,6 +191,20 @@ Earlier versions: see `VERSION.md` for full history.
 3. Summarize major user-facing pieces (top 1–2) in README Release Notes if impactful (keep concise, point deeper details to `VERSION.md`).
 4. Add/adjust tests for new behaviors (e.g., audit, sorting, bulk ops) before bump if possible.
 5. Git tag recommended: `git tag vX.Y.Z && git push --tags` (not yet automated).
+
+### Version endpoints & CLI
+
+- Web:
+
+  - `/version-history` — pretty version list (newest first)
+  - `/api/version` — current version + current entry
+  - `/api/changelog?limit=5` — parsed changelog entries (JSON)
+
+- CLI (from this folder):
+  - `flask version` — prints current version and notes
+  - `flask changelog --limit 5` — prints latest entries
+
+See also `CHANGELOG.md` (pointer) and the canonical `VERSION.md` file.
 
 ---
 

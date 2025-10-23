@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-semibold">Email Management</h1>
+    <form method="get" class="flex items-center gap-2">
+      <input name="q" class="input" placeholder="Search recipient or subject" value="{{ request.args.get('q','') }}" />
+      <select name="status" class="input">
+        <option value="">Any status</option>
+        <option value="sent" {% if request.args.get('status')=='sent' %}selected{% endif %}>Sent</option>
+        <option value="failed" {% if request.args.get('status')=='failed' %}selected{% endif %}>Failed</option>
+        <option value="pending" {% if request.args.get('status')=='pending' %}selected{% endif %}>Pending</option>
+      </select>
+      <button class="soft-btn">Filter</button>
+    </form>
+  </div>
+
+  <div class="soft-card overflow-x-auto">
+    <table class="min-w-full bg-white border">
+      <thead>
+        <tr class="text-left text-sm bg-gray-50">
+          <th class="px-3 py-2">When</th>
+          <th class="px-3 py-2">To</th>
+          <th class="px-3 py-2">Subject</th>
+          <th class="px-3 py-2">Provider</th>
+          <th class="px-3 py-2">Status</th>
+          <th class="px-3 py-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr class="border-t">
+          <td class="px-3 py-2">{{ it.created_at.strftime('%Y-%m-%d %H:%M') if it.created_at else '' }}</td>
+          <td class="px-3 py-2">{{ it.to_email }}</td>
+          <td class="px-3 py-2">{{ it.subject }}</td>
+          <td class="px-3 py-2">{{ it.provider or (it.setting.name if it.setting else '-') }}</td>
+          <td class="px-3 py-2">{{ it.status }}</td>
+          <td class="px-3 py-2">
+            <a class="soft-btn text-xs" href="{{ url_for('email_management_detail', elog_id=it.id) }}">View</a>
+            <form method="post" action="{{ url_for('email_management_delete', elog_id=it.id) }}" style="display:inline">
+              {{ csrf_field() }}
+              <button class="soft-btn danger text-xs" type="submit" onclick="return confirm('Delete this log?');">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="px-3 py-6" colspan="6">No email logs found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

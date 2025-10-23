@@ -1,0 +1,143 @@
+{% extends 'base.html' %} {% block content %}
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-2xl font-semibold mb-4">
+    {{ 'Edit' if item else 'New' }} Email Setting
+  </h1>
+
+  <form method="post" class="soft-card p-4 space-y-4">
+    {{ csrf_field() }}
+
+    <div>
+      <label class="block font-semibold mb-1">Name</label>
+      <input
+        name="name"
+        class="input w-full"
+        value="{{ item.name if item else '' }}"
+      />
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block font-semibold mb-1">Provider</label>
+        <input
+          name="provider"
+          class="input w-full"
+          value="{{ item.provider if item else 'smtp' }}"
+        />
+      </div>
+      <div>
+        <label class="block font-semibold mb-1">Host</label>
+        <input
+          name="host"
+          class="input w-full"
+          value="{{ item.host if item else '' }}"
+        />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+        <label class="block font-semibold mb-1">Port</label>
+        <input
+          name="port"
+          class="input w-full"
+          value="{{ item.port if item and item.port else '' }}"
+        />
+      </div>
+      <div>
+        <label class="block font-semibold mb-1">Username</label>
+        <input
+          name="username"
+          class="input w-full"
+          value="{{ item.username if item else '' }}"
+        />
+      </div>
+      <div>
+        <label class="block font-semibold mb-1">Password</label>
+        <input
+          name="password"
+          class="input w-full"
+          value=""
+          type="password"
+          placeholder="Leave blank to keep current"
+        />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block font-semibold mb-1">Sender name</label>
+        <input
+          name="sender_name"
+          class="input w-full"
+          value="{{ item.sender_name if item else '' }}"
+        />
+      </div>
+      <div>
+        <label class="block font-semibold mb-1">Sender email</label>
+        <input
+          name="sender_email"
+          class="input w-full"
+          value="{{ item.sender_email if item else '' }}"
+        />
+      </div>
+    </div>
+
+    <div class="flex items-center gap-6">
+      <label class="flex items-center gap-2"
+        ><input
+          type="checkbox"
+          name="use_tls"
+          {%
+          if
+          item
+          and
+          item.use_tls
+          %}checked{%
+          endif
+          %}
+        />
+        Use TLS</label
+      >
+      <label class="flex items-center gap-2"
+        ><input
+          type="checkbox"
+          name="use_ssl"
+          {%
+          if
+          item
+          and
+          item.use_ssl
+          %}checked{%
+          endif
+          %}
+        />
+        Use SSL</label
+      >
+      <label class="flex items-center gap-2"
+        ><input
+          type="checkbox"
+          name="is_active"
+          {%
+          if
+          item
+          and
+          item.is_active
+          %}checked{%
+          endif
+          %}
+        />
+        Active</label
+      >
+    </div>
+
+    <div class="flex items-center">
+      <button class="soft-btn soft-btn-primary">Save</button>
+      <a class="soft-btn ml-3" href="{{ url_for('email_settings_index') }}"
+        >Cancel</a
+      >
+    </div>
+  </form>
+</div>
+
+{% endblock %}

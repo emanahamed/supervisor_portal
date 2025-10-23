@@ -1,0 +1,114 @@
+{% extends 'base.html' %} {% block content %}
+<div class="max-w-3xl mx-auto">
+  <h1 class="text-2xl font-semibold mb-4">National Minimum Wage bands</h1>
+  <p class="mb-4 text-sm text-slate-600">
+    Use the structured editor to manage bands. Add, remove or edit rows then
+    click Save.
+  </p>
+
+  <section class="p-4 border rounded bg-white max-w-3xl">
+    <h2 class="text-lg font-semibold mb-2">Bands</h2>
+    <form method="post" id="nmw-table-form">
+      {{ csrf_field() }}
+      <table class="w-full table-auto border" id="bands-table">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="p-2 text-left">Label</th>
+            <th class="p-2 text-left">Min age</th>
+            <th class="p-2 text-left">Amount</th>
+            <th class="p-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if bands %} {% for b in bands %}
+          <tr>
+            <td class="p-2">
+              <input
+                class="soft-input w-full"
+                name="band-{{ loop.index0 }}-label"
+                value="{{ b.label }}"
+              />
+            </td>
+            <td class="p-2">
+              <input
+                class="soft-input w-20"
+                type="number"
+                name="band-{{ loop.index0 }}-min_age"
+                value="{{ b.min_age }}"
+              />
+            </td>
+            <td class="p-2">
+              <input
+                class="soft-input w-24"
+                name="band-{{ loop.index0 }}-amount"
+                value="{{ b.amount }}"
+              />
+            </td>
+            <td class="p-2 text-center">
+              <button type="button" class="btn btn-sm btn-delete">
+                Delete
+              </button>
+            </td>
+          </tr>
+          {% endfor %} {% endif %}
+        </tbody>
+      </table>
+      <div class="mt-3">
+        <button type="button" id="add-row" class="btn btn-outline-secondary">
+          Add
+        </button>
+        <button class="btn btn-primary ms-2">Save</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const table = document.getElementById("bands-table");
+    const tbody = table.querySelector("tbody");
+    function renumber() {
+      // Ensure inputs are sequentially named band-<idx>-*
+      Array.from(tbody.querySelectorAll("tr")).forEach((tr, i) => {
+        const label =
+          tr.querySelector('[name^="band-"][name$="-label"]') ||
+          tr.querySelector('[name$="-label"]');
+        const minAge =
+          tr.querySelector('[name^="band-"][name$="-min_age"]') ||
+          tr.querySelector('[name$="-min_age"]');
+        const amount =
+          tr.querySelector('[name^="band-"][name$="-amount"]') ||
+          tr.querySelector('[name$="-amount"]');
+        if (label) label.name = `band-${i}-label`;
+        if (minAge) minAge.name = `band-${i}-min_age`;
+        if (amount) amount.name = `band-${i}-amount`;
+      });
+    }
+
+    document.getElementById("add-row").addEventListener("click", () => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="p-2"><input class="soft-input w-full" name="band-__idx__-label" /></td>
+        <td class="p-2"><input class="soft-input w-20" type="number" name="band-__idx__-min_age" /></td>
+        <td class="p-2"><input class="soft-input w-24" name="band-__idx__-amount" /></td>
+        <td class="p-2 text-center"><button type="button" class="btn btn-sm btn-delete">Delete</button></td>
+      `;
+      tbody.appendChild(tr);
+      renumber();
+    });
+
+    tbody.addEventListener("click", (e) => {
+      if (e.target && e.target.classList.contains("btn-delete")) {
+        e.target.closest("tr").remove();
+        renumber();
+      }
+    });
+
+    // On submit, ensure names are sequential
+    document
+      .getElementById("nmw-table-form")
+      .addEventListener("submit", (e) => renumber());
+  })();
+</script>
+
+{% endblock %}

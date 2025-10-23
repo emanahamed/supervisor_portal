@@ -1,0 +1,56 @@
+{% extends 'base.html' %} {% block title %}Import Salary Report{% endblock %} {%
+block content %}
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-xl font-semibold mb-4">
+    Import into {{ report.name or report.created_at.strftime('%Y-%m-%d') }}
+  </h1>
+  <form method="post" enctype="multipart/form-data" class="space-y-4">
+    <div>
+      <label class="block mb-1 font-medium">Upload XLSX file</label>
+      <input class="form-input" type="file" name="file" accept=".xlsx,.xls" />
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-sm mb-1">Company (multi)</label>
+        <select name="company" multiple class="form-input" size="6">
+          {% for c in companies %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Month (multi)</label>
+        <select name="month" multiple class="form-input" size="6">
+          {% set month_names =
+          ["January","February","March","April","May","June","July","August","September","October","November","December"]
+          %} {% for name in month_names %}
+          <option value="{{ loop.index }}">{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Year (multi)</label>
+        <select name="year" multiple class="form-input" size="6">
+          {% for y in range(2023, (2026 + 1)) %}
+          <option value="{{ y }}">{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Status (multi)</label>
+        <select name="status" multiple class="form-input" size="6">
+          {% for s in ['Pending','Approved','Rejected'] %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="pt-2 flex gap-2">
+      <button class="btn btn-primary" type="submit">Import</button>
+      <a class="btn" href="{{ url_for('salary_reports_index') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

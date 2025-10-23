@@ -26,8 +26,86 @@
   </div>
 
   <ul role="list" class="flex-1 space-y-4">
-    {# Admin group (alphabetical order of groups, after Dashboard) #} {% if
-    current_user.is_superadmin or can('manage_users') %}
+    {# Application Management (Recruitment) #} {% set can_recruit =
+    current_user.is_superadmin or can('manage_recruitment') %} {% if can_recruit
+    %}
+    <li>
+      <div>
+        <button
+          @click="toggle('recruitment')"
+          :aria-expanded="isOpen('recruitment')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2">
+            <svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M12 2l3 7h7l-5.5 4.1L18 21l-6-4-6 4 1.5-7.9L2 9h7z" />
+            </svg>
+            Application Management
+          </span>
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('recruitment')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('recruitment')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('recruitment_dashboard') }}"
+              class="nav-leaf {{ 'active' if endpoint=='recruitment_dashboard' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3h18v4H3z" />
+                <path d="M3 11h18v10H3z" />
+              </svg>
+              <span>Dashboard</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('recruitment_applications_index') }}"
+              class="nav-leaf {{ 'active' if endpoint in ['recruitment_applications_index','recruitment_application_detail'] else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span>Application List</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Admin group (alphabetical order of groups, after Dashboard)
+    #} {% if current_user.is_superadmin or can('manage_users') %}
     <li>
       <div>
         <button
@@ -151,25 +229,6 @@
         </ul>
       </div>
     </li>
-    {# Version History - visible to all logged in users #}
-    <li>
-      <a
-        href="{{ url_for('version_history') }}"
-        class="nav-single {{ 'active' if endpoint=='version_history' else '' }}"
-      >
-        <svg
-          class="h-4 w-4 text-indigo-500"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path d="M12 8v4l3 3" />
-          <circle cx="12" cy="12" r="9" />
-        </svg>
-        Version History
-      </a>
-    </li>
     {% endif %} {# Books #} {% if can('manage_books') %}
     <li>
       <div>
@@ -210,6 +269,7 @@
           x-collapse
           class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
         >
+          {# Book List, Book Orders (already alphabetical) #}
           <li>
             <a
               href="{{ url_for('books_index') }}"
@@ -252,7 +312,153 @@
         </ul>
       </div>
     </li>
-    {% endif %} {# Invoice #} {% if can('manage_invoices') %}
+    {% endif %} {# Floor Management (F) #} {% set show_floor =
+    can('floor_dashboard') or can('manage_shifts') or
+    can('manage_eod_checklist') or can('manage_floor_reports') or
+    can('manage_call_list') %} {% if show_floor %}
+    <li>
+      <div>
+        <button
+          @click="toggle('floor')"
+          :aria-expanded="isOpen('floor')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M3 12h18" />
+              <path d="M3 6h18" />
+              <path d="M3 18h18" />
+            </svg>
+            Floor Management</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('floor') }"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('floor')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          {% if can('floor_dashboard') %}
+          <li>
+            <a
+              href="{{ url_for('floor_dashboard') }}"
+              class="nav-leaf {{ 'active' if endpoint=='floor_dashboard' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 4h16v6H4z" />
+                <path d="M4 14h16v6H4z" />
+              </svg>
+              <span>Dashboard</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_call_list') %}
+          <li>
+            <a
+              href="{{ url_for('floor_call_list_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='floor_call_list_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.08 4.18 2 2 0 014.06 2h3a2 2 0 012 1.72c.12.81.3 1.6.54 2.36a2 2 0 01-.45 2.11L8 9a16 16 0 006 6l.81-1.15a2 2 0 012.11-.45c.76.24 1.55.42 2.36.54A2 2 0 0122 16.92z"
+                />
+              </svg>
+              <span>Call List</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_eod_checklist') %}
+          <li>
+            <a
+              href="{{ url_for('floor_checklists_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='floor_checklists_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 11l3 3L22 4" />
+                <path d="M3 6h12" />
+                <path d="M3 12h6" />
+                <path d="M3 18h6" />
+              </svg>
+              <span>End of Day Checklist</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_floor_reports') %}
+          <li>
+            <a
+              href="{{ url_for('floor_reports_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='floor_reports_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 4h16v16H4z" />
+                <path d="M8 8h8v8H8z" />
+              </svg>
+              <span>Print Reports</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_shifts') %}
+          <li>
+            <a
+              href="{{ url_for('floor_shifts_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='floor_shifts_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 12h18" />
+                <path d="M8 6v12" />
+                <path d="M16 6v12" />
+              </svg>
+              <span>Shifts</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# Invoice (I) #} {% if can('manage_invoices') %}
     <li>
       <div>
         <button
@@ -294,6 +500,25 @@
         >
           <li>
             <a
+              href="{{ url_for('companies_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='companies_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 21V7a2 2 0 012-2h4v16" />
+                <path d="M9 21h6" />
+                <path d="M9 3h6l6 6v12a2 2 0 01-2 2h-4V3H9z" />
+              </svg>
+              <span>Companies</span>
+            </a>
+          </li>
+          <li>
+            <a
               href="{{ url_for('invoices_index') }}"
               class="nav-leaf {{ 'active' if endpoint.startswith('invoice_') or endpoint.startswith('invoices_') else '' }}"
             >
@@ -314,10 +539,55 @@
               <span>Invoice List</span>
             </a>
           </li>
+        </ul>
+      </div>
+    </li>
+    {# Staff Invoice Management #} {% if can('submit_staff_invoices') or
+    can('manage_staff_invoices') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('staff_invoice')"
+          :aria-expanded="isOpen('staff_invoice')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          <span class="flex items-center gap-2"
+            ><svg
+              class="h-4 w-4 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M9 17v-2m3 2v-4m3 4v-6" />
+              <path
+                d="M19 21H7a2 2 0 01-2-2V5a2 2 0 012-2h5.6a1 1 0 01.7.3l5.4 5.4a1 1 0 01.3.7V19a2 2 0 01-2 2z"
+              /></svg
+            >Staff Invoice</span
+          >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('staff_invoice') }"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('staff_invoice')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
+        >
+          {% if can('manage_staff_invoices') %}
           <li>
             <a
-              href="{{ url_for('companies_index') }}"
-              class="nav-leaf {{ 'active' if endpoint=='companies_index' else '' }}"
+              href="{{ url_for('staff_invoices_dashboard') }}"
+              class="nav-leaf {{ 'active' if endpoint=='staff_invoices_dashboard' else '' }}"
             >
               <svg
                 class="h-3.5 w-3.5 text-indigo-400"
@@ -326,17 +596,79 @@
                 stroke="currentColor"
                 stroke-width="2"
               >
-                <path d="M3 21V7a2 2 0 012-2h4v16" />
-                <path d="M9 21h6" />
-                <path d="M9 3h6l6 6v12a2 2 0 01-2 2h-4V3H9z" />
+                <path d="M3 3h18v4H3z" />
+                <path d="M3 11h18v10H3z" />
               </svg>
-              <span>Companies</span>
+              <span>Dashboard</span>
+            </a>
+          </li>
+          {% endif %}
+          <li>
+            <a
+              href="{{ url_for('staff_invoices_index') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('staff_invoice_') or endpoint=='staff_invoices_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M8 2h8l4 4v14a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"
+                />
+                <path d="M16 13H8" />
+                <path d="M16 17H8" />
+                <path d="M10 9H9" />
+              </svg>
+              <span>Invoice List</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('salary_reports_index') }}"
+              class="nav-leaf {{ 'active' if endpoint and endpoint.startswith('salary_reports') else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3h18v4H3z" />
+                <path d="M3 11h18v10H3z" />
+              </svg>
+              <span>Salary Reports</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('invoice_submissions') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('invoice_submission') or endpoint=='invoice_submissions' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M8 2h8l4 4v14a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"
+                />
+                <path d="M16 13H8" />
+                <path d="M16 17H8" />
+                <path d="M10 9H9" />
+              </svg>
+              <span>Invoice Submissions</span>
             </a>
           </li>
         </ul>
       </div>
     </li>
-    {% endif %} {# Issues (single) #} {% if can('manage_issues') %}
+    {% endif %}
     <li>
       <a
         href="{{ url_for('issues_index') }}"
@@ -356,7 +688,7 @@
         Issues
       </a>
     </li>
-    {% endif %} {# Meetings #} {% if can('manage_meetings') or
+    {% endif %} {# Meetings (M) #} {% if can('manage_meetings') or
     can('manage_appointments') %}
     <li>
       <div>
@@ -438,8 +770,7 @@
         </ul>
       </div>
     </li>
-    {% endif %} {# Resource Management — placed immediately above Staff #} {% if
-    can('manage_resources') %}
+    {% endif %} {# Resource Management (R) #} {% if can('manage_resources') %}
     <li>
       <div>
         <button
@@ -497,6 +828,8 @@
               <span>Resources Dashboard</span>
             </a>
           </li>
+          {# Alphabetical after Dashboard: Loan History, Resource Loans,
+          Resource Management #}
           <li>
             <a
               href="{{ url_for('resources_loans_history') }}"
@@ -556,7 +889,8 @@
         </ul>
       </div>
     </li>
-    {% endif %} {# Staff Management #} {% if can('manage_staff') or
+    {% endif %} {# Staff Invoice (S, stays under Invoices permission) already
+    placed above #} {# Staff Management (S) #} {% if can('manage_staff') or
     can('manage_availability') or can('manage_supervisor_shifts') %}
     <li>
       <div>
@@ -595,7 +929,50 @@
           x-collapse
           class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
         >
-          {% if can('manage_staff') %}
+          {# Alphabetical: Staff Attendance, Staff List, Supervisor Shifts,
+          Tutor Availability #} {% if can('manage_supervisor_shifts') %} {% if
+          can('manage_attendance_fix') %}
+          <li>
+            <a
+              href="{{ url_for('staff_attendance_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='staff_attendance_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 7h18" />
+                <path d="M5 12h14" />
+                <path d="M3 17h18" />
+              </svg>
+              <span>Staff Attendance</span>
+            </a>
+          </li>
+          {% endif %}
+          <li>
+            <a
+              href="{{ url_for('supervisor_shifts_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='supervisor_shifts_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 12h18" />
+                <path d="M8 6v12" />
+                <path d="M16 6v12" />
+                <path d="M12 2v4" />
+              </svg>
+              <span>Supervisor Shifts</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_staff') %}
           <li>
             <a
               href="{{ url_for('staff_index') }}"
@@ -633,27 +1010,6 @@
                 />
               </svg>
               <span>Tutor Availability</span>
-            </a>
-          </li>
-          {% endif %} {% if can('manage_supervisor_shifts') %}
-          <li>
-            <a
-              href="{{ url_for('supervisor_shifts_index') }}"
-              class="nav-leaf {{ 'active' if endpoint=='supervisor_shifts_index' else '' }}"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-indigo-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M3 12h18" />
-                <path d="M8 6v12" />
-                <path d="M16 6v12" />
-                <path d="M12 2v4" />
-              </svg>
-              <span>Supervisor Shifts</span>
             </a>
           </li>
           {% endif %}
@@ -698,27 +1054,8 @@
           x-collapse
           class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
         >
-          <li>
-            <a
-              href="{{ url_for('students_index') }}"
-              class="nav-leaf {{ 'active' if endpoint=='students_index' else '' }}"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-indigo-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M12 20v-6" />
-                <path d="M7 9l5-3 5 3" />
-                <path d="M4 19h16" />
-                <path d="M12 13l-8-4 8-4 8 4-8 4z" />
-              </svg>
-              <span>Student List</span>
-            </a>
-          </li>
-          {% if can('manage_student_concerns') %}
+          {# Alphabetical: Student Concerns, Student List #} {% if
+          can('manage_student_concerns') %}
           <li>
             <a
               href="{{ url_for('student_concerns_index') }}"
@@ -739,57 +1076,10 @@
             </a>
           </li>
           {% endif %}
-        </ul>
-      </div>
-    </li>
-    {% endif %} {# Floor Management #} {% set show_floor =
-    can('floor_dashboard') or can('manage_shifts') or
-    can('manage_eod_checklist') or can('manage_floor_reports') or
-    can('manage_call_list') %} {% if show_floor %}
-    <li>
-      <div>
-        <button
-          @click="toggle('floor')"
-          :aria-expanded="isOpen('floor')"
-          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-white/5"
-        >
-          <span class="flex items-center gap-2"
-            ><svg
-              class="h-4 w-4 text-indigo-500"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M3 12h18" />
-              <path d="M3 6h18" />
-              <path d="M3 18h18" />
-            </svg>
-            Floor Management</span
-          >
-          <svg
-            class="h-3 w-3 transition-transform"
-            :class="{'rotate-90': isOpen('floor')}"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M6 6L14 10L6 14V6Z"
-              clip-rule="evenodd"
-            />
-          </svg>
-        </button>
-        <ul
-          x-show="isOpen('floor')"
-          x-collapse
-          class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
-        >
-          {% if can('floor_dashboard') %}
           <li>
             <a
-              href="{{ url_for('floor_dashboard') }}"
-              class="nav-leaf {{ 'active' if endpoint=='floor_dashboard' else '' }}"
+              href="{{ url_for('students_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='students_index' else '' }}"
             >
               <svg
                 class="h-3.5 w-3.5 text-indigo-400"
@@ -798,93 +1088,14 @@
                 stroke="currentColor"
                 stroke-width="2"
               >
-                <path d="M4 4h16v6H4z" />
-                <path d="M4 14h16v6H4z" />
+                <path d="M12 20v-6" />
+                <path d="M7 9l5-3 5 3" />
+                <path d="M4 19h16" />
+                <path d="M12 13l-8-4 8-4 8 4-8 4z" />
               </svg>
-              <span>Dashboard</span>
+              <span>Student List</span>
             </a>
           </li>
-          {% endif %} {% if can('manage_shifts') %}
-          <li>
-            <a
-              href="{{ url_for('floor_shifts_index') }}"
-              class="nav-leaf {{ 'active' if endpoint=='floor_shifts_index' else '' }}"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-indigo-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M3 12h18" />
-                <path d="M8 6v12" />
-                <path d="M16 6v12" />
-              </svg>
-              <span>Shifts</span>
-            </a>
-          </li>
-          {% endif %} {% if can('manage_eod_checklist') %}
-          <li>
-            <a
-              href="{{ url_for('floor_checklists_index') }}"
-              class="nav-leaf {{ 'active' if endpoint=='floor_checklists_index' else '' }}"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-indigo-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M9 11l3 3L22 4" />
-                <path d="M3 6h12" />
-                <path d="M3 12h6" />
-                <path d="M3 18h6" />
-              </svg>
-              <span>End of Day Checklist</span>
-            </a>
-          </li>
-          {% endif %} {% if can('manage_floor_reports') %}
-          <li>
-            <a
-              href="{{ url_for('floor_reports_index') }}"
-              class="nav-leaf {{ 'active' if endpoint=='floor_reports_index' else '' }}"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-indigo-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M4 4h16v16H4z" />
-                <path d="M8 8h8v8H8z" />
-              </svg>
-              <span>Print Reports</span>
-            </a>
-          </li>
-          {% endif %} {% if can('manage_call_list') %}
-          <li>
-            <a
-              href="{{ url_for('floor_call_list_index') }}"
-              class="nav-leaf {{ 'active' if endpoint=='floor_call_list_index' else '' }}"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-indigo-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.08 4.18 2 2 0 014.06 2h3a2 2 0 012 1.72c.12.81.3 1.6.54 2.36a2 2 0 01-.45 2.11L8 9a16 16 0 006 6l.81-1.15a2 2 0 012.11-.45c.76.24 1.55.42 2.36.54A2 2 0 0122 16.92z"
-                />
-              </svg>
-              <span>Call List</span>
-            </a>
-          </li>
-          {% endif %}
         </ul>
       </div>
     </li>
@@ -930,6 +1141,123 @@
           x-collapse
           class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
         >
+          {# Alphabetical overall: Branches, Companies, Email Management, Email
+          Settings, Email Templates, NMW Bands, Pricing Setup #} {% if
+          can('manage_supervisor_shifts') or can('manage_invoices') or
+          can('manage_pricing') %}
+          <li>
+            <a
+              href="{{ url_for('system_branches_index') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('system_branches') or endpoint.startswith('system_branch') else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 21V7a2 2 0 012-2h4v16" />
+                <path d="M9 21h6" />
+                <path d="M9 3h6l6 6v12a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              </svg>
+              <span>Branches</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_invoices') %}
+          <li>
+            <a
+              href="{{ url_for('companies_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='companies_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 21V7a2 2 0 012-2h4v16" />
+                <path d="M9 21h6" />
+                <path d="M9 3h6l6 6v12a2 2 0 01-2 2h-4V3H9z" />
+              </svg>
+              <span>Companies</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('email_management_index') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('email_management') or endpoint=='email_management_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M21 8V7a2 2 0 00-2-2H5a2 2 0 00-2 2v1" />
+                <path d="M3 8v8a2 2 0 002 2h14a2 2 0 002-2V8" />
+                <path d="M7 12h10" />
+              </svg>
+              <span>Email Management</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('email_settings_index') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('email_settings') or endpoint=='email_settings_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8" />
+                <path d="M21 8v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8" />
+              </svg>
+              <span>Email Settings</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('email_templates_index') }}"
+              class="nav-leaf {{ 'active' if endpoint.startswith('email_templates') or endpoint=='email_templates_index' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span>Email Templates</span>
+            </a>
+          </li>
+          {% endif %}
+          <li>
+            <a
+              href="{{ url_for('nmw_bands_index') }}"
+              class="nav-leaf {{ 'active' if endpoint=='nmw_bands_index' or endpoint.startswith('nmw_bands') else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 8v8" />
+                <path d="M8 12h8" />
+                <circle cx="12" cy="12" r="9" />
+              </svg>
+              <span>NMW Bands</span>
+            </a>
+          </li>
           <li>
             <a
               href="{{ url_for('pricing_config') }}"
@@ -974,8 +1302,9 @@
         Tasks
       </a>
     </li>
-    {% endif %} {# Tools #} {% set show_tools = can('access_enrollment_tool') or
-    can('manage_attendance_fix') %} {% if show_tools %}
+    {% endif %} {# Tools (T) #} {% set show_tools =
+    can('access_enrollment_tool') or can('manage_attendance_fix') %} {% if
+    show_tools %}
     <li>
       <div>
         <button
@@ -1015,31 +1344,8 @@
           x-collapse
           class="mt-1 space-y-0.5 border-l border-gray-200 dark:border-white/10 pl-3"
         >
-          {% if can('manage_attendance_fix') %}
-          <li>
-            <a
-              href="{{ url_for('attendance_fix') }}"
-              class="nav-leaf {{ 'active' if endpoint=='attendance_fix' else '' }}"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-indigo-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M3 3h18" />
-                <path d="M9 8h12" />
-                <path d="M3 13h18" />
-                <path d="M9 18h12" />
-                <path d="M5 8v8" />
-                <path d="M5 8a2 2 0 110-4 2 2 0 010 4z" />
-                <path d="M5 20a2 2 0 110-4 2 2 0 010 4z" />
-              </svg>
-              <span>Fix Attendance Data</span>
-            </a>
-          </li>
-          {% endif %} {% if can('access_enrollment_tool') %}
+          {# Alphabetical: Enrollment Calculator, Enrollment Message Generator,
+          Fix Attendance Data #} {% if can('access_enrollment_tool') %}
           <li>
             <a
               href="{{ url_for('tool_enroll') }}"
@@ -1079,6 +1385,30 @@
                 <path d="M17 21V9" />
               </svg>
               <span>Enrollment Message Generator</span>
+            </a>
+          </li>
+          {% endif %} {% if can('manage_attendance_fix') %}
+          <li>
+            <a
+              href="{{ url_for('attendance_fix') }}"
+              class="nav-leaf {{ 'active' if endpoint=='attendance_fix' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3h18" />
+                <path d="M9 8h12" />
+                <path d="M3 13h18" />
+                <path d="M9 18h12" />
+                <path d="M5 8v8" />
+                <path d="M5 8a2 2 0 110-4 2 2 0 010 4z" />
+                <path d="M5 20a2 2 0 110-4 2 2 0 010 4z" />
+              </svg>
+              <span>Fix Attendance Data</span>
             </a>
           </li>
           {% endif %}
@@ -1167,7 +1497,26 @@
         </ul>
       </div>
     </li>
-    {% endif %}
+    {% endif %} {# Version History - visible to all logged in users;
+    alphabetical places it near the end #}
+    <li>
+      <a
+        href="{{ url_for('version_history') }}"
+        class="nav-single {{ 'active' if endpoint=='version_history' else '' }}"
+      >
+        <svg
+          class="h-4 w-4 text-indigo-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M12 8v4l3 3" />
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+        Version History
+      </a>
+    </li>
   </ul>
 
   <!-- Pinned Profile Bottom -->

@@ -1,0 +1,350 @@
+{% extends 'base.html' %}
+{% from 'components/forms_macros.html' import csrf_field %}
+
+{% block title %}{{ 'Edit' if inv else 'New' }} Staff Invoice{% endblock %}
+
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">{{ 'Edit' if inv else 'New' }} Staff Invoice</h1>
+
+<form method="post" action="{{ url_for('staff_invoice_edit', invoice_id=inv.id) if (inv is defined and inv) else url_for('staff_invoice_new') }}" x-data="invoiceForm()" @submit="beforeSubmit($event)" class="w-full">
+  {{ csrf_field() }}
+  {{ form.hidden_tag() }}
+  <div class="w-full max-w-6xl mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
+    <!-- server-side validation errors (WTForms) -->
+    {% if form.errors %}
+      <div class="bg-red-50 border border-red-200 text-red-800 p-3 rounded mb-4">
+        <ul class="list-disc pl-5 text-sm">
+          {% for field, errs in form.errors.items() %}
+            {% for err in errs %}
+              <li>{{ field }}: {{ err }}</li>
+            {% endfor %}
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <!-- client-side validation errors (Alpine) -->
+    <template x-if="errors && errors.length">
+      <div class="bg-red-50 border border-red-200 text-red-800 p-3 rounded">
+        <ul class="list-disc pl-5 text-sm">
+          <template x-for="(err, idx) in errors" :key="idx">
+            <li x-text="err"></li>
+          </template>
+        </ul>
+      </div>
+    </template>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+      <div>
+        <label class="block text-sm text-gray-600 mb-1">Month</label>
+        <select name="{{ form.month.name }}" class="form-select w-full">
+          {% for val, label in form.month.choices %}
+          <option value="{{ val }}" {{ 'selected' if form.month.data==val else '' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm text-gray-600 mb-1">Year</label>
+        <!-- Keep year as a hidden/readonly value for the form; show as label -->
+        <input type="hidden" name="{{ form.year.name }}" value="{{ form.year.data }}" />
+        <div class="form-input bg-gray-50 text-gray-700">{{ form.year.data }}</div>
+      </div>
+      <div class="text-right sm:text-left">
+        <!-- icons for actions or info could go here -->
+        <span class="inline-flex items-center text-sm text-gray-500">
+          <svg class="w-5 h-5 mr-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"></path></svg>
+          Timesheet entries for the selected month
+        </span>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto bg-white shadow sm:rounded-lg">
+      <table class="min-w-full table-auto border" aria-label="Timesheet rows">
+        <thead class="bg-gray-50">
+          <tr class="text-left text-sm">
+            <th class="px-3 py-2">Date</th>
+            <th class="px-3 py-2">Day</th>
+            <th class="px-3 py-2">Branch</th>
+            <th class="px-3 py-2 text-right">JHours</th>
+            <th class="px-3 py-2">Description</th>
+            <th class="px-3 py-2 text-right">Rate/Hour</th>
+            <th class="px-3 py-2 text-right">Amount</th>
+            <th class="px-3 py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody id="items-body">
+          {% for subform in form.items %}
+          <tr class="border-t" x-data="itemRow()" @change.debounce.100="recalc()" @input.debounce.100="recalc()">
+            <td class="px-2 py-2 w-36">
+              <input type="date" name="{{ subform.date.name }}" class="form-input w-full" value="{{ subform.date.data or '' }}" @change="updateDay($event)" />
+            </td>
+            <td class="px-2 py-2 w-36">
+              <input type="text" name="{{ subform.day.name }}" class="form-input w-full" value="{{ subform.day.data or '' }}" readonly />
+            </td>
+            <td class="px-2 py-2 w-36">
+              <select name="{{ subform.branch.name }}" class="form-select w-full">
+                <option value="">Select branch</option>
+                {% for val, label in form.ItemForm.branch.choices %}
+                <option value="{{ val }}" {{ 'selected' if (subform.branch.data==val) else '' }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="px-2 py-2 w-24">
+              <input type="number" step="0.01" name="{{ subform.hours.name }}" class="form-input text-right" value="{{ subform.hours.data or '0' }}" />
+            </td>
+            <td class="px-2 py-2">
+              <input type="text" name="{{ subform.description.name }}" class="form-input w-full" value="{{ subform.description.data or '' }}" />
+            </td>
+            <td class="px-2 py-2 w-28">
+              <input type="number" step="0.01" name="{{ subform.rate.name }}" class="form-input text-right" value="{{ '%.2f'|format(subform.rate.data if (subform.rate.data is not none) else (default_rate or 0)) }}" />
+            </td>
+            <td class="px-2 py-2 w-28 text-right">
+              <input type="number" step="0.01" name="{{ subform.amount.name }}" class="form-input text-right" value="{{ subform.amount.data or '0.00' }}" readonly />
+            </td>
+            <td class="px-2 py-2 text-center">
+              <button class="text-red-600 hover:text-red-800" type="button" @click="removeRow($el)" title="Remove row">
+                <svg class="w-5 h-5 inline-block" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H3a1 1 0 100 2h14a1 1 0 100-2h-2V3a1 1 0 00-1-1H6zm2 7a1 1 0 012 0v5a1 1 0 11-2 0V9zm4 0a1 1 0 012 0v5a1 1 0 11-2 0V9z" clip-rule="evenodd"></path></svg>
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="mt-3 flex items-center gap-3 px-3 py-3">
+          <button class="icon-btn primary icon-btn-xs" type="button" @click="addRow()" title="Add Row">
+            <svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            <span class="btn-label">Add Row</span>
+          </button>
+        <div class="ml-auto text-sm text-gray-600">
+          <span class="inline-flex items-center mr-4"><svg class="w-4 h-4 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3"></path></svg>Live totals below</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-6">
+      <div class="text-sm text-gray-700">
+        <div class="font-medium">Total Hours</div>
+        <div class="text-lg font-semibold" x-text="totalHours"></div>
+      </div>
+      <div class="text-sm text-gray-700">
+        <div class="font-medium">Total Amount</div>
+        <div class="text-lg font-semibold" x-text="'£' + totalAmount"></div>
+      </div>
+    </div>
+
+    <p class="text-sm text-gray-600">Draft invoices are only visible to you and can be edited later. Once submitted, you cannot edit it (managers may update for corrections).</p>
+
+    <div class="flex items-center gap-3">
+      <button class="icon-btn neutral" type="submit" name="save_draft" title="Save as Draft">
+        <svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        <span class="btn-label">Save as Draft</span>
+      </button>
+      <button class="icon-btn primary" type="submit" name="submit_invoice" title="Submit Invoice">
+        <svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"></path></svg>
+        <span class="btn-label">Submit Invoice</span>
+      </button>
+    </div>
+  </div>
+  
+</form>
+
+{% if inv and manager %}
+<hr class="my-6" />
+<h2 class="font-medium mb-2">Manage Status</h2>
+<form method="post">
+  <div class="flex items-center gap-2">
+    <select name="status" class="form-select">
+      <option value="Pending" {{ 'selected' if inv.status == 'Pending' else '' }}>Pending</option>
+      <option value="Approved" {{ 'selected' if inv.status == 'Approved' else '' }}>Approved</option>
+      <option value="Rejected" {{ 'selected' if inv.status == 'Rejected' else '' }}>Rejected</option>
+    </select>
+    <button class="btn btn-secondary" type="submit">Update Status</button>
+  </div>
+  {{ csrf_field() }}
+</form>
+{% endif %}
+
+<script>
+function invoiceForm() {
+  return {
+    totalAmount: ({{ '%.2f'|format(form.amount.data or 0) }}),
+    totalHours: 0,
+    errors: [],
+    recalc() {
+      let sum = 0;
+      let hoursSum = 0;
+      document.querySelectorAll('#items-body tr').forEach(tr => {
+        const hours = parseFloat(tr.querySelector('input[name$="hours"]').value || '0') || 0;
+        const rate = parseFloat(tr.querySelector('input[name$="rate"]').value || '0') || 0;
+        const amt = (hours * rate) || 0;
+        const amtInput = tr.querySelector('input[name$="amount"]');
+        if (amtInput) amtInput.value = amt.toFixed(2);
+        sum += amt;
+        hoursSum += hours;
+      });
+      this.totalAmount = sum.toFixed(2);
+      this.totalHours = hoursSum.toFixed(2);
+    },
+    // Validate rows for submission: positive hours and rate, date present
+    validateRows() {
+      this.errors = [];
+      const rows = Array.from(document.querySelectorAll('#items-body tr'));
+      if (!rows.length) {
+        this.errors.push('Please add at least one row before submitting.');
+        return false;
+      }
+      let ok = true;
+      rows.forEach((tr, idx) => {
+        // remove prior error highlight
+        tr.classList.remove('ring-2','ring-red-500');
+        const dateEl = tr.querySelector('input[name$="date"]');
+        const hoursEl = tr.querySelector('input[name$="hours"]');
+        const rateEl = tr.querySelector('input[name$="rate"]');
+        const dateVal = dateEl ? (dateEl.value || '').trim() : '';
+        const hours = parseFloat(hoursEl ? (hoursEl.value || '0') : '0') || 0;
+        const rate = parseFloat(rateEl ? (rateEl.value || '0') : '0') || 0;
+        const rowNum = idx + 1;
+        if (!dateVal) {
+          this.errors.push(`Row ${rowNum}: Date is required.`);
+          tr.classList.add('ring-2','ring-red-500');
+          ok = false;
+        }
+        if (!(hours > 0)) {
+          this.errors.push(`Row ${rowNum}: Hours must be greater than 0.`);
+          if(!tr.classList.contains('ring-2')) tr.classList.add('ring-2','ring-red-500');
+          ok = false;
+        }
+        if (!(rate > 0)) {
+          this.errors.push(`Row ${rowNum}: Rate must be greater than 0.`);
+          if(!tr.classList.contains('ring-2')) tr.classList.add('ring-2','ring-red-500');
+          ok = false;
+        }
+      });
+      // deduplicate errors to keep messages tidy
+      this.errors = Array.from(new Set(this.errors));
+      return ok;
+    },
+    updateDay(e) {
+      try {
+        const val = e.target.value;
+        if (!val) return;
+        const d = new Date(val + 'T00:00:00');
+        const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const day = days[d.getDay()];
+        const dayInput = e.target.closest('tr').querySelector('input[name$="day"]');
+        if (dayInput) dayInput.value = day;
+      } catch {}
+    },
+    addRow() {
+      const tbody = document.getElementById('items-body');
+      const idx = tbody.querySelectorAll('tr').length;
+    const html = `
+          <tr class="border-t" x-data="itemRow()" @change.debounce.100="recalc()" @input.debounce.100="recalc()">
+          <td class="px-2 py-2 w-36"><input type="date" name="items-${idx}-date" class="form-input w-full" @change="updateDay($event)" /></td>
+          <td class="px-2 py-2 w-36"><input type="text" name="items-${idx}-day" class="form-input w-full" readonly /></td>
+          <td class="px-2 py-2 w-36">
+            <select name="items-${idx}-branch" class="form-select w-full">
+              <option value="">Select branch</option>
+              {% for val, label in form.ItemForm.branch.choices %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td class="px-2 py-2 w-24"><input type="number" step="0.01" name="items-${idx}-hours" class="form-input text-right" value="0" /></td>
+          <td class="px-2 py-2"><input type="text" name="items-${idx}-description" class="form-input w-full" /></td>
+          <td class="px-2 py-2 w-28"><input type="number" step="0.01" name="items-${idx}-rate" class="form-input text-right" value="{{ '%.2f'|format(default_rate or 0) }}" /></td>
+          <td class="px-2 py-2 w-28 text-right"><input type="number" step="0.01" name="items-${idx}-amount" class="form-input text-right" value="0.00" readonly /></td>
+          <td class="px-2 py-2 text-center"><button class="text-red-600 hover:text-red-800" type="button" @click="removeRow($el)" title="Remove row"><svg class="w-5 h-5 inline-block" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H3a1 1 0 100 2h14a1 1 0 100-2h-2V3a1 1 0 00-1-1H6zm2 7a1 1 0 012 0v5a1 1 0 11-2 0V9zm4 0a1 1 0 012 0v5a1 1 0 11-2 0V9z" clip-rule="evenodd"></path></svg></button></td>
+        </tr>`;
+      tbody.insertAdjacentHTML('beforeend', html);
+      // initialize Alpine for new row if available
+      if (window.Alpine && tbody.lastElementChild) {
+        try { window.Alpine.initTree(tbody.lastElementChild); } catch (e) {}
+      }
+      // Ensure names are contiguous for WTForms FieldList parsing
+      this.renumberRows();
+      this.recalc();
+    },
+    removeRow(el) {
+      const tr = el.closest('tr');
+      tr.parentNode.removeChild(tr);
+      // After removing, renumber remaining rows so WTForms can bind correctly
+      this.renumberRows();
+      this.recalc();
+    },
+    renumberRows() {
+      const tbody = document.getElementById('items-body');
+      Array.from(tbody.querySelectorAll('tr')).forEach((tr, i) => {
+        // For each input/select inside this tr, rewrite the name attribute to items-i-field
+        Array.from(tr.querySelectorAll('input,select,textarea')).forEach(el => {
+          const name = el.getAttribute('name') || '';
+          // Replace leading items-<idx>- with items-i- if present, else attempt to find pattern
+          const newName = name.replace(/^items-\d+-/, `items-${i}-`);
+          el.setAttribute('name', newName);
+        });
+      });
+    },
+    // Sort rows in the DOM by the date input (ascending). After sorting, renumber and recalc
+    sortRowsByDate() {
+      const tbody = document.getElementById('items-body');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort((a, b) => {
+        const da = (a.querySelector('input[name$="date"]') || {}).value || '';
+        const db = (b.querySelector('input[name$="date"]') || {}).value || '';
+        // Empty dates go to the end
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return da.localeCompare(db);
+      });
+      // Re-append in sorted order
+      rows.forEach(r => tbody.appendChild(r));
+      // Ensure WTForms indices and totals are up-to-date
+      this.renumberRows();
+      this.recalc();
+    },
+    beforeSubmit(e) {
+      this.recalc();
+      // determine which button triggered submit. If browser supports e.submitter, use it.
+      let submitName = null;
+      try {
+        if (e.submitter && e.submitter.name) submitName = e.submitter.name;
+      } catch (_) {}
+      // fallback: if no submitter, try to detect via activeElement
+      if (!submitName) {
+        const active = document.activeElement;
+        if (active && active.name) submitName = active.name;
+      }
+      // For 'submit_invoice' require strict validation; for 'save_draft' allow bypass
+      if (submitName === 'submit_invoice') {
+        // Sort rows by date and refresh indices/totals before validation so server receives
+        // items in chronological order.
+        try { this.sortRowsByDate(); } catch (_) {}
+        const ok = this.validateRows();
+        if (!ok) {
+          // prevent submission and show errors
+          e.preventDefault();
+          // scroll to top of form so user sees errors
+          try { window.scrollTo({ top: document.querySelector('form').offsetTop - 40, behavior: 'smooth' }); } catch(_) {}
+          return false;
+        }
+        // Ensure the server receives the submit marker (some browsers/submit flows
+        // don't include the clicked button's name in the POST payload). Add a
+        // hidden input with the same name so WTForms/server-side can detect submit.
+        try {
+          const form = e.target;
+          if (form && !form.querySelector('input[name="submit_invoice"]')) {
+            const hid = document.createElement('input');
+            hid.type = 'hidden';
+            hid.name = 'submit_invoice';
+            hid.value = '1';
+            form.appendChild(hid);
+          }
+        } catch (_) {}
+      }
+    }
+  }
+}
+function itemRow() { return {} }
+</script>
+
+{% endblock %}

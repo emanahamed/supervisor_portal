@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block page_title %}Map Staff to User{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h2 class="text-lg font-semibold text-slate-700">Map Staff to Existing User</h2>
+  <p class="text-sm text-slate-500">Link <strong>{{ staff.name }}</strong> to an existing user account. This is useful if the user already exists.</p>
+</div>
+<div class="soft-card p-4">
+  <form method="POST">
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="text-xs font-medium text-slate-500">Staff</label>
+        <div class="soft-input bg-slate-50">{{ staff.name }}{% if staff.email %} &lt;{{ staff.email }}&gt;{% endif %}</div>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-slate-500">Select User</label>
+        <select name="user_id" class="soft-input">
+          <option value="">-- Choose a user --</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if preselect_id and preselect_id == u.id %}selected{% endif %}>{{ u.name }} &lt;{{ u.email }}&gt; — {{ u.role }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="mt-6 flex items-center gap-3">
+      <button class="soft-btn soft-btn-primary" type="submit">Map</button>
+      <a class="soft-btn bg-slate-100" href="{{ url_for('staff_index') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

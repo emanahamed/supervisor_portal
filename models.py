@@ -4,7 +4,10 @@ from uuid import uuid4
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 
-db = SQLAlchemy()
+# Prevent attribute expiration on commit so tests that access model.id after
+# committing (outside an app context) don't raise DetachedInstanceError.
+# This is a safe default for this app and improves test ergonomics.
+db = SQLAlchemy(session_options={"expire_on_commit": False})
 
 # Roles: superadmin (can approve users), user (pending until approved)
 class User(db.Model, UserMixin):
@@ -18,6 +21,8 @@ class User(db.Model, UserMixin):
     role = db.Column(db.String(80), default='staff')  # logical application role (e.g. staff, lead, observer)
     picture = db.Column(db.String(255))  # path to profile picture relative to /static/uploads or external URL
     theme_preference = db.Column(db.String(20), default='system')  # 'light' | 'dark' | 'system' (since 0.9.8)
+    # Force a password reset on next login (used for converted staff accounts)
+    force_password_reset = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -201,17 +206,89 @@ class ResourceLoan(db.Model):
 
 class Staff(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Legacy name kept for backwards compatibility; prefer first_name/last_name fields
     name = db.Column(db.String(200), nullable=False)
+    first_name = db.Column(db.String(120))
+    last_name = db.Column(db.String(120))
+    # Personal
+    dob = db.Column(db.Date)
+    gender = db.Column(db.String(40))
+    relationship_status = db.Column(db.String(80))
+    national_insurance = db.Column(db.String(40))
+    photo = db.Column(db.String(255))  # path to uploaded photo
+    # Employment
+    salary_per_hour = db.Column(db.Numeric(10,2))
+    salary_notes = db.Column(db.Text)
+    employment_type = db.Column(db.String(60))
+    joining_date = db.Column(db.Date)
+    # Medical
+    medical_condition = db.Column(db.String(120))
+    medical_condition_other = db.Column(db.String(255))
+    # Address (normalized fields)
+    address_line1 = db.Column(db.String(255))
+    address_line2 = db.Column(db.String(255))
+    town = db.Column(db.String(120))
+    region = db.Column(db.String(120))
+    country = db.Column(db.String(120))
+    postcode = db.Column(db.String(40))
+    address_lookup_id = db.Column(db.String(255))  # placeholder for UK address lookup reference
+    # Emergency contact
+    emergency_first_name = db.Column(db.String(120))
+    emergency_last_name = db.Column(db.String(120))
+    emergency_mobile = db.Column(db.String(50))
+    emergency_email = db.Column(db.String(255))
+    emergency_relation = db.Column(db.String(80))
+    # Bank details
+    bank_name_on_account = db.Column(db.String(255))
+    bank_name = db.Column(db.String(255))
+    bank_sort_code = db.Column(db.String(20))
+    bank_account_number = db.Column(db.String(40))
+    # DBS
+    dbs_number = db.Column(db.String(120))
+    dbs_start_date = db.Column(db.Date)
+    dbs_expiry_date = db.Column(db.Date)
+    dbs_checked_by_id = db.Column(db.Integer, db.ForeignKey('staff.id', ondelete='SET NULL'), index=True)
     department = db.Column(db.String(120))
     email = db.Column(db.String(255))
     phone = db.Column(db.String(50))
     branch = db.Column(db.String(255))  # CSV of branches
+    # Optional link to a company (for payroll/vendor association)
+    company_id = db.Column(db.Integer, db.ForeignKey('company.id', ondelete='SET NULL'), index=True)
+    # Branch-specific machine IDs
+    whitechapel_machine_id = db.Column(db.String(120))
+    east_ham_machine_id = db.Column(db.String(120))
+    stratford_machine_id = db.Column(db.String(120))
+    docklands_machine_id = db.Column(db.String(120))
     # Six-digit access code for staff login/identification (added Oct 2025)
     access_code = db.Column(db.String(6), unique=True, index=True)
     active = db.Column(db.Boolean, default=True, index=True)
+    # Optional mapping to application user account (added Oct 2025)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), index=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship('User', foreign_keys=[user_id], lazy=True)
+    company = db.relationship('Company', lazy=True)
+    # Self-referential relationship for DBS checked by (another staff record)
+    dbs_checked_by = db.relationship('Staff', remote_side=[id], lazy=True)
+
+    @property
+    def age(self):
+        try:
+            if not self.dob:
+                return None
+            from datetime import date
+            today = date.today()
+            years = today.year - self.dob.year - ((today.month, today.day) < (self.dob.month, self.dob.day))
+            return years
+        except Exception:
+            return None
+
+    def full_name(self):
+        if (self.first_name or self.last_name):
+            return ((self.first_name or '') + ' ' + (self.last_name or '')).strip()
+        return self.name
 
 class StaffChange(db.Model):
     """Audit log for Staff field changes (since 0.9.10)."""
@@ -224,6 +301,59 @@ class StaffChange(db.Model):
     changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
     staff = db.relationship('Staff', lazy=True)
+    changed_by = db.relationship('User', lazy=True)
+
+
+class StaffAttendance(db.Model):
+    """Recorded attendance rows imported from vendor XLSX files.
+
+    Upserts are keyed on (machine_id, date, branch) when machine_id is present
+    and on (staff_id, date, branch) otherwise. The import flow will attempt
+    to map incoming machine IDs to a `Staff` record using known machine id
+    columns on the `Staff` table.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id', ondelete='SET NULL'), index=True)
+    machine_id = db.Column(db.String(120), index=True)
+    branch = db.Column(db.String(120), index=True)
+    day = db.Column(db.String(20), index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    check_in = db.Column(db.Time)
+    check_out = db.Column(db.Time)
+    late_minutes = db.Column(db.Integer)
+    hours_seconds = db.Column(db.Integer)  # cached duration in seconds
+    raw_payload = db.Column(db.Text)  # optional JSON of raw imported row
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    staff = db.relationship('Staff', lazy=True)
+
+    def hours_hhmmss(self):
+        try:
+            secs = int(self.hours_seconds or 0)
+            hh = secs // 3600
+            mm = (secs % 3600) // 60
+            ss = secs % 60
+            return f"{hh:02d}:{mm:02d}:{ss:02d}"
+        except Exception:
+            return '00:00:00'
+
+
+class StaffAttendanceAudit(db.Model):
+    """Audit trail for attendance upserts/changes.
+
+    Stores the previous and new payload for any update performed by imports
+    or manual edits.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    attendance_id = db.Column(db.Integer, db.ForeignKey('staff_attendance.id', ondelete='CASCADE'), nullable=False, index=True)
+    field = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
+    changed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    attendance = db.relationship('StaffAttendance', lazy=True)
     changed_by = db.relationship('User', lazy=True)
 
 class ObservationCycle(db.Model):
@@ -320,14 +450,119 @@ class Availability(db.Model):
     name = db.Column(db.String(200), nullable=False, index=True)
     department = db.Column(db.String(120), index=True)
     branches = db.Column(db.String(255), index=True)  # CSV list of branches
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id', ondelete='SET NULL'), index=True)
     days = db.Column(db.Text)  # Raw textual representation of availability days/time slots
     subjects = db.Column(db.Text)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    staff = db.relationship('Staff', lazy=True)
+
     def branch_list(self):
         return [b.strip() for b in (self.branches or '').split(',') if b.strip()]
+
+
+class EmailSetting(db.Model):
+    """Store named email provider/settings for the application.
+
+    Use a simple table to allow CRUD from admin UI. Passwords/keys are stored
+    in plaintext here for simplicity; in production consider encrypting them
+    or using a secrets manager.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    provider = db.Column(db.String(120), nullable=False, default='smtp')  # smtp, mailgun, sendgrid, etc.
+    host = db.Column(db.String(255))
+    port = db.Column(db.Integer)
+    username = db.Column(db.String(255))
+    password = db.Column(db.String(1024))
+    use_tls = db.Column(db.Boolean, default=True)
+    use_ssl = db.Column(db.Boolean, default=False)
+    sender_name = db.Column(db.String(255))
+    sender_email = db.Column(db.String(255))
+    api_key = db.Column(db.String(1024))
+    is_active = db.Column(db.Boolean, default=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def connection_info(self):
+        return {
+            'provider': self.provider,
+            'host': self.host,
+            'port': self.port,
+            'username': self.username,
+            'password': self.password,
+            'use_tls': bool(self.use_tls),
+            'use_ssl': bool(self.use_ssl),
+            'sender_name': self.sender_name,
+            'sender_email': self.sender_email,
+            'api_key': self.api_key,
+        }
+
+
+class EmailLog(db.Model):
+    """Trace of outgoing emails sent by the system.
+
+    Stores recipient, subject, an HTML snippet for quick preview, the full
+    HTML body (nullable for large messages), provider/setting used, attempt
+    status and any error message. Admin UI can view, delete or resend.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    to_email = db.Column(db.String(255), index=True, nullable=False)
+    subject = db.Column(db.String(500), nullable=False)
+    body_snippet = db.Column(db.String(1000))
+    html = db.Column(db.Text)  # store full HTML where storage is acceptable
+    status = db.Column(db.String(30), index=True, default='pending')  # pending|sent|failed
+    error_message = db.Column(db.Text)
+    provider = db.Column(db.String(120))  # name of provider (smtp, sendgrid, etc.)
+    email_setting_id = db.Column(db.Integer, db.ForeignKey('email_setting.id', ondelete='SET NULL'), index=True)
+    attachments_count = db.Column(db.Integer, default=0)
+    sent_at = db.Column(db.DateTime, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    setting = db.relationship('EmailSetting', lazy=True)
+
+    def short(self, length: int = 200):
+        if not self.body_snippet and self.html:
+            txt = (self.html or '')
+            return (txt[:length] + '...') if len(txt) > length else txt
+        if self.body_snippet:
+            return (self.body_snippet[:length] + '...') if len(self.body_snippet) > length else self.body_snippet
+        return ''
+
+
+class EmailTemplate(db.Model):
+    """Editable email templates used by the application.
+
+    Admins can edit subject and HTML body and set sender overrides and choose
+    which EmailSetting to use for sending.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(200), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False)
+    subject_template = db.Column(db.String(1000))
+    html_template = db.Column(db.Text)
+    sender_name = db.Column(db.String(255))
+    sender_email = db.Column(db.String(255))
+    email_setting_id = db.Column(db.Integer, db.ForeignKey('email_setting.id', ondelete='SET NULL'), index=True)
+    is_active = db.Column(db.Boolean, default=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    email_setting = db.relationship('EmailSetting', lazy=True)
+
+    def render_subject(self, **ctx):
+        try:
+            return (self.subject_template or '').format(**ctx)
+        except Exception:
+            return self.subject_template or ''
+
+    def render_html(self, **ctx):
+        try:
+            return (self.html_template or '').format(**ctx)
+        except Exception:
+            return self.html_template or ''
 
 
 class Issue(db.Model):
@@ -761,6 +996,101 @@ class Invoice(db.Model):
 
 
 # ---------------- Book Orders (Oct 2025) ---------------- #
+class StaffInvoice(db.Model):
+    """Employee-submitted invoice/claim (internal invoice management).
+
+    Constraints:
+    - Created by a user (employee)
+    - Editable by creator until submitted; after submission, only managers can edit
+    - Status managed by managers: Pending (default), Approved, Rejected
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    month = db.Column(db.Integer, nullable=False, index=True)  # 1-12
+    year = db.Column(db.Integer, nullable=False, index=True)
+    amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    status = db.Column(db.String(20), nullable=False, default='Pending', index=True)  # Pending, Approved, Rejected
+    # Payment status separate to approval status: Paid / Unpaid
+    payment_status = db.Column(db.String(20), nullable=False, default='Unpaid', index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    submitted_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    created_by = db.relationship('User', lazy=True)
+
+    def month_year_label(self):
+        try:
+            import calendar
+            m = max(1, min(12, int(self.month or 0)))
+            return f"{calendar.month_name[m]} {self.year}"
+        except Exception:
+            return f"{self.month}/{self.year}"
+
+    # Line items relationship (added Oct 2025)
+    items = db.relationship('StaffInvoiceItem', backref='invoice', cascade='all, delete-orphan', lazy=True)
+
+    def compute_total(self) -> float:
+        try:
+            return float(sum((float(i.amount or 0) for i in (self.items or []))))
+        except Exception:
+            return float(self.amount or 0)
+
+    def ensure_amount_from_items(self) -> None:
+        try:
+            self.amount = self.compute_total()
+        except Exception:
+            pass
+
+
+class StaffInvoiceChange(db.Model):
+    """Audit trail for staff invoice changes (status, payment_status, etc.)."""
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('staff_invoice.id', ondelete='CASCADE'), nullable=False, index=True)
+    field = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
+    changed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    invoice = db.relationship('StaffInvoice', lazy=True)
+    changed_by = db.relationship('User', lazy=True)
+
+class StaffInvoiceItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('staff_invoice.id', ondelete='CASCADE'), nullable=False, index=True)
+    branch = db.Column(db.String(120), index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    day = db.Column(db.String(20), nullable=False, index=True)
+    hours = db.Column(db.Numeric(6,2), nullable=False, default=0)
+    description = db.Column(db.String(400))
+    rate = db.Column(db.Numeric(10,2), nullable=False, default=0)
+    amount = db.Column(db.Numeric(10,2), nullable=False, default=0)
+
+
+class Branch(db.Model):
+    """Branches (locations) managed via CRUD."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    address = db.Column(db.String(400))
+    status = db.Column(db.String(40), nullable=False, default='Active', index=True)  # Active, Inactive
+    phone = db.Column(db.String(80))
+    email = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'address': self.address,
+            'status': self.status,
+            'phone': self.phone,
+            'email': self.email,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
 class BookOrder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
@@ -820,26 +1150,41 @@ class PrintReport(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    shift = db.relationship('Shift', lazy=True)
-    staff_user = db.relationship('User', foreign_keys=[staff_user_id], lazy=True)
-    created_by = db.relationship('User', foreign_keys=[created_by_id], lazy=True)
 
+# ---------------- Salary Reports ---------------- #
+class SalaryReport(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    filter_meta = db.Column(db.Text)  # optional JSON string of filters used to generate/import
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    created_by = db.relationship('User', lazy=True)
+    rows = db.relationship('SalaryReportRow', backref='report', cascade='all, delete-orphan', lazy=True)
+
+
+class SalaryReportRow(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    report_id = db.Column(db.Integer, db.ForeignKey('salary_report.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = db.Column(db.String(255))
+    national_insurance = db.Column(db.String(80))
+    company = db.Column(db.String(255))
+    hours = db.Column(db.Numeric(8,2), default=0)
+    rate = db.Column(db.Numeric(10,2), default=0)
+    amount = db.Column(db.Numeric(10,2), default=0)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def serialize(self):
         return {
             'id': self.id,
-            'shift_id': self.shift_id,
-            'staff_user_id': self.staff_user_id,
-            'staff_name': self.staff_user.name if self.staff_user else None,
-            'date': self.date.isoformat() if self.date else None,
-            'day': self.day,
-            'floor': self.floor,
-            'branch': self.branch,
-            'pages_printed': self.pages_printed,
-            'has_unapproved': bool(self.has_unapproved),
-            'unapproved_details': self.unapproved_details,
+            'name': self.name,
+            'national_insurance': self.national_insurance,
+            'company': self.company,
+            'hours': float(self.hours or 0),
+            'rate': float(self.rate or 0),
+            'amount': float(self.amount or 0),
             'notes': self.notes,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -872,5 +1217,62 @@ class CallRecord(db.Model):
             return self.created_at.strftime('%H:%M') if self.created_at else ''
         except Exception:
             return ''
+
+
+# ---------------- Job Applications (Public) ---------------- #
+class JobApplication(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    # Personal details
+    first_name = db.Column(db.String(120), nullable=False)
+    last_name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    phone = db.Column(db.String(50))
+    address_line1 = db.Column(db.String(255))
+    city = db.Column(db.String(120))
+    postcode = db.Column(db.String(40))
+    # CV upload (relative path under static/)
+    cv_path = db.Column(db.String(255))
+    # Workflow status
+    status = db.Column(db.String(40), default='Pending Review', index=True)
+    # Education
+    university = db.Column(db.String(255))
+    study_year = db.Column(db.String(40))  # integer stored as string
+    course_name = db.Column(db.String(255))
+    # A Level (up to 3 subjects)
+    alevel1_subject = db.Column(db.String(120))
+    alevel1_grade = db.Column(db.String(20))
+    alevel1_status = db.Column(db.String(20))  # Achieved | Predicted
+    alevel2_subject = db.Column(db.String(120))
+    alevel2_grade = db.Column(db.String(20))
+    alevel2_status = db.Column(db.String(20))
+    alevel3_subject = db.Column(db.String(120))
+    alevel3_grade = db.Column(db.String(20))
+    alevel3_status = db.Column(db.String(20))
+    # GCSE essentials
+    gcse_maths_grade = db.Column(db.String(20))
+    gcse_maths_status = db.Column(db.String(20))
+    gcse_english_grade = db.Column(db.String(20))
+    gcse_english_status = db.Column(db.String(20))
+    # GCSE Science (added later for completeness)
+    gcse_science_grade = db.Column(db.String(20))
+    gcse_science_status = db.Column(db.String(20))
+    # Experience & eligibility
+    tutoring_experience = db.Column(db.Boolean, default=False, index=True)
+    uk_work_eligible = db.Column(db.Boolean, default=False, index=True)
+    # Branch preferences (CSV)
+    branches = db.Column(db.String(255))
+    # Subjects applicant can tutor (CSV)
+    subjects = db.Column(db.Text)
+    # Marketing attribution
+    heard_about = db.Column(db.String(255))
+    # Metadata
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+    def branches_list(self):
+        try:
+            return [b.strip() for b in (self.branches or '').split(',') if b.strip()]
+        except Exception:
+            return []
 
 
