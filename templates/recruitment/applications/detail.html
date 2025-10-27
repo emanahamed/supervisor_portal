@@ -9,10 +9,35 @@ endblock %} {% block content %}
         Submitted {{ a.created_at|fmt_datetime }}
       </div>
       <div class="text-lg font-semibold">
-        Status: {{ a.status or 'Pending Review' }}
+        Status: {{ a.status or 'Pending Review' }} {% if a.interview_at %}
+        <span class="block text-sm font-normal text-slate-600"
+          >Interview on {{ a.interview_at.strftime('%A, %d %B %Y at %I:%M
+          %p').lstrip('0') }}</span
+        >
+        {% endif %}
       </div>
     </div>
     <div class="flex gap-2">
+      {% if can('manage_recruitment') %}
+      <a
+        class="soft-btn"
+        href="{{ url_for('recruitment_interview_reschedule', aid=a.id) }}"
+        >{{ 'Reschedule Interview' if a.interview_at else 'Schedule Interview'
+        }}</a
+      >
+      {% if a.interview_at %}
+      <form
+        method="post"
+        action="{{ url_for('recruitment_interview_cancel', aid=a.id) }}"
+        class="inline"
+        onsubmit="return confirm('Cancel this interview? The applicant will be notified.');"
+      >
+        {{ csrf_field() }}
+        <button class="soft-btn bg-rose-50 text-rose-700 hover:bg-rose-100">
+          Cancel Interview
+        </button>
+      </form>
+      {% endif %} {% endif %}
       <form
         method="post"
         action="{{ url_for('recruitment_application_invite', aid=a.id) }}"
@@ -20,6 +45,18 @@ endblock %} {% block content %}
         {{ csrf_field() }}
         <button class="soft-btn">Invite for Interview</button>
       </form>
+      {% if current_user.is_superadmin %}
+      <form
+        method="post"
+        action="{{ url_for('recruitment_application_delete', aid=a.id) }}"
+        onsubmit="return confirm('Delete this application? This cannot be undone.');"
+      >
+        {{ csrf_field() }}
+        <button class="soft-btn bg-rose-50 text-rose-700 hover:bg-rose-100">
+          Delete
+        </button>
+      </form>
+      {% endif %}
     </div>
   </div>
 

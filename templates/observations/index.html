@@ -72,6 +72,7 @@
           <th class="py-2 px-3 text-left">Observer</th>
           <th class="py-2 px-3 text-left" data-sort-dir="desc">Date<span class="sort-indicator ml-1 text-[10px] text-slate-400">▼</span></th>
           <th class="py-2 px-3 text-left">Score</th>
+          <th class="py-2 px-3 text-left">Emailed</th>
           <th class="py-2 px-3 text-left w-40 no-sort"></th>
         </tr>
       </thead>
@@ -84,6 +85,13 @@
           <td class="py-2 px-3 whitespace-nowrap">{{ o.observer.name }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ o.date.strftime('%d/%m/%y') if o.date else '' }}</td>
           <td class="py-2 px-3 whitespace-nowrap">{{ '%.1f'|format(o.score) }}</td>
+          <td class="py-2 px-3 whitespace-nowrap emailed-cell">
+            {% if o.emailed %}
+              <span class="soft-badge bg-emerald-100 text-emerald-700">Yes</span>
+            {% else %}
+              <span class="soft-badge bg-slate-100 text-slate-600">No</span>
+            {% endif %}
+          </td>
           <td class="py-2 px-3 text-xs whitespace-nowrap">
             <div class="flex items-center gap-1">
               <a class="icon-action text-indigo-600" href="{{ url_for('observation_extended_edit', oid=o.id) }}" title="Edit observation">
@@ -190,10 +198,17 @@
       e.preventDefault();
       const url = this.href + (this.href.indexOf('?')>-1?'&':'?') + 'ajax=1';
       this.classList.add('opacity-50','pointer-events-none');
+      const row = this.closest('tr');
       fetch(url, {headers:{'Accept':'application/json'}})
         .then(r=> r.json().then(j=>({ok:r.ok, data:j})))
         .then(res=>{
-          if(res.ok){ showToast(res.data.message || 'Email sent','success'); }
+          if(res.ok){
+            showToast(res.data.message || 'Email sent','success');
+            try {
+              const cell = row && row.querySelector('.emailed-cell');
+              if(cell){ cell.innerHTML = '<span class="soft-badge bg-emerald-100 text-emerald-700">Yes<\/span>'; }
+            } catch(e){}
+          }
           else { showToast(res.data.message || 'Email failed','error'); }
         })
         .catch(()=> showToast('Email failed','error'))

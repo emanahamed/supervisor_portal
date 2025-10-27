@@ -5,7 +5,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
   <form
     method="post"
     enctype="multipart/form-data"
-    class="soft-card p-4"
+    class="soft-card p-6 shadow-md"
     x-data="jobForm()"
   >
     {{ csrf_field() }}
@@ -25,6 +25,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           class="soft-input w-full"
           type="text"
           name="first_name"
+          value="{{ request.form.get('first_name','') }}"
           required
         />
       </div>
@@ -34,6 +35,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           class="soft-input w-full"
           type="text"
           name="last_name"
+          value="{{ request.form.get('last_name','') }}"
           required
         />
       </div>
@@ -44,6 +46,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           type="email"
           name="email"
           x-model="email"
+          value="{{ request.form.get('email','') }}"
           required
         />
       </div>
@@ -54,6 +57,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           type="email"
           name="confirm_email"
           x-model="confirm_email"
+          value="{{ request.form.get('confirm_email','') }}"
           required
         />
         <p
@@ -64,7 +68,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
       </div>
       <div class="sm:col-span-2">
         <label class="block text-xs font-semibold mb-1">Phone number</label>
-        <input class="soft-input w-full" type="text" name="phone" required />
+  <input class="soft-input w-full" type="text" name="phone" value="{{ request.form.get('phone','') }}" required />
       </div>
       <div class="sm:col-span-2">
         <label class="block text-xs font-semibold mb-1"
@@ -74,16 +78,17 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           class="soft-input w-full"
           type="text"
           name="address_line1"
+          value="{{ request.form.get('address_line1','') }}"
           required
         />
       </div>
       <div>
         <label class="block text-xs font-semibold mb-1">City</label>
-        <input class="soft-input w-full" type="text" name="city" required />
+  <input class="soft-input w-full" type="text" name="city" value="{{ request.form.get('city','') }}" required />
       </div>
       <div>
         <label class="block text-xs font-semibold mb-1">Postcode</label>
-        <input class="soft-input w-full" type="text" name="postcode" required />
+  <input class="soft-input w-full" type="text" name="postcode" value="{{ request.form.get('postcode','') }}" required />
       </div>
     </div>
 
@@ -96,6 +101,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           class="soft-input w-full"
           type="text"
           name="university"
+          value="{{ request.form.get('university','') }}"
           required
         />
       </div>
@@ -111,6 +117,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           step="1"
           inputmode="numeric"
           placeholder="e.g. 1"
+          value="{{ request.form.get('study_year','') }}"
           required
         />
       </div>
@@ -120,6 +127,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           class="soft-input w-full"
           type="text"
           name="course_name"
+          value="{{ request.form.get('course_name','') }}"
           required
         />
       </div>
@@ -138,6 +146,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
             class="soft-input w-full"
             type="text"
             name="alevel{{ idx }}_subject"
+            value="{{ request.form.get('alevel' ~ idx ~ '_subject','') }}"
             required
           />
         </div>
@@ -150,6 +159,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
             type="text"
             name="alevel{{ idx }}_grade"
             placeholder="e.g. A*"
+            value="{{ request.form.get('alevel' ~ idx ~ '_grade','') }}"
             required
           />
         </div>
@@ -161,8 +171,9 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
             required
           >
             <option value="">-- Select --</option>
-            <option>Achieved</option>
-            <option>Predicted</option>
+            {% set sel = request.form.get('alevel' ~ idx ~ '_status','') %}
+            <option value="Achieved" {{ 'selected' if sel=='Achieved' else '' }}>Achieved</option>
+            <option value="Predicted" {{ 'selected' if sel=='Predicted' else '' }}>Predicted</option>
           </select>
         </div>
       </div>
@@ -179,15 +190,17 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           type="text"
           name="gcse_maths_grade"
           placeholder="e.g. 9 / A*"
+          value="{{ request.form.get('gcse_maths_grade','') }}"
           required
         />
       </div>
       <div>
         <label class="block text-xs font-semibold mb-1">Status</label>
+        {% set gms = request.form.get('gcse_maths_status','') %}
         <select class="soft-input w-full" name="gcse_maths_status" required>
           <option value="">-- Select --</option>
-          <option>Achieved</option>
-          <option>Predicted</option>
+          <option value="Achieved" {{ 'selected' if gms=='Achieved' else '' }}>Achieved</option>
+          <option value="Predicted" {{ 'selected' if gms=='Predicted' else '' }}>Predicted</option>
         </select>
       </div>
       <div class="sm:col-span-1"></div>
@@ -200,15 +213,17 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           type="text"
           name="gcse_english_grade"
           placeholder="e.g. 9 / A*"
+          value="{{ request.form.get('gcse_english_grade','') }}"
           required
         />
       </div>
       <div>
         <label class="block text-xs font-semibold mb-1">Status</label>
+        {% set ges = request.form.get('gcse_english_status','') %}
         <select class="soft-input w-full" name="gcse_english_status" required>
           <option value="">-- Select --</option>
-          <option>Achieved</option>
-          <option>Predicted</option>
+          <option value="Achieved" {{ 'selected' if ges=='Achieved' else '' }}>Achieved</option>
+          <option value="Predicted" {{ 'selected' if ges=='Predicted' else '' }}>Predicted</option>
         </select>
       </div>
       <div class="sm:col-span-1"></div>
@@ -221,15 +236,17 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
           type="text"
           name="gcse_science_grade"
           placeholder="e.g. 9 / A*"
+          value="{{ request.form.get('gcse_science_grade','') }}"
           required
         />
       </div>
       <div>
         <label class="block text-xs font-semibold mb-1">Status</label>
+        {% set gss = request.form.get('gcse_science_status','') %}
         <select class="soft-input w-full" name="gcse_science_status" required>
           <option value="">-- Select --</option>
-          <option>Achieved</option>
-          <option>Predicted</option>
+          <option value="Achieved" {{ 'selected' if gss=='Achieved' else '' }}>Achieved</option>
+          <option value="Predicted" {{ 'selected' if gss=='Predicted' else '' }}>Predicted</option>
         </select>
       </div>
     </div>
@@ -241,17 +258,17 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
         <label class="block text-xs font-semibold mb-1"
           >Do you have tutoring experience?</label
         >
-        <div
-          class="flex items-center gap-4"
-          x-data="exclusive('tutoring_experience')"
-        >
+          <div
+            class="flex items-center gap-4"
+            x-data="exclusive('tutoring_experience', {{ 'true' if request.form.get('tutoring_experience_yes') else 'false' }}, {{ 'true' if request.form.get('tutoring_experience_no') else 'false' }})"
+          >
           <label class="inline-flex items-center gap-2 text-sm">
             <input
               type="checkbox"
               name="tutoring_experience_yes"
               x-model="yes"
               @change="sync('yes')"
-              required
+              {% if request.form.get('tutoring_experience_yes') %}checked{% endif %}
             />
             Yes
           </label>
@@ -261,6 +278,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
               name="tutoring_experience_no"
               x-model="no"
               @change="sync('no')"
+              {% if request.form.get('tutoring_experience_no') %}checked{% endif %}
             />
             No
           </label>
@@ -270,17 +288,17 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
         <label class="block text-xs font-semibold mb-1"
           >Are you eligible to work in the UK?</label
         >
-        <div
-          class="flex items-center gap-4"
-          x-data="exclusive('uk_work_eligible')"
-        >
+          <div
+            class="flex items-center gap-4"
+            x-data="exclusive('uk_work_eligible', {{ 'true' if request.form.get('uk_work_eligible_yes') else 'false' }}, {{ 'true' if request.form.get('uk_work_eligible_no') else 'false' }})"
+          >
           <label class="inline-flex items-center gap-2 text-sm">
             <input
               type="checkbox"
               name="uk_work_eligible_yes"
               x-model="yes"
               @change="sync('yes')"
-              required
+              {% if request.form.get('uk_work_eligible_yes') %}checked{% endif %}
             />
             Yes
           </label>
@@ -290,6 +308,7 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
               name="uk_work_eligible_no"
               x-model="no"
               @change="sync('no')"
+              {% if request.form.get('uk_work_eligible_no') %}checked{% endif %}
             />
             No
           </label>
@@ -303,16 +322,17 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
     </h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div class="sm:col-span-2">
+        {% set heard = request.form.get('heard_about','') %}
         <select class="soft-input w-full" name="heard_about" required>
           <option value="">-- Select one --</option>
-          <option>Google</option>
-          <option>Facebook</option>
-          <option>Instagram</option>
-          <option>TikTok</option>
-          <option>Friend/Referral</option>
-          <option>Walk-in / Poster</option>
-          <option>University society</option>
-          <option>Other</option>
+          <option value="Google" {{ 'selected' if heard=='Google' else '' }}>Google</option>
+          <option value="Facebook" {{ 'selected' if heard=='Facebook' else '' }}>Facebook</option>
+          <option value="Instagram" {{ 'selected' if heard=='Instagram' else '' }}>Instagram</option>
+          <option value="TikTok" {{ 'selected' if heard=='TikTok' else '' }}>TikTok</option>
+          <option value="Friend/Referral" {{ 'selected' if heard=='Friend/Referral' else '' }}>Friend/Referral</option>
+          <option value="Walk-in / Poster" {{ 'selected' if heard=='Walk-in / Poster' else '' }}>Walk-in / Poster</option>
+          <option value="University society" {{ 'selected' if heard=='University society' else '' }}>University society</option>
+          <option value="Other" {{ 'selected' if heard=='Other' else '' }}>Other</option>
         </select>
       </div>
     </div>
@@ -323,9 +343,10 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
       Select one or more subjects you are confident tutoring.
     </p>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {% set selected_subjects = request.form.getlist('subjects') %}
       {% for s in subject_choices %}
       <label class="inline-flex items-center gap-2 text-sm soft-card p-2">
-        <input type="checkbox" name="subjects" value="{{ s }}" required />
+        <input type="checkbox" name="subjects" value="{{ s }}" {{ 'checked' if s in selected_subjects else '' }} />
         <span>{{ s }}</span>
       </label>
       {% endfor %}
@@ -337,9 +358,10 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
       Select one or more branches you can work at.
     </p>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {% set selected_branches = request.form.getlist('branches') %}
       {% for b in branch_choices %}
       <label class="inline-flex items-center gap-2 text-sm soft-card p-2">
-        <input type="checkbox" name="branches" value="{{ b }}" required />
+        <input type="checkbox" name="branches" value="{{ b }}" {{ 'checked' if b in selected_branches else '' }} />
         <span>{{ b }}</span>
       </label>
       {% endfor %}
@@ -409,8 +431,8 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
 <script>
   function jobForm() {
     return {
-      email: "",
-      confirm_email: "",
+      email: "{{ request.form.get('email','')|e }}",
+      confirm_email: "{{ request.form.get('confirm_email','')|e }}",
       get emailValid() {
         if (!this.email || !this.confirm_email) return true;
         return (
@@ -424,17 +446,34 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
       },
     };
   }
-  function exclusive(key) {
+  function exclusive(key, initYes = false, initNo = false) {
     return {
       key,
-      yes: false,
-      no: false,
+      yes: Boolean(initYes),
+      no: Boolean(initNo),
       sync(which) {
         if (which === "yes" && this.yes) this.no = false;
         if (which === "no" && this.no) this.yes = false;
       },
     };
   }
+  // Group-level checkbox validation: ensure at least one subject and one branch selected
+  (function () {
+    const form = document.currentScript.closest('body').querySelector('form');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+      const subjects = form.querySelectorAll('input[name="subjects"]:checked');
+      const branches = form.querySelectorAll('input[name="branches"]:checked');
+      // Yes/No exclusives handled by server; this is just user-friendly check for groups
+      const errs = [];
+      if (!subjects.length) errs.push('Please select at least one subject you can tutor.');
+      if (!branches.length) errs.push('Please select at least one preferred branch.');
+      if (errs.length) {
+        alert(errs.join('\n'));
+        e.preventDefault();
+      }
+    });
+  })();
   // Minimal drag & drop for CV (mirror attendance fix styling)
   (function () {
     const dz = document.getElementById("cvDropZone");
@@ -464,9 +503,18 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
       return /\.(pdf|docx?|PDF|DOCX?)$/.test(name);
     }
     dz.addEventListener("click", () => fileInput.click());
-    fileInput.addEventListener("change", () =>
-      setFileDisplay(fileInput.files[0])
-    );
+    // Validate and reflect file selection (works for both click and drop)
+    fileInput.addEventListener("change", () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (f && !validExt(f.name)) {
+        alert("Invalid file type. Please upload a PDF or Word document.");
+        // Reset input to ensure server-side required validation still triggers
+        try { fileInput.value = ""; } catch (e) {}
+        setFileDisplay(null);
+        return;
+      }
+      setFileDisplay(f);
+    });
     ["dragenter", "dragover"].forEach((ev) =>
       dz.addEventListener(ev, (e) => {
         e.preventDefault();
@@ -481,19 +529,21 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
         highlight(false);
       })
     );
-    dz.addEventListener("drop", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    // Important: do NOT preventDefault on drop so the browser can populate input.files natively
+    fileInput.addEventListener("drop", () => {
+      // Hide overlay and update label after the browser updates input.files
       highlight(false);
-      const files = e.dataTransfer.files;
-      if (!files || !files.length) return;
-      const file = files[0];
-      if (!validExt(file.name)) {
-        alert("Invalid file type. Please upload a PDF or Word document.");
-        return;
-      }
-      fileInput.files = files;
-      setFileDisplay(file);
+      // Use a microtask to read the updated files list
+      setTimeout(() => {
+        const f = fileInput.files && fileInput.files[0];
+        if (f && !validExt(f.name)) {
+          alert("Invalid file type. Please upload a PDF or Word document.");
+          try { fileInput.value = ""; } catch (e) {}
+          setFileDisplay(null);
+          return;
+        }
+        setFileDisplay(f);
+      }, 0);
     });
   })();
 </script>

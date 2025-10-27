@@ -10,19 +10,14 @@ def ensure_permission(app_ctx, key, description=''):  # helper
         db.session.commit()
 
 
-def test_create_book_order(client, app_instance):
+def test_create_book_order(client, app_instance, db_session):
     with app_instance.app_context():
-        # Seed a user & login (superadmin bypass or permission)
-        u = User.query.filter_by(email='orderer@test.local').first()
-        if not u:
-            u = User(name='Order User', email='orderer@test.local', password_hash='x', is_superadmin=True, is_approved=True)
-            db.session.add(u); db.session.commit()
-        # Seed books
-        if Book.query.count() < 2:
-            db.session.add(Book(name='Order Book A', price=5.0, active=True))
-            db.session.add(Book(name='Order Book B', price=7.0, active=True))
-            db.session.commit()
-        b1, b2 = Book.query.order_by(Book.id.asc()).limit(2).all()
+        # Seed a test-only user & books (rolled back after test)
+        u = User(name='Order User', email='orderer@test.local', password_hash='x', is_superadmin=True, is_approved=True)
+        db.session.add(u); db.session.flush()
+        b1 = Book(name='Order Book A (test)', price=5.0, active=True)
+        b2 = Book(name='Order Book B (test)', price=7.0, active=True)
+        db.session.add_all([b1, b2]); db.session.flush()
     # Session login
     with client.session_transaction() as sess:
         sess['_user_id'] = str(u.id)

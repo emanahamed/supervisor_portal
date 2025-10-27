@@ -101,6 +101,25 @@
               <span>Application List</span>
             </a>
           </li>
+          <li>
+            <a
+              href="{{ url_for('recruitment_interviews') }}"
+              class="nav-leaf {{ 'active' if endpoint=='recruitment_interviews' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M8 7V3m8 4V3M3 11h18M5 19h14a2 2 0 002-2v-6H3v6a2 2 0 002 2z"
+                />
+              </svg>
+              <span>Upcoming Interviews</span>
+            </a>
+          </li>
         </ul>
       </div>
     </li>
@@ -458,7 +477,8 @@
         </ul>
       </div>
     </li>
-    {% endif %} {# Invoice (I) #} {% if can('manage_invoices') %}
+    {% endif %} {# Kids Club Invoices #} {% if can('manage_kids_club_invoices')
+    %}
     <li>
       <div>
         <button
@@ -478,7 +498,7 @@
               <path
                 d="M19 21H7a2 2 0 01-2-2V5a2 2 0 012-2h5.6a1 1 0 01.7.3l5.4 5.4a1 1 0 01.3.7V19a2 2 0 01-2 2z"
               /></svg
-            >Invoice</span
+            >Kids Club Invoices</span
           >
           <svg
             class="h-3 w-3 transition-transform"
@@ -536,13 +556,13 @@
                 <path d="M16 17H8" />
                 <path d="M10 9H9" />
               </svg>
-              <span>Invoice List</span>
+              <span>Kids Club Invoices</span>
             </a>
           </li>
         </ul>
       </div>
     </li>
-    {# Staff Invoice Management #} {% if can('submit_staff_invoices') or
+    {# Staff Invoices (separate access) #} {% if can('submit_staff_invoices') or
     can('manage_staff_invoices') %}
     <li>
       <div>
@@ -1143,7 +1163,7 @@
         >
           {# Alphabetical overall: Branches, Companies, Email Management, Email
           Settings, Email Templates, NMW Bands, Pricing Setup #} {% if
-          can('manage_supervisor_shifts') or can('manage_invoices') or
+          can('manage_supervisor_shifts') or can('manage_kids_club_invoices') or
           can('manage_pricing') %}
           <li>
             <a

@@ -1,4 +1,4 @@
-{% extends 'base.html' %} {% block page_title %}Invoice {{ invoice.invoice_no
+{% extends 'base.html' %} {% block page_title %}Kids Club Invoice {{ invoice.invoice_no
 }}{% endblock %} {% block content %}
 <div class="flex items-center mb-4 gap-2">
   <a href="{{ url_for('invoices_index') }}" class="soft-btn">Back</a>
@@ -42,6 +42,7 @@
         invoice.due_date|fmt_date }}
       </div>
       <div><span class="font-semibold">Status:</span> {{ invoice.status }}</div>
+      <div><span class="font-semibold">Payment Method:</span> {{ (invoice.payment_method or '')|replace('_',' ')|title }}</div>
     </div>
   </div>
   <div class="grid md:grid-cols-2 gap-6">

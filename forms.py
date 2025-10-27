@@ -152,6 +152,8 @@ class MeetingForm(FlaskForm):
     agenda = StringField("Agenda / Reason", validators=[DataRequired(), Length(max=500)])
     date = DateField("Date", validators=[DataRequired()])
     time = StringField("Time (HH:MM)", validators=[DataRequired(), Length(min=4, max=5)])
+    # Optional: link a student to the meeting (for emailing/reminders)
+    student_id = SelectField("Student", coerce=int, validators=[Optional()], choices=[])
     student_name = StringField("Student Name", validators=[Optional(), Length(max=200)])
     parent_name = StringField("Parent Name", validators=[Optional(), Length(max=200)])
     outcome = TextAreaField("Outcome / Notes", validators=[Optional(), Length(max=5000)])
@@ -241,6 +243,11 @@ class InvoiceForm(FlaskForm):
     period_end = DateField("Period End", validators=[DataRequired()])
     invoice_date = DateField("Invoice Date", validators=[DataRequired()])
     due_date = DateField("Due Date", validators=[DataRequired()])
+    payment_method = SelectField(
+        "Payment Method",
+        choices=[("", "-- Select --"), ("card", "Card"), ("cash", "Cash"), ("bank_transfer", "Bank Transfer")],
+        validators=[Optional()],
+    )
     sub_total = DecimalField("Sub-total", validators=[DataRequired()], places=2)
     total = DecimalField("Total", validators=[DataRequired()], places=2)
     status = SelectField("Status", choices=[('PAID','PAID'),('UNPAID','UNPAID')], validators=[DataRequired()])
@@ -273,7 +280,7 @@ class StaffInvoiceForm(FlaskForm):
         date = DateField("Date", validators=[DataRequired()])
         day = StringField("Day", validators=[Optional()])
         branch = SelectField("Branch", choices=[], validators=[Optional()])
-        hours = DecimalField("JHours Worked", places=2, validators=[DataRequired()])
+        hours = DecimalField("Hours Worked", places=2, validators=[DataRequired()])
         description = StringField("Description", validators=[Optional(), Length(max=400)])
         rate = DecimalField("Rate/Hour", places=2, validators=[DataRequired()])
         amount = DecimalField("Amount", places=2, validators=[Optional()])

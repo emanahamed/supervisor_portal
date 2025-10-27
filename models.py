@@ -9,6 +9,18 @@ from flask_sqlalchemy import SQLAlchemy
 # This is a safe default for this app and improves test ergonomics.
 db = SQLAlchemy(session_options={"expire_on_commit": False})
 
+# Flask-SQLAlchemy 3.x removed create_scoped_session; provide a backwards-compatible alias
+# for tests and any legacy code that still invokes db.create_scoped_session(options=...).
+try:
+    if not hasattr(db, 'create_scoped_session') and hasattr(db, '_make_scoped_session'):
+        def _compat_create_scoped_session(options=None):
+            return db._make_scoped_session(options or {})
+        # Attach as attribute so tests can call db.create_scoped_session(...)
+        setattr(db, 'create_scoped_session', _compat_create_scoped_session)
+except Exception:
+    # Non-fatal: tests will fail loudly if session creation cannot be shimmed
+    pass
+
 # Roles: superadmin (can approve users), user (pending until approved)
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -372,6 +384,8 @@ class Observation(db.Model):
     observer_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     date = db.Column(db.Date, nullable=False)
     score = db.Column(db.Float, nullable=False)
+    # Track if the observation report has ever been emailed to the tutor
+    emailed = db.Column(db.Boolean, default=False, index=True)
 
     staff = db.relationship("Staff", lazy=True)
     observer = db.relationship("User", lazy=True)
@@ -643,16 +657,22 @@ class Meeting(db.Model):
     participant_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)  # Person the meeting is with
     booked_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     agenda = db.Column(db.String(500), nullable=False)
+    # Optional link to a Student record (added Oct 2025)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='SET NULL'), index=True)
     student_name = db.Column(db.String(200))  # optional free-text
     parent_name = db.Column(db.String(200))   # optional free-text
     outcome = db.Column(db.Text)              # optional notes / outcome
     date = db.Column(db.Date, nullable=False, index=True)
     time = db.Column(db.String(10), nullable=False, index=True)  # HH:MM 24h simple string
+    # Email tracking (added Oct 2025)
+    confirmation_sent_at = db.Column(db.DateTime)
+    reminder_sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     participant = db.relationship('User', foreign_keys=[participant_id])
     booked_by = db.relationship('User', foreign_keys=[booked_by_id])
+    student = db.relationship('Student', foreign_keys=[student_id])
 
     def starts_at(self):
         """Return combined datetime object (naive UTC/local) for sorting if needed."""
@@ -970,6 +990,8 @@ class Invoice(db.Model):
     invoice_no = db.Column(db.String(50), unique=True, nullable=False, index=True)
     company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=False, index=True)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
+    # Optional payment method for non-staff invoices (e.g., Card, Cash, Bank Transfer)
+    payment_method = db.Column(db.String(40))
     invoice_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
     due_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
     parent_name = db.Column(db.String(200), nullable=False)
@@ -1265,6 +1287,11 @@ class JobApplication(db.Model):
     subjects = db.Column(db.Text)
     # Marketing attribution
     heard_about = db.Column(db.String(255))
+    # Interview scheduling (Oct 2025)
+    interview_at = db.Column(db.DateTime)
+    interview_label = db.Column(db.String(255))
+    interview_confirm_token = db.Column(db.String(64), unique=True, index=True)
+    interview_reminder_job_id = db.Column(db.String(64))
     # Metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)

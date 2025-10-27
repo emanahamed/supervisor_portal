@@ -1,3 +1,4 @@
+import os
 import smtplib
 from datetime import datetime
 from datetime import datetime as _dt
@@ -57,6 +58,25 @@ def _populate_msg_headers(msg: EmailMessage, subject: str, to_email: str, settin
             msg['Reply-To'] = REPLY_TO
 
 
+_LOGO_CACHE: Optional[bytes] = None
+
+def _load_logo_bytes() -> Optional[bytes]:
+    """Load logo bytes from static folder once; return None if not available."""
+    global _LOGO_CACHE
+    if _LOGO_CACHE is not None:
+        return _LOGO_CACHE
+    try:
+        base_dir = os.path.dirname(__file__)
+        # Default project logo path
+        logo_path = os.path.join(base_dir, 'static', 'img', 'excel tutors logo 2023.png')
+        with open(logo_path, 'rb') as f:
+            _LOGO_CACHE = f.read()
+            return _LOGO_CACHE
+    except Exception:
+        _LOGO_CACHE = None
+        return None
+
+
 def send_email(to_email: str, subject: str, html: str, *, setting_name: Optional[str] = None, attachments: Optional[list] = None) -> None:
     """Send an HTML email using DB-backed EmailSetting when available.
 
@@ -67,6 +87,20 @@ def send_email(to_email: str, subject: str, html: str, *, setting_name: Optional
     _populate_msg_headers(msg, subject, to_email, setting)
     msg.set_content("This email contains HTML content. Please view in an HTML-capable client.")
     msg.add_alternative(html, subtype='html')
+
+    # Embed logo for branded emails that reference cid:et-logo
+    try:
+        html_part = None
+        for part in msg.iter_parts():
+            if part.get_content_type() == 'text/html':
+                html_part = part
+                break
+        if html_part and (('cid:et-logo' in html) or ('cid:et-logo' in str(html_part.get_content()))):
+            logo_bytes = _load_logo_bytes()
+            if logo_bytes:
+                html_part.add_related(logo_bytes, maintype='image', subtype='png', cid='<et-logo>')
+    except Exception:
+        pass
 
     # Attach files if provided
     if attachments:
@@ -169,7 +203,17 @@ def send_recruitment_email(to_email: str, subject: str, html: str, *, attachment
     send_email(to_email, subject, html, setting_name='recruitment', attachments=attachments)
 
 
-def build_interview_invitation_email(applicant, slots: list[tuple[str, list[str]]]) -> Tuple[str, str]:
+def send_operations_email(to_email: str, subject: str, html: str, *, attachments: Optional[list] = None) -> None:
+    """Shorthand for sending via the 'operations' EmailSetting.
+
+    Use this for internal operational notifications like book orders, stock,
+    or printing tasks. Configure an EmailSetting named 'operations' to control
+    the From identity and SMTP credentials.
+    """
+    send_email(to_email, subject, html, setting_name='operations', attachments=attachments)
+
+
+def build_interview_invitation_email(applicant, slots: list[tuple[str, list[str]]], confirm_url: Optional[str] = None) -> Tuple[str, str]:
     """Build the interview invitation email body with grouped date/time slots.
 
     slots: list of (day_heading, ["Friday, 24th October, 2025 at 10:30 AM", ...])
@@ -198,14 +242,96 @@ def build_interview_invitation_email(applicant, slots: list[tuple[str, list[str]
         "General Enquiries: info@exceltutors.org.uk<br/>"
         "www.exceltutors.org.uk"
     )
+    cta = ''
+    if confirm_url:
+        cta = (
+            "<div style='margin:18px 0;text-align:center'>"
+            f"<a href=\"{confirm_url}\" style='display:inline-block;background:#2563eb;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600'>Confirm your interview</a>"
+            "</div>"
+        )
     body_inner = [
         f"<p style='margin:0 0 8px 0;font-size:14px;color:#334155;'>{intro}</p>",
         "<div style='font-family:monospace; font-size:13px; line-height:1.6; color:#0f172a;'>" + "<br/>".join(lines) + "</div>",
+        cta,
         f"<div style='font-size:13px;color:#334155;'>{details}</div>",
         f"<div style='font-size:13px;color:#334155;'>{footer}</div>",
     ]
     html = _render_email_shell('Interview invitation', 'Interview invitation', '', ''.join(body_inner))
     return (subject, html)
+
+
+def build_interview_reminder_email(applicant, when_dt) -> Tuple[str, str]:
+    """Reminder email 12 hours before an interview."""
+    try:
+        when_label = when_dt.strftime('%A, %d %B %Y at %I:%M %p').lstrip('0')
+    except Exception:
+        when_label = str(when_dt)
+    subject = "Reminder: Your interview is in 12 hours – Excel Tutors"
+    intro = (
+        f"Dear {applicant.first_name},<br/><br/>"
+        f"This is a friendly reminder of your interview scheduled for {when_label}."
+    )
+    details = (
+        "<br/><br/>The interview will take place at 161-163 Commercial Road, London E1 2DA."
+        "<br/><br/>Please arrive 5-10 minutes early and bring a copy of your CV."
+    )
+    footer = (
+        "<br/><br/>Best Regards<br/><br/>Recruitment Administrator<br/>Excel Tutors"
+    )
+    body_inner = [
+        f"<p style='margin:0 0 8px 0;font-size:14px;color:#334155;'>{intro}</p>",
+        f"<div style='font-size:13px;color:#334155;'>{details}</div>",
+        f"<div style='font-size:13px;color:#334155;'>{footer}</div>",
+    ]
+    html = _render_email_shell('Interview reminder', 'Interview reminder', '', ''.join(body_inner))
+    return (subject, html)
+
+
+def build_interview_confirmation_email(applicant, *, reschedule_url: str, cancel_url: str) -> Tuple[str, str]:
+    """Build a branded email for interview confirmation.
+
+    Uses applicant.first_name and applicant.interview_label.
+    """
+    when_label = getattr(applicant, 'interview_label', None) or ''
+    subject = f"Interview confirmed – {when_label}" if when_label else "Interview confirmed – Excel Tutors"
+    intro = f"Dear {getattr(applicant, 'first_name', 'there')},"
+    details = (
+        f"<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Your interview is confirmed for <strong>{when_label}</strong>.</p>"
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Location: 161-163 Commercial Road, London E1 2DA.</p>"
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Please arrive 5-10 minutes early and bring a copy of your CV.</p>"
+        f"<p style='margin:0 0 0;font-size:14px;color:#334155;'>If you need to make changes you can <a href='{reschedule_url}'>reschedule</a> or <a href='{cancel_url}'>cancel</a> your interview.</p>"
+    )
+    html = _render_email_shell('Interview confirmed', 'Interview confirmed', intro, details)
+    return subject, html
+
+
+def build_interview_rescheduled_email(applicant, *, reschedule_url: str, cancel_url: str) -> Tuple[str, str]:
+    """Build a branded email for interview rescheduling by admin.
+
+    Uses applicant.first_name and applicant.interview_label.
+    """
+    when_label = getattr(applicant, 'interview_label', None) or ''
+    subject = f"Interview rescheduled – {when_label}" if when_label else "Interview rescheduled – Excel Tutors"
+    intro = f"Dear {getattr(applicant, 'first_name', 'there')},"
+    details = (
+        f"<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Your interview has been rescheduled to <strong>{when_label}</strong>.</p>"
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Location: 161-163 Commercial Road, London E1 2DA.</p>"
+        f"<p style='margin:0 0 0;font-size:14px;color:#334155;'>If you need to make changes you can <a href='{reschedule_url}'>reschedule</a> or <a href='{cancel_url}'>cancel</a>.</p>"
+    )
+    html = _render_email_shell('Interview rescheduled', 'Interview rescheduled', intro, details)
+    return subject, html
+
+
+def build_interview_cancelled_email(applicant, *, reschedule_url: str) -> Tuple[str, str]:
+    """Build a branded email for interview cancellation by admin."""
+    subject = "Interview cancelled – Excel Tutors"
+    intro = f"Dear {getattr(applicant, 'first_name', 'there')},"
+    details = (
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Your upcoming interview has been cancelled by our recruitment team.</p>"
+        f"<p style='margin:0 0 0;font-size:14px;color:#334155;'>You can <a href='{reschedule_url}'>choose a new time</a> whenever convenient.</p>"
+    )
+    html = _render_email_shell('Interview cancelled', 'Interview cancelled', intro, details)
+    return subject, html
 
 
 def send_with_template(template_key: str, ctx: dict, *, to_email: Optional[str] = None, fallback=None, attachments: Optional[list] = None) -> None:
@@ -291,13 +417,13 @@ def build_task_notification_email(task, created_by, assigned_to):
         <tr><td align='center'>
             <table role='presentation' width='600' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;'>
                 <tr>
-                    <td style='background:#0f172a;padding:20px 28px;'>
-                        <h1 style='margin:0;font-size:20px;line-height:1.3;color:#ffffff;font-weight:600;'>Excel Tutors Task Notification</h1>
-                        <p style='margin:4px 0 0;font-size:12px;color:#94a3b8;'>A new task has been created by {created_by.name}.</p>
+                    <td style='background:#ffffff;padding:20px 28px;text-align:center;'>
+                        <img src='cid:et-logo' alt='' style='display:block;margin:0 auto;max-height:40px;width:auto;'>
                     </td>
                 </tr>
                 <tr>
                     <td style='padding:28px;'>
+                        <p style='margin:0 0 12px;font-size:13px;color:#64748b;'>A new task has been created by {created_by.name}.</p>
                         <h2 style='margin:0 0 12px;font-size:18px;color:#0f172a;'>{description_html}</h2>
                         <p style='margin:0 0 18px;font-size:14px;color:#475569;'>You have been assigned a new task in the Excel Tutors portal.</p>
                         <div style='margin-bottom:18px;'>
@@ -356,7 +482,7 @@ def _format_slot_range(slot_start: datetime, slot_end: datetime) -> Tuple[str, s
 
 
 def _render_email_shell(title: str, headline: str, intro: str, body_inner: str, footer_html: str = '') -> str:
-    return f"""
+                                return f"""
 <!DOCTYPE html>
 <html lang='en'>
 <head>
@@ -367,16 +493,16 @@ def _render_email_shell(title: str, headline: str, intro: str, body_inner: str, 
   <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#f1f5f9;padding:24px 0;'>
     <tr><td align='center'>
       <table role='presentation' width='640' cellpadding='0' cellspacing='0' style='background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;'>
-        <tr>
-          <td style='background:#0f172a;padding:24px 32px;'>
-            <h1 style='margin:0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;'>Excel Tutors</h1>
-            <p style='margin:6px 0 0;font-size:13px;color:#cbd5f5;'>{headline}</p>
-          </td>
-        </tr>
+                <tr>
+                    <td style='background:#ffffff;padding:18px 24px;text-align:center;'>
+                        <img src='cid:et-logo' alt='' style='display:block;margin:0 auto;max-height:40px;width:auto;'>
+                    </td>
+                </tr>
         <tr>
           <td style='padding:32px;'>
             <p style='margin:0 0 16px;font-size:15px;color:#0f172a;'>{intro}</p>
-            {body_inner}
+                        {f"<h2 style='margin:0 0 16px;font-size:18px;color:#0f172a;'>{headline}</h2>" if headline else ''}
+                        {body_inner}
           </td>
         </tr>
         <tr>
@@ -608,4 +734,113 @@ def build_appointment_admin_email(booking, slot, *, mode: str = 'confirmation') 
     body.append("</table>")
     body.append(f"<p style='margin:24px 0 0;font-size:12px;color:#64748b;'>{template.get('footer','')}</p>")
     html = _render_email_shell(subject, template['headline'], intro, ''.join(body))
+    return subject, html
+
+
+# ---------------- Meeting Emails (internal scheduling) ---------------- #
+
+def build_meeting_student_email(meeting, student, participant, *, mode: str = 'confirmation') -> Tuple[str, str]:
+    """Build student-facing meeting email (confirmation or reminder)."""
+    dt_label = ''
+    try:
+        dt_label = f"{meeting.date.strftime('%A, %d %B %Y')} at {meeting.time}"
+    except Exception:
+        dt_label = f"{meeting.date} at {meeting.time}"
+    if mode == 'reminder':
+        subject = f"Reminder: meeting with {participant.name} on {dt_label}"
+        headline = 'Meeting reminder'
+        intro = f"Hello {student.name if getattr(student,'name',None) else 'there'},<br/><br/>This is a reminder for your meeting with {participant.name}."
+        body = f"<p style='margin:0 0 14px;font-size:14px;color:#334155;'>We will meet on <strong>{dt_label}</strong>.</p>"
+    else:
+        subject = f"Meeting confirmed with {participant.name} on {dt_label}"
+        headline = 'Meeting confirmed'
+        intro = f"Hello {student.name if getattr(student,'name',None) else 'there'},<br/><br/>Your meeting has been scheduled with {participant.name}."
+        body = f"<p style='margin:0 0 14px;font-size:14px;color:#334155;'>Date & time: <strong>{dt_label}</strong></p>"
+    # Include agenda if present
+    try:
+        if getattr(meeting, 'agenda', None):
+            body += f"<p style='margin:0 0 14px;font-size:14px;color:#334155;'>Agenda: {meeting.agenda}</p>"
+    except Exception:
+        pass
+    body += "<p style='margin:16px 0 0;font-size:13px;color:#475569;'>Best regards,<br/>Excel Tutors Team</p>"
+    html = _render_email_shell(subject, headline, intro, body)
+    return subject, html
+
+
+def build_meeting_admin_email(meeting, participant, student, *, mode: str = 'confirmation') -> Tuple[str, str]:
+    """Build internal admin/participant email for meeting events."""
+    try:
+        dt_label = f"{meeting.date.strftime('%A, %d %B %Y')} at {meeting.time}"
+    except Exception:
+        dt_label = f"{meeting.date} at {meeting.time}"
+    if mode == 'reminder':
+        subject = f"Reminder: upcoming meeting with {student.name if student else (meeting.student_name or 'student')}"
+        headline = 'Meeting reminder'
+        intro = "Here's a reminder of your upcoming meeting."
+    else:
+        subject = f"New meeting scheduled: {student.name if student else (meeting.student_name or 'student')}"
+        headline = 'New meeting scheduled'
+        intro = 'A meeting has been scheduled.'
+    body = []
+    body.append("<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>")
+    def row(label, value):
+        body.append(f"<tr><td style='padding:6px 0;width:180px;color:#64748b;font-weight:600;'>{label}</td><td style='padding:6px 0;color:#0f172a;'>{value}</td></tr>")
+    row('With', participant.name if participant else '—')
+    row('Date/Time', dt_label)
+    row('Student', (student.name if student else (meeting.student_name or '—')))
+    if getattr(meeting, 'agenda', None):
+        row('Agenda', meeting.agenda)
+    body.append("</table>")
+    html = _render_email_shell(subject, headline, intro, ''.join(body))
+    return subject, html
+
+
+# ---------------- Task reminder emails ---------------- #
+
+def build_task_due_soon_email(task, assigned_to) -> Tuple[str, str]:
+    """Branded email HTML for tasks due soon (within a few days)."""
+    due = task.due_date.strftime('%Y-%m-%d') if getattr(task, 'due_date', None) else 'N/A'
+    subject = f"Task due soon: {task.description[:60]} (Due {due})"
+    intro = f"Hello {assigned_to.name},<br/><br/>This is a friendly reminder that the following task is approaching its deadline."
+    crit = getattr(task, 'criticality', 'N/A') or 'N/A'
+    urg = getattr(task, 'urgency', 'N/A') or 'N/A'
+    def row(label, value):
+        safe = (str(value) or '').replace('\n','<br/>')
+        return f"<tr><td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td><td style='padding:6px 0;color:#0f172a;'>{safe}</td></tr>"
+    body = [
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>",
+        row('Description', task.description),
+        row('Due Date', due),
+        row('Criticality', crit),
+        row('Urgency', urg),
+        row('Assigned By', task.created_by.name if getattr(task, 'created_by', None) else '—'),
+        "</table>",
+        "<p style='margin:16px 0 0;font-size:13px;color:#475569;'>Please review and complete before the deadline.</p>",
+        f"<div style='margin-top:16px;'><a href='https://portal.exceltutors.org.uk/todos?assigned={assigned_to.id}' style='display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;'>View Tasks</a></div>",
+    ]
+    html = _render_email_shell('Task due soon', 'Task due soon', intro, ''.join(body))
+    return subject, html
+
+def build_task_overdue_email(task, assigned_to) -> Tuple[str, str]:
+    """Branded email HTML for overdue tasks."""
+    due = task.due_date.strftime('%Y-%m-%d') if getattr(task, 'due_date', None) else 'N/A'
+    subject = f"Overdue task: {task.description[:60]} (Due {due})"
+    intro = f"Hello {assigned_to.name},<br/><br/><strong>This task is now overdue.</strong> Please take action as soon as possible."
+    crit = getattr(task, 'criticality', 'N/A') or 'N/A'
+    urg = getattr(task, 'urgency', 'N/A') or 'N/A'
+    def row(label, value):
+        safe = (str(value) or '').replace('\n','<br/>')
+        return f"<tr><td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td><td style='padding:6px 0;color:#0f172a;'>{safe}</td></tr>"
+    body = [
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>",
+        row('Description', task.description),
+        row('Due Date', due),
+        row('Criticality', crit),
+        row('Urgency', urg),
+        row('Assigned By', task.created_by.name if getattr(task, 'created_by', None) else '—'),
+        "</table>",
+        "<p style='margin:16px 0 0;font-size:13px;color:#475569;'>If this is already completed, please mark it as Done in the portal.</p>",
+        f"<div style='margin-top:16px;'><a href='https://portal.exceltutors.org.uk/todos?assigned={assigned_to.id}' style='display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;'>Review Task</a></div>",
+    ]
+    html = _render_email_shell('Task overdue', 'Task overdue', intro, ''.join(body))
     return subject, html

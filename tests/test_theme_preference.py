@@ -2,26 +2,17 @@ from app import app, db
 from models import User
 
 
-def setup_module(module):
-    with app.app_context():
-        db.create_all()
-        u = User.query.filter_by(email='themeuser@example.com').first()
-        if not u:
-            u = User(name='Theme User', email='themeuser@example.com', password_hash='x', is_approved=True)
-            db.session.add(u)
-            db.session.commit()
-
-
 def _login(client, user_id):
     with client.session_transaction() as sess:
         sess['_user_id'] = str(user_id)
 
-
-def test_quick_theme_update_persists():
+def test_quick_theme_update_persists(db_session):
     with app.app_context():
-        user = User.query.filter_by(email='themeuser@example.com').first()
+        # Create a user for this test only
+        user = User(name='Theme User', email='themeuser@example.com', password_hash='x', is_approved=True)
+        db.session.add(user)
+        db.session.flush()
         uid = user.id
-        # Ensure initial default
         assert user.theme_preference in (None, 'system', 'light', 'dark')
     with app.test_client() as client:
         _login(client, uid)

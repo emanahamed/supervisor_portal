@@ -4,14 +4,12 @@ def test_pricing_update_requires_permission(client, app_instance):
     assert resp.status_code in (301,302)
 
 
-def test_pricing_update_round_trip(client, app_instance):
+def test_pricing_update_round_trip(client, app_instance, db_session):
     # Create superadmin user with permission (superadmin bypass)
     from models import Setting, User, db
     with app_instance.app_context():
-        u = User.query.filter_by(email='pricing@test.local').first()
-        if not u:
-            u = User(name='Pricing Admin', email='pricing@test.local', password_hash='x', is_superadmin=True, is_approved=True)
-            db.session.add(u); db.session.commit()
+        u = User(name='Pricing Admin', email='pricing@test.local', password_hash='x', is_superadmin=True, is_approved=True)
+        db.session.add(u); db.session.flush()
         uid = u.id
     with client.session_transaction() as sess:
         sess['_user_id'] = str(uid)

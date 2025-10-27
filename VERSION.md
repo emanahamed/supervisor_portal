@@ -1,5 +1,30 @@
 # Version History
 
+## 2.1.2 - 2025-10-27
+
+Role Permissions: Tutor column added; email branding standardized to logo-only header
+
+- Role Permissions: Expanded the matrix to include the Tutor role as its own column across the Role Permissions editor and related quick-update endpoints. You can now grant and revoke permissions for tutors explicitly (superadmin bypass remains unchanged).
+- Email branding: All system emails now use a white header with the logo only. The former adjacent "Excel Tutors" header text has been removed. The logo preserves its aspect ratio (constrained via max-height) and no colored background is applied. Changes are centralized in the shared email shell and applied to fallback builders (e.g., task notifications) for consistency.
+
+Notes:
+
+- No schema changes; safe minor release.
+
+## 2.1.1 - 2025-10-27
+
+Books & Invoices polish; cover selection UX
+
+- Books: Restyled the Active toggle to a modern switch-style control in both the list and the modal. Behavior unchanged (immediate POST toggle in list; form-bound in modal).
+- Books: Added dropdown-based cover selection plus inline upload for cover images. New endpoints provide available covers and handle uploads; preview updates instantly.
+  - Endpoints: `GET /tools/books/covers.json`, `POST /tools/books/upload-cover`
+- Kids Club Invoices: PDF/print invoice now displays Payment Method and Status in the header metadata block (works with `?download=1` or `?print=1`).
+
+Notes:
+
+- Cover URL remains a separate field for other purposes; the listing preview now prefers the selected cover file, falling back to Cover URL.
+- No schema changes; purely routes/templates updates.
+
 ## 2.1.0 - 2025-10-23
 
 Recruitment Admin: Application Management, Branded Invites, and Dashboard

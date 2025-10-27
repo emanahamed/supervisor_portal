@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block page_title %}Invoices{% endblock %}
+{% block page_title %}Kids Club Invoices{% endblock %}
 {% block content %}
 {% if inv_stats %}
 <div class="grid md:grid-cols-5 gap-3 mb-4 text-sm">
@@ -28,7 +28,7 @@
 </div>
 {% endif %}
 <div class="flex items-center mb-4 gap-2 flex-wrap">
-  <a href="{{ url_for('invoices_new') }}" class="soft-btn text-xs">+ New Invoice</a>
+  <a href="{{ url_for('invoices_new') }}" class="soft-btn text-xs">+ New Kids Club Invoice</a>
   <a href="{{ url_for('companies_index') }}" class="soft-btn text-xs">Companies</a>
   <a href="{{ url_for('invoices_export', q=request.args.get('q',''), company=request.args.get('company',''), month=request.args.get('month',''), status=request.args.get('status',''), sort=request.args.get('sort','created_at'), direction=request.args.get('direction','desc')) }}" class="soft-btn text-xs">Export CSV</a>
   <form method="post" action="{{ url_for('invoices_import') }}" enctype="multipart/form-data" class="flex items-center gap-2 ml-auto text-xs" onsubmit="return confirm('Import invoices from CSV?');">
@@ -81,7 +81,8 @@
         <th class="text-left p-2">{{ sort_link('Invoice Date','invoice_date') }}</th>
         <th class="text-left p-2">{{ sort_link('Parent','parent_name') }}</th>
         <th class="text-left p-2">{{ sort_link('Child','child_name') }}</th>
-        <th class="text-left p-2">Period</th>
+  <th class="text-left p-2">Period</th>
+  <th class="text-left p-2">Payment Method</th>
         <th class="text-left p-2">{{ sort_link('Total','total') }}</th>
   <th class="text-left p-2">{{ sort_link('Status','status') }}</th>
   <th class="text-left p-2">Created By</th>
@@ -97,7 +98,8 @@
         <td class="p-2">{{ inv.parent_name }}</td>
         <td class="p-2">{{ inv.child_name }}</td>
         <td class="p-2">{{ inv.period_label() }}</td>
-        <td class="p-2">£{{ '%.2f'|format(inv.total) }}</td>
+  <td class="p-2">{{ inv.payment_method|default('-')|replace('_',' ')|title }}</td>
+  <td class="p-2">£{{ '%.2f'|format(inv.total) }}</td>
         <td class="p-2">
           {% if inv.status=='PAID' %}<span class="soft-badge bg-green-100 text-green-700">PAID</span>{% else %}<span class="soft-badge bg-yellow-100 text-yellow-700">UNPAID</span>{% endif %}
         </td>

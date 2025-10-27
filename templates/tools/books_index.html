@@ -32,9 +32,9 @@
         <label class="text-[10px] font-semibold">Year</label>
         <select x-model="filters.year" class="soft-input h-8">
           <option value="">All</option>
-          <template x-for="(label,val) in yearOptions" :key="val">
-            <option :value="val" x-text="label"></option>
-          </template>
+          {% for y in years %}
+            <option value="{{ y|lower }}" {% if selected_year==y|lower %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="flex flex-col gap-1">
@@ -109,10 +109,10 @@
             <tr class="border-b last:border-0 hover:bg-slate-50">
               <td class="p-2 align-top"><input type="checkbox" :value="b.id" @change="toggleSelect(b.id)" :checked="selectedIds.includes(b.id)"></td>
               <td class="p-2">
-                <template x-if="b.cover_url">
-                  <img :src="b.cover_url" alt="cover" class="h-12 w-12 object-cover rounded border" />
+                <template x-if="coverSrc(b)">
+                  <img :src="coverSrc(b)" alt="cover" class="h-12 w-12 object-cover rounded border" />
                 </template>
-                <template x-if="!b.cover_url">
+                <template x-if="!coverSrc(b)">
                   <div class="h-12 w-12 flex items-center justify-center bg-slate-100 rounded text-[9px] text-slate-500">No Img</div>
                 </template>
               </td>
@@ -124,10 +124,16 @@
               <td class="p-2 whitespace-nowrap align-top" x-text="b.subject || '-' "></td>
               <td class="p-2 align-top" x-text="currency(b.price)"></td>
               <td class="p-2 align-top">
-                <label class="inline-flex items-center gap-1 cursor-pointer select-none">
-                  <input type="checkbox" :checked="b.active" @change="toggleActive(b)" class="h-4 w-4">
+                <div class="inline-flex items-center gap-2">
+                  <button type="button" @click="toggleActive(b)" :aria-pressed="b.active"
+                          class="relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          :class="b.active ? 'bg-emerald-500' : 'bg-slate-300'">
+                    <span class="sr-only">Toggle Active</span>
+                    <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition"
+                          :class="b.active ? 'translate-x-5' : 'translate-x-1'"></span>
+                  </button>
                   <span class="text-[10px] px-1.5 py-0.5 rounded font-medium" :class="b.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'" x-text="b.active ? 'Active':'Hidden'"></span>
-                </label>
+                </div>
               </td>
               <td class="p-2 text-right align-top whitespace-nowrap">
                 <div class="inline-flex gap-2">
@@ -211,12 +217,21 @@
             </div>
             <div class="grid md:grid-cols-2 gap-4">
               <div>
-                <label class="soft-label text-[11px]">Cover</label>
-                <input type="text" x-model="form.cover" class="soft-input w-full" />
+                <label class="soft-label text-[11px] flex items-center justify-between">
+                  <span>Cover File</span>
+                  <button type="button" class="text-[10px] text-indigo-600 hover:underline" @click="triggerCoverUpload">Upload new</button>
+                </label>
+                <select x-model="form.cover" @change="onCoverChange" class="soft-input w-full">
+                  <option value="">- none -</option>
+                  <template x-for="opt in coverOptions" :key="opt.name">
+                    <option :value="opt.name" x-text="opt.name"></option>
+                  </template>
+                </select>
+                <input type="file" x-ref="coverFile" class="hidden" accept="image/*" @change="uploadCover">
               </div>
               <div>
-                <label class="soft-label text-[11px]">Cover URL</label>
-                <input type="text" x-model="form.cover_url" @input="previewImage()" placeholder="https://" class="soft-input w-full" />
+                <label class="soft-label text-[11px]">Cover URL (separate purpose)</label>
+                <input type="text" x-model="form.cover_url" placeholder="https://" class="soft-input w-full" />
               </div>
             </div>
             <div class="grid md:grid-cols-2 gap-4">
@@ -242,8 +257,15 @@
               </div>
             </div>
             <div>
-              <label class="inline-flex items-center gap-2 text-[11px]">
-                <input type="checkbox" x-model="form.active" /> Active (visible)
+              <label class="flex items-center justify-between text-[11px]">
+                <span>Active (visible)</span>
+                <button type="button" @click="form.active=!form.active" :aria-pressed="form.active"
+                        class="relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        :class="form.active ? 'bg-emerald-500' : 'bg-slate-300'">
+                  <span class="sr-only">Toggle Active</span>
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition"
+                        :class="form.active ? 'translate-x-5' : 'translate-x-1'"></span>
+                </button>
               </label>
             </div>
           </div>
@@ -255,7 +277,7 @@
             <template x-if="!preview">
               <div class="h-48 w-32 rounded border flex items-center justify-center text-[10px] text-slate-400">No Image</div>
             </template>
-            <div class="text-[10px] text-slate-400 text-center px-2">Paste a Cover URL to update preview.</div>
+            <div class="text-[10px] text-slate-400 text-center px-2">Select or upload a cover to preview. Cover URL is stored separately.</div>
           </div>
         </div>
         <div class="flex items-center gap-2 pt-2 border-t border-slate-200">
@@ -320,7 +342,7 @@
       pages: {{ pages|default(1) }},
       total: {{ total|default(0) }},
       per_page: {{ per_page|default(25) }},
-      yearOptions: { 'Year 3-5':'year3-5','Year 6-7':'year6-7','Year 8':'year8','Year 9':'year9','Year 10':'year10','Year 11':'year11','A-Level':'alevel' },
+  // year options are rendered server-side from distinct Book.year_group values
       filters: {
         q: '{{ q or '' }}',
         year: '{{ selected_year or '' }}',
@@ -331,6 +353,7 @@
       },
       modal: { open:false, mode:'create' },
   form: { id:null, name:'', price:0, subject:'', year_group:'', cover:'', cover_url:'', inner:'', inner_url:'', print_format:'', finishing:[], active:true },
+  coverOptions: [],
   errors: {},
   finishingOptions: ['Matte','Colour','Black&White','Gloss'],
   // finishing stored as array internally for multi-select
@@ -354,10 +377,14 @@
       goto(p){ this.page = p; this.reload(); },
       resetFilters(){ this.filters.q=''; this.filters.year=''; this.filters.subject=''; this.filters.status='active'; this.filters.sort='name'; this.filters.direction='asc'; this.applyAndReload(); },
       sortBy(field){ if(this.filters.sort===field){ this.filters.direction = this.filters.direction==='asc'?'desc':'asc'; } else { this.filters.sort=field; this.filters.direction='asc'; } this.applyAndReload(); },
-  openCreate(){ this.modal.mode='create'; this.modal.open=true; this.errors={}; this.form={id:null,name:'',price:0,subject:'',year_group:'',cover:'',cover_url:'',inner:'',inner_url:'',print_format:'',finishing:[],active:true}; this.preview=''; },
-  openEdit(b){ this.modal.mode='edit'; this.modal.open=true; this.errors={}; this.form={ id:b.id, name:b.name, price:b.price, subject:b.subject||'', year_group:b.year||'', cover:b.cover||'', cover_url:b.cover_url||'', inner:b.inner||'', inner_url:b.inner_url||'', print_format:b.print_format||'', finishing: (b.finishing? b.finishing.split(',').map(s=>s.trim()).filter(Boolean):[]), active:b.active!==false }; this.preview=b.cover_url||''; },
+  openCreate(){ this.modal.mode='create'; this.modal.open=true; this.errors={}; this.form={id:null,name:'',price:0,subject:'',year_group:'',cover:'',cover_url:'',inner:'',inner_url:'',print_format:'',finishing:[],active:true}; this.preview=''; this.loadCoverOptions(); },
+  openEdit(b){ this.modal.mode='edit'; this.modal.open=true; this.errors={}; this.form={ id:b.id, name:b.name, price:b.price, subject:b.subject||'', year_group:b.year||'', cover:b.cover||'', cover_url:b.cover_url||'', inner:b.inner||'', inner_url:b.inner_url||'', print_format:b.print_format||'', finishing: (b.finishing? b.finishing.split(',').map(s=>s.trim()).filter(Boolean):[]), active:b.active!==false }; this.loadCoverOptions(() => { this.preview = this.form.cover ? this.staticCoverUrl(this.form.cover) : (this.form.cover_url||''); }); },
       closeModal(){ this.modal.open=false; },
-      previewImage(){ this.preview=this.form.cover_url; },
+  onCoverChange(){ this.preview = this.form.cover ? this.staticCoverUrl(this.form.cover) : ''; },
+  triggerCoverUpload(){ this.$refs.coverFile.click(); },
+  uploadCover(ev){ const file = ev.target.files && ev.target.files[0]; if(!file){ return; } const fd = new FormData(); fd.append('file', file); fetch('{{ url_for('books_upload_cover') }}', { method:'POST', headers:{'X-CSRFToken': CSRF_TOKEN}, body: fd }).then(r=>r.json()).then(resp=>{ if(resp && resp.success){ const item={name:resp.name, url:resp.url}; this.coverOptions.unshift(item); this.form.cover = resp.name; this.preview = item.url; this.toast('Cover uploaded','success'); } else { this.toast('Upload failed: '+(resp && resp.error || 'Unknown'),'danger'); } ev.target.value=''; }).catch(()=>{ this.toast('Upload failed: network error','danger'); ev.target.value=''; }); },
+  loadCoverOptions(cb){ fetch('{{ url_for('books_covers_json') }}').then(r=>r.json()).then(data=>{ this.coverOptions = (data && data.covers) || []; if(cb) cb(); }).catch(()=>{ this.coverOptions=[]; if(cb) cb(); }); },
+  staticCoverUrl(name){ if(!name) return ''; return '{{ url_for('static', filename='uploads/book_covers/') }}' + encodeURIComponent(name); },
       submitForm(){
         this.errors={};
         if(!this.form.name || !this.form.name.trim()) this.errors.name='Name required';
@@ -372,7 +399,8 @@
           .then(()=>{ this.modal.open=false; this.reload(); });
       },
       confirmDelete(b){ if(!confirm('Permanently delete this book? This cannot be undone.')) return; fetch('{{ url_for('books_delete', book_id=0) }}'.replace('0', b.id), { method:'POST', headers:{'X-CSRFToken': CSRF_TOKEN} }).then(()=> this.reload()); },
-      toggleActive(b){ fetch('{{ url_for('books_toggle', book_id=0) }}'.replace('0', b.id), { method:'POST', headers:{'X-CSRFToken': CSRF_TOKEN} }).then(()=> this.reload()); },
+  toggleActive(b){ fetch('{{ url_for('books_toggle', book_id=0) }}'.replace('0', b.id), { method:'POST', headers:{'X-CSRFToken': CSRF_TOKEN} }).then(()=> this.reload()); },
+  coverSrc(b){ if(b.cover){ return this.staticCoverUrl(b.cover); } return b.cover_url || ''; },
       toggleFinishing(opt){
         const idx = this.form.finishing.indexOf(opt);
         if(idx>=0) this.form.finishing.splice(idx,1); else this.form.finishing.push(opt);

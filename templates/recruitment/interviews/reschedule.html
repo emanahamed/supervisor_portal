@@ -1,0 +1,44 @@
+{% extends 'base.html' %} {% from 'components/forms_macros.html' import
+csrf_field %} {% block title %}Reschedule Interview{% endblock %} {% block
+page_title %}Reschedule Interview – {{ a.first_name }} {{ a.last_name }}{%
+endblock %} {% block content %}
+<div class="max-w-xl mx-auto soft-card p-5">
+  <h1 class="text-lg font-semibold mb-2">Choose a new time</h1>
+  <p class="text-sm text-slate-600 mb-4">
+    Current: {% if a.interview_at %}<strong
+      >{{ a.interview_at.strftime('%A, %d %B %Y at %I:%M %p').lstrip('0')
+      }}</strong
+    >{% else %}<em>Not scheduled</em>{% endif %}
+  </p>
+  <form method="post">
+    {{ csrf_field() }}
+    <div class="space-y-3">
+      {% for g in groups %}
+      <div>
+        <div class="text-xs font-semibold text-slate-500">{{ g.day }}</div>
+        <div class="mt-1 space-y-1">
+          {% for opt in g.options %}
+          <label class="flex items-center gap-2">
+            <input
+              type="radio"
+              name="slot_iso"
+              value="{{ opt.iso }}"
+              required
+              class="text-indigo-600"
+            />
+            <span class="text-sm">{{ opt.label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="mt-4 flex items-center gap-2">
+      <button class="soft-btn soft-btn-primary">Save</button>
+      <a class="soft-btn" href="{{ url_for('recruitment_interviews') }}"
+        >Cancel</a
+      >
+    </div>
+  </form>
+</div>
+{% endblock %}

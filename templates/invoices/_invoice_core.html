@@ -43,6 +43,10 @@ endmacro %} {% set inv = invoice %}{% set s = invoice.company %}
           <td>Due Date:</td>
           <td>{{ inv.due_date|fmt_date }}</td>
         </tr>
+        <tr>
+          <td>Payment Method:</td>
+          <td>{{ (inv.payment_method or '')|replace('_',' ')|title }}</td>
+        </tr>
       </table>
     </div>
   </div>

@@ -152,6 +152,18 @@
   </div>
 </div>
 
+<!-- Success Modal (auto-closing) -->
+<div id="taskSuccessModal" class="fixed inset-0 hidden items-center justify-center z-50">
+  <div class="absolute inset-0 bg-slate-900/40" data-close-success></div>
+  <div class="relative bg-white w-full max-w-sm rounded-xl shadow-xl p-6 text-center">
+    <div class="mx-auto mb-3 w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+    </div>
+    <h4 class="text-sm font-semibold text-slate-800">Task created</h4>
+    <p class="text-xs text-slate-500 mt-1">We’ve notified the assignee. This will close automatically.</p>
+  </div>
+  </div>
+
 <script>
 (function(){
   const applyBtn = document.getElementById('applyTodoFilters');
@@ -220,7 +232,15 @@
       fetch(form.action || window.location.href, {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
         .then(r=>{ const ct=r.headers.get('Content-Type')||''; return ct.includes('application/json')? r.json(): r.text(); })
         .then(data=>{
-          if(data && data.success){ window.location.reload(); return; }
+          if(data && data.success){
+            // Show auto-closing success modal then refresh
+            try {
+              const sm = document.getElementById('taskSuccessModal');
+              if (sm){ sm.classList.remove('hidden'); sm.classList.add('flex'); setTimeout(()=>{ sm.classList.add('hidden'); sm.classList.remove('flex'); window.location.reload(); }, 1200); }
+              else { window.location.reload(); }
+            } catch(_) { window.location.reload(); }
+            return;
+          }
           if(typeof data === 'string'){ modalBody.innerHTML = data; enhanceTaskForm(modalBody.querySelector('form')); }
         })
         .finally(()=>{ if(submitBtn){ submitBtn.disabled=false; submitBtn.textContent = submitBtn.dataset.originalText||'Save'; }});

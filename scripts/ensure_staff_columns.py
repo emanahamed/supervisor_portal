@@ -69,7 +69,8 @@ EXPECTED_COLUMNS = {
     'name': 'TEXT',
     # numeric / id fields
     'salary_per_hour': 'REAL',
-    'address_lookup_id': 'INTEGER',
+    # Use TEXT for address_lookup_id to align with models/stored tokens
+    'address_lookup_id': 'TEXT',
     'dbs_checked_by_id': 'INTEGER',
     'company_id': 'INTEGER',
     'user_id': 'INTEGER',

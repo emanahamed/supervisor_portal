@@ -20,13 +20,12 @@ def test_book_columns_present(app_instance):
         for legacy in {"min_subjects","max_subjects","image_url"}:
             assert legacy not in cols, f"Legacy column still present after migration attempt: {legacy}"
 
-def test_public_api_books(client, app_instance):
-    # Ensure at least one book exists
+def test_public_api_books(client, app_instance, db_session):
+    # Create a test-only active book
     with app_instance.app_context():
-        if Book.query.count() == 0:
-            b = Book(name="Test Book", price=10.0, subject="Maths", year_group="year8", active=True)
-            db.session.add(b)
-            db.session.commit()
+        b = Book(name="Test Book (public api)", price=10.0, subject="Maths", year_group="year8", active=True)
+        db.session.add(b)
+        db.session.flush()
     resp = client.get('/api/books')
     assert resp.status_code == 200
     data = resp.get_json()
@@ -35,10 +34,9 @@ def test_public_api_books(client, app_instance):
     # Should only see active books by default
     for r in data['results']:
         assert r['active'] is True
-    # Inactive inclusion check
+    # Inactive inclusion check (toggle our test book)
     with app_instance.app_context():
-        book = Book.query.first()
-        book.active = False
+        b.active = False
         db.session.commit()
     resp2 = client.get('/api/books?all=1')
     assert any(r['active'] is False for r in resp2.get_json()['results']), 'Inactive book not returned with all=1'

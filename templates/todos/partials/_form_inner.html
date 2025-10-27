@@ -1,50 +1,73 @@
 <form
   method="POST"
   action="{{ url_for('todo_new') if not todo else url_for('todo_edit', tid=todo.id) }}"
-  class="soft-card p-6 space-y-6"
+  class="soft-card p-0"
   data-form-mode="{{ 'edit' if todo else 'create' }}"
 >
   {{ form.hidden_tag() }}
-  <div>
-    <label class="soft-label">Description</label>
-    {{ form.description(class='soft-input') }} {% for e in
-    form.description.errors %}
-    <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
-    {% endfor %}
+  <div class="border-b border-slate-200 px-6 py-4">
+    <h3 class="text-sm font-semibold text-slate-700">
+      {{ 'Edit Task' if todo else 'Create Task' }}
+    </h3>
+    <p class="text-xs text-slate-500 mt-1">
+      Provide a clear description, choose priority, and set a due date.
+    </p>
   </div>
-  <div class="grid md:grid-cols-2 gap-4">
+  <div class="p-6 space-y-6">
     <div>
-      <label class="soft-label">Criticality</label>
-      {{ form.criticality(class='soft-input') }}
+      <label class="soft-label">Description</label>
+      {{ form.description(class='soft-input', placeholder='Short summary of the
+      task', required=True) }} {% for e in form.description.errors %}
+      <div class="text-xs text-rose-600 mt-1">{{ e }}</div>
+      {% endfor %}
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="soft-label">Criticality</label>
+        {{ form.criticality(class='soft-input') }}
+        <div class="text-[11px] text-slate-500 mt-1">
+          How important the task is.
+        </div>
+      </div>
+      <div>
+        <label class="soft-label">Urgency</label>
+        {{ form.urgency(class='soft-input') }}
+        <div class="text-[11px] text-slate-500 mt-1">
+          How quickly it needs action.
+        </div>
+      </div>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="soft-label">Status</label>
+        {{ form.status(class='soft-input') }}
+      </div>
+      <div>
+        <label class="soft-label">Due Date</label>
+        {{ form.due_date(class='soft-input', placeholder='YYYY-MM-DD') }}
+        <div class="text-[11px] text-slate-500 mt-1">
+          We’ll send reminders near the deadline.
+        </div>
+      </div>
     </div>
     <div>
-      <label class="soft-label">Urgency</label>
-      {{ form.urgency(class='soft-input') }}
-    </div>
-  </div>
-  <div class="grid md:grid-cols-2 gap-4">
-    <div>
-      <label class="soft-label">Status</label>
-      {{ form.status(class='soft-input') }}
+      <label class="soft-label">Assign To</label>
+      {{ form.assigned_to_id(class='soft-input') }}
     </div>
     <div>
-      <label class="soft-label">Due Date</label>
-      {{ form.due_date(class='soft-input') }}
+      <label class="soft-label">Notes</label>
+      {{ form.notes(class='soft-input w-full min-h-[120px]',
+      placeholder='Additional details or context (optional)') }}
+    </div>
+    <div>
+      <label class="soft-label">Actions Taken</label>
+      {{ form.actions_taken(class='soft-input w-full min-h-[120px]',
+      placeholder='Progress updates (optional)') }}
     </div>
   </div>
-  <div>
-    <label class="soft-label">Assign To</label>
-    {{ form.assigned_to_id(class='soft-input') }}
-  </div>
-  <div>
-    <label class="soft-label">Notes</label>
-    {{ form.notes(class='soft-input w-full min-h-[120px]') }}
-  </div>
-  <div>
-    <label class="soft-label">Actions Taken</label>
-    {{ form.actions_taken(class='soft-input w-full min-h-[120px]') }}
-  </div>
-  <div class="flex items-center gap-3 pt-2">
+  <div
+    class="flex items-center gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50/60"
+  >
     <button class="soft-btn soft-btn-primary" type="submit">Save</button>
     {% if todo %}
     <a

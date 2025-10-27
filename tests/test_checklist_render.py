@@ -7,37 +7,19 @@ from models import (Observation, ObservationCycle, ObservationDetail, Staff,
                     User)
 
 
-def setup_module(module):
+def test_mixed_prefixed_keys_render_checked(db_session):
     with app.app_context():
-        db.create_all()
-        if not User.query.first():
-            u = User(name='Tester', email='tester@example.com', password_hash='x')
-            db.session.add(u)
-        if not Staff.query.first():
-            s = Staff(name='Tutor A')
-            db.session.add(s)
-        if not ObservationCycle.query.first():
-            c = ObservationCycle(title='Cycle 1')
-            db.session.add(c)
-        db.session.commit()
-
-
-def _login(client):
-    with app.app_context():
-        u = User.query.first()
-        with client.session_transaction() as sess:
-            sess['_user_id'] = str(u.id)
-
-
-def test_mixed_prefixed_keys_render_checked():
-    with app.app_context():
-        u = User.query.first()
-        s = Staff.query.first()
-        c = ObservationCycle.query.first()
+        # Create minimal related data inside the test transaction
+        u = User(name='Tester', email='tester@example.com', password_hash='x', is_approved=True)
+        s = Staff(name='Tutor A')
+        c = ObservationCycle(title='Cycle 1')
+        db.session.add_all([u, s, c])
+        db.session.flush()
+        # Observation and detail under test
         obs = Observation(cycle_id=c.id, staff_id=s.id, observer_id=u.id, date=date.today(), score=5.0)
-        db.session.add(obs); db.session.flush()
+        db.session.add(obs)
+        db.session.flush()
         obs_id = obs.id
-        # Mixed JSON: some prefixed, some double-prefixed, some bare
         weekly_raw = {
             'weekly_test_marked_on_time': True,
             'weekly_test_weekly_test_labelled_correctly': True,
@@ -52,7 +34,11 @@ def test_mixed_prefixed_keys_render_checked():
             classwork=json.dumps({}),
             org_mgmt=json.dumps({}),
         )
-        db.session.add(detail); db.session.commit()
+        db.session.add(detail)
+        db.session.flush()
+    def _login(client):
+        with client.session_transaction() as sess:
+            sess['_user_id'] = str(u.id)
 
     with app.test_client() as client:
         _login(client)

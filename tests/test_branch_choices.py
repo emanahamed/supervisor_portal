@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from forms import StaffForm
@@ -6,12 +8,8 @@ from utils import BRANCH_CHOICES, ensure_form_branch_choices
 
 
 def test_branch_choices_and_form_population(app_instance, db_session):
-    # Ensure DB is clean for branches
-    Branch.query.delete()
-    db_session.commit()
-
-    # Seed branches
-    names = ["Whitechapel", "East Ham", "Stratford", "Docklands"]
+    # Seed unique branch names for this test only (rolled back after)
+    names = [f"TestBranch-{label}-{uuid4().hex[:6]}" for label in ["Whitechapel", "East Ham", "Stratford", "Docklands"]]
     for n in names:
         db_session.add(Branch(name=n))
     db_session.commit()

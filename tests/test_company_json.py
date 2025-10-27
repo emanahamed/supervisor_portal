@@ -7,24 +7,18 @@ def _login(client, user_id):
         sess['_user_id'] = str(user_id)
 
 
-def setup_module(module):
+def test_company_json_endpoint(db_session):
     with app.app_context():
-        db.create_all()
-        if not User.query.filter_by(email='admin@example.com').first():
-            u = User(name='Admin', email='admin@example.com', password_hash='x', is_superadmin=True)
-            db.session.add(u)
-        db.session.commit()
-
-
-def test_company_json_endpoint():
-    with app.app_context():
+        # Ensure an admin user for login within the test transaction
         admin = User.query.filter_by(email='admin@example.com').first()
-        # Create or get a company (avoid uniqueness violation on re-run)
-        c = Company.query.filter_by(name='Acme Ltd').first()
-        if not c:
-            c = Company(name='Acme Ltd', invoice_prefix='AC-', next_invoice_seq=42, payment_footer='Thanks', tagline='Quality', ofsted_reg_no='OF123', address='1 Road', phone='123', email='info@acme.test', website='https://acme.test')
-            db.session.add(c)
-            db.session.commit()
+        if not admin:
+            admin = User(name='Admin', email='admin@example.com', password_hash='x', is_superadmin=True, is_approved=True)
+            db.session.add(admin)
+            db.session.flush()
+        # Create a company specifically for this test
+        c = Company(name='Acme Ltd', invoice_prefix='AC-', next_invoice_seq=42, payment_footer='Thanks', tagline='Quality', ofsted_reg_no='OF123', address='1 Road', phone='123', email='info@acme.test', website='https://acme.test')
+        db.session.add(c)
+        db.session.flush()
         cid = c.id
     with app.test_client() as client:
         with app.app_context():

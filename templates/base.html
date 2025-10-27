@@ -37,30 +37,41 @@
           },
         },
       };
-      // Simple success/info modal helper
+      // Simple success/info modal helper (with optional auto-close)
       window.openInfo = function (options) {
         try {
-          const { title, message, buttonText, onClose } = options || {};
+          const { title, message, buttonText, onClose, autoCloseMs } =
+            options || {};
           const tEl = document.getElementById("info-title");
           const mEl = document.getElementById("info-message");
           const cBtn = document.getElementById("infoCloseBtn");
           const oBtn = document.getElementById("openInfoBtn");
           if (tEl && title) tEl.textContent = title;
           if (mEl && message) mEl.textContent = message;
+          let closeBtn;
           if (cBtn) {
             cBtn.textContent = buttonText || "Okay";
             const handler = () => {
               try {
                 if (typeof onClose === "function") onClose();
               } finally {
-                cBtn.removeEventListener("click", handler);
+                closeBtn.removeEventListener("click", handler);
               }
             };
-            const newBtn = cBtn.cloneNode(true);
-            cBtn.parentNode.replaceChild(newBtn, cBtn);
-            newBtn.addEventListener("click", handler);
+            closeBtn = cBtn.cloneNode(true);
+            cBtn.parentNode.replaceChild(closeBtn, cBtn);
+            closeBtn.addEventListener("click", handler);
           }
           if (oBtn) oBtn.click();
+          // Auto-close after a short delay if requested
+          const delay = typeof autoCloseMs === "number" ? autoCloseMs : 0;
+          if (delay > 0 && closeBtn) {
+            setTimeout(() => {
+              try {
+                closeBtn.click();
+              } catch (e) {}
+            }, delay);
+          }
         } catch (e) {
           console.warn("openInfo failed", e);
         }
@@ -758,6 +769,13 @@
             >
               Report Issue
             </button>
+            <a
+              href="{{ url_for('version_history') }}"
+              class="soft-btn text-xs"
+              title="View version history"
+            >
+              Version v{{ APP_VERSION }}
+            </a>
             <div class="flex items-center gap-2">
               {% if current_user.picture %}
               <img
@@ -838,7 +856,21 @@
                 setTimeout(() => wrap.remove(), 300);
               }, 4000);
             }
-            data.forEach(([cat, msg]) => pushToast(msg, cat));
+            // If there is a success flash, show it as a modal (auto-close) and don't duplicate as a toast
+            const firstSuccess = data.find(([cat]) => cat === "success");
+            if (firstSuccess) {
+              try {
+                window.openInfo({
+                  title: "Success",
+                  message: firstSuccess[1],
+                  autoCloseMs: 1400,
+                });
+              } catch (e) {}
+            }
+            // Show non-success flashes as toasts
+            data
+              .filter(([cat]) => cat !== "success")
+              .forEach(([cat, msg]) => pushToast(msg, cat));
             // Expose global event for on-demand toasts
             window.addEventListener("toast", (e) => {
               const d = e.detail || {};

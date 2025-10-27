@@ -22,6 +22,39 @@
 				"$gcc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "DB: add observation.emailed",
+			"type": "shell",
+			"command": "python -c \"import app; from sqlalchemy import text; from app import db; conn = db.engine.connect(); print('DB file:', db.engine.url.database); cols = [r[1] for r in conn.execute(text('PRAGMA table_info(observation)'))]; print('Before cols:', cols); \nimport sys\ntry:\n    if 'emailed' not in cols:\n        conn.execute(text('ALTER TABLE observation ADD COLUMN emailed BOOLEAN DEFAULT 0'))\n        print('Added column emailed')\n    else:\n        print('Column emailed already present')\nexcept Exception as e:\n    print('ALTER failed:', e)\ncols2 = [r[1] for r in conn.execute(text('PRAGMA table_info(observation)'))]; print('After cols:', cols2)\"",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Probe index",
+			"type": "shell",
+			"command": "curl -s -o /dev/null -w \"%{http_code}\\n\" http://127.0.0.1:5040/",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "DB: patch observation emailed",
+			"type": "shell",
+			"command": "flask patch-obs-emailed",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
 		}
 	]
 }

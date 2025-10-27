@@ -1,72 +1,3 @@
-<script>
-  // Register component before form so Alpine sees methods immediately.
-  document.addEventListener("alpine:init", () => {
-    Alpine.data("studentSuggest", (initial = "") => ({
-      query: initial,
-      results: [],
-      open: false,
-      hover: -1,
-      activeLabel: "",
-      _debouncedFetcher: null,
-      _debounce(fn, wait) {
-        let t;
-        return function (...args) {
-          clearTimeout(t);
-          t = setTimeout(() => fn.apply(this, args), wait);
-        };
-      },
-      fetchSuggestions() {
-        if (!this._debouncedFetcher) {
-          this._debouncedFetcher = this._debounce((v) => this._doFetch(v), 180);
-        }
-        const q = this.query.trim();
-        if (!q) {
-          this.results = [];
-          this.open = false;
-          this.activeLabel = "";
-          return;
-        }
-        this._debouncedFetcher(q);
-      },
-      _doFetch(q) {
-        fetch(`/api/students/suggest?q=${encodeURIComponent(q)}`)
-          .then((r) => (r.ok ? r.json() : []))
-          .then((data) => {
-            if (!Array.isArray(data)) data = [];
-            this.results = data;
-            this.open = !!data.length;
-            this.hover = 0;
-            this.activeLabel = data[0] ? data[0].label : "";
-          })
-          .catch(() => {
-            this.results = [];
-            this.open = false;
-            this.activeLabel = "";
-          });
-      },
-      highlight(dir) {
-        if (!this.open || !this.results.length) return;
-        this.hover =
-          (this.hover + dir + this.results.length) % this.results.length;
-        this.activeLabel = this.results[this.hover]?.label || "";
-      },
-      chooseActive() {
-        if (this.results[this.hover]) this.choose(this.results[this.hover]);
-      },
-      choose(r) {
-        this.query = r.label;
-        this.activeLabel = r.label;
-        this.open = false;
-      },
-      outside(e) {
-        if (!this.$el.contains(e.target)) this.open = false;
-      },
-      init() {
-        document.addEventListener("click", (e) => this.outside(e));
-      },
-    }));
-  });
-</script>
 <form
   method="POST"
   action="{{ url_for('meeting_edit', mid=meeting.id) if meeting else url_for('meeting_new') }}"
@@ -106,10 +37,35 @@
   </div>
   <div class="grid md:grid-cols-2 gap-4">
     <div
-      x-data="studentSuggest('{{ form.student_name.data or '' }}')"
+      x-data="{
+        query: '',
+        results: [],
+        open: false,
+        hover: -1,
+        activeLabel: '',
+        selectedId: 0,
+        _debouncedFetcher: null,
+        _debounce(fn, wait){ let t; return function(...args){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), wait); } },
+        fetchSuggestions(){ if(!this._debouncedFetcher){ this._debouncedFetcher = this._debounce((v)=>this._doFetch(v), 180); } const q=this.query.trim(); if(this.$refs && this.$refs.studentId){ this.selectedId=0; this.$refs.studentId.value=0; } if(!q){ this.results=[]; this.open=false; this.activeLabel=''; return; } this._debouncedFetcher(q); },
+        async _doFetch(q){ try{ const r=await fetch('/api/students/suggest?q='+encodeURIComponent(q)); const data=await r.json(); const arr=Array.isArray(data)?data:[]; this.results=arr; this.open=!!arr.length; this.hover=0; this.activeLabel=(arr[0] && arr[0].label) || ''; } catch(e){ this.results=[]; this.open=false; this.activeLabel=''; } },
+        highlight(dir){ if(!this.open || !this.results.length) return; this.hover = (this.hover + dir + this.results.length) % this.results.length; this.activeLabel = this.results[this.hover]?.label || ''; },
+        chooseActive(){ if(this.results[this.hover]) this.choose(this.results[this.hover]); },
+        choose(r){ this.query=r.label; this.activeLabel=r.label; this.open=false; this.selectedId=r.id||0; if(this.$refs && this.$refs.studentId){ this.$refs.studentId.value=this.selectedId; } }
+      }"
+      x-init="query=$el.dataset.initial||''; selectedId=Number($el.dataset.selectedId||0); if(!query){ activeLabel=''; }"
+      data-initial="{{ form.student_name.data or '' }}"
+      data-selected-id="{{ form.student_id.data or 0 }}"
       class="relative"
+      @click.outside="open=false"
     >
       <label class="soft-label">Student (optional)</label>
+      <!-- Hidden field to submit selected student id -->
+      <input
+        type="hidden"
+        name="student_id"
+        x-ref="studentId"
+        value="{{ form.student_id.data or 0 }}"
+      />
       <input
         type="text"
         name="student_name"

@@ -1,5 +1,6 @@
-{% extends 'base.html' %} {% block title %}Role Permissions · {{ super() }}{%
-endblock %} {% block content %}
+{% extends 'base.html' %} {% from 'components/forms_macros.html' import
+csrf_field %} {% block title %}Role Permissions · {{ super() }}{% endblock %} {%
+block content %}
 <div class="max-w-5xl mx-auto">
   <h1 class="text-xl font-semibold mb-4">Role Permissions</h1>
   <p class="text-sm text-slate-600 mb-6">
@@ -8,6 +9,7 @@ endblock %} {% block content %}
     that role unless a user-level override grants it.
   </p>
   <form method="post" class="overflow-x-auto">
+    {{ csrf_field() }}
     <table class="min-w-full border border-slate-200 bg-white rounded-lg">
       <thead class="bg-slate-50">
         <tr>

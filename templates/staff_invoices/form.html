@@ -9,7 +9,7 @@
 <form method="post" action="{{ url_for('staff_invoice_edit', invoice_id=inv.id) if (inv is defined and inv) else url_for('staff_invoice_new') }}" x-data="invoiceForm()" @submit="beforeSubmit($event)" class="w-full">
   {{ csrf_field() }}
   {{ form.hidden_tag() }}
-  <div class="w-full max-w-6xl mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
+  <div class="w-full max-w-7xl mx-auto space-y-6 px-3 sm:px-6 lg:px-8">
     <!-- server-side validation errors (WTForms) -->
     {% if form.errors %}
       <div class="bg-red-50 border border-red-200 text-red-800 p-3 rounded mb-4">
@@ -33,7 +33,7 @@
         </ul>
       </div>
     </template>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
       <div>
         <label class="block text-sm text-gray-600 mb-1">Month</label>
         <select name="{{ form.month.name }}" class="form-select w-full">
@@ -58,13 +58,13 @@
     </div>
 
     <div class="overflow-x-auto bg-white shadow sm:rounded-lg">
-      <table class="min-w-full table-auto border" aria-label="Timesheet rows">
+      <table class="min-w-full table-auto border text-sm sm:text-base" aria-label="Timesheet rows">
         <thead class="bg-gray-50">
           <tr class="text-left text-sm">
             <th class="px-3 py-2">Date</th>
             <th class="px-3 py-2">Day</th>
             <th class="px-3 py-2">Branch</th>
-            <th class="px-3 py-2 text-right">JHours</th>
+            <th class="px-3 py-2 text-right">Hours</th>
             <th class="px-3 py-2">Description</th>
             <th class="px-3 py-2 text-right">Rate/Hour</th>
             <th class="px-3 py-2 text-right">Amount</th>
@@ -101,8 +101,9 @@
               <input type="number" step="0.01" name="{{ subform.amount.name }}" class="form-input text-right" value="{{ subform.amount.data or '0.00' }}" readonly />
             </td>
             <td class="px-2 py-2 text-center">
-              <button class="text-red-600 hover:text-red-800" type="button" @click="removeRow($el)" title="Remove row">
-                <svg class="w-5 h-5 inline-block" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H3a1 1 0 100 2h14a1 1 0 100-2h-2V3a1 1 0 00-1-1H6zm2 7a1 1 0 012 0v5a1 1 0 11-2 0V9zm4 0a1 1 0 012 0v5a1 1 0 11-2 0V9z" clip-rule="evenodd"></path></svg>
+              <button class="inline-flex items-center gap-1 text-red-600 hover:text-red-800 whitespace-nowrap" type="button" @click="removeRow($el)" title="Remove row">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H3a1 1 0 100 2h14a1 1 0 100-2h-2V3a1 1 0 00-1-1H6zm2 7a1 1 0 012 0v5a1 1 0 11-2 0V9zm4 0a1 1 0 012 0v5a1 1 0 11-2 0V9z" clip-rule="evenodd"></path></svg>
+                <span class="text-xs sm:text-sm">Remove</span>
               </button>
             </td>
           </tr>
@@ -133,7 +134,7 @@
 
     <p class="text-sm text-gray-600">Draft invoices are only visible to you and can be edited later. Once submitted, you cannot edit it (managers may update for corrections).</p>
 
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center gap-3">
       <button class="icon-btn neutral" type="submit" name="save_draft" title="Save as Draft">
         <svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
         <span class="btn-label">Save as Draft</span>

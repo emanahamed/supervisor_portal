@@ -34,6 +34,12 @@
         <label class="block text-sm mb-1">Phone</label>
         {{ form.phone(class_='soft-input') }}
       </div>
+      <div class="flex items-center gap-2 mt-6">
+        <label class="flex items-center gap-2 text-sm">
+          {{ form.active(class_='w-4 h-4') }}
+          <span>Active</span>
+        </label>
+      </div>
       <div>
         <label class="block text-sm mb-1">Date of birth</label>
         {{ form.dob(class_='soft-input') }}

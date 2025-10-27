@@ -74,6 +74,30 @@
     </div>
   </div>
 
+  <!-- Upcoming Interviews -->
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-10">
+    <div class="soft-card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-semibold">Upcoming Interviews — Today</h3>
+        <span id="todayCount" class="text-xs text-slate-500"></span>
+      </div>
+      <div id="todayEmpty" class="text-slate-500 text-sm hidden">
+        No interviews scheduled for today.
+      </div>
+      <ul id="todayList" class="list-disc pl-5 space-y-1 text-sm"></ul>
+    </div>
+    <div class="soft-card p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-semibold">Upcoming Interviews — This Week</h3>
+        <span id="weekCount" class="text-xs text-slate-500"></span>
+      </div>
+      <div id="weekEmpty" class="text-slate-500 text-sm hidden">
+        No interviews scheduled this week.
+      </div>
+      <ul id="weekList" class="list-disc pl-5 space-y-1 text-sm"></ul>
+    </div>
+  </div>
+
   <div class="soft-card p-4 mb-10">
     <h3 class="font-semibold mb-2">Top Subjects</h3>
     <div class="overflow-x-auto">
@@ -144,6 +168,35 @@
       data: { labels: branchLabels, datasets:[{ label:'Applications', data: branchValues, backgroundColor:'rgba(99,102,241,0.4)', borderColor:'#6366f1', borderWidth:1 }] },
       options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
     });
+  })();
+
+  // Fetch and render upcoming interview slots (Today / This Week)
+  (function(){
+    const todayList = document.getElementById('todayList');
+    const weekList = document.getElementById('weekList');
+    const todayEmpty = document.getElementById('todayEmpty');
+    const weekEmpty = document.getElementById('weekEmpty');
+    const todayCount = document.getElementById('todayCount');
+    const weekCount = document.getElementById('weekCount');
+    if(!todayList || !weekList) return;
+    function li(text){ const el = document.createElement('li'); el.textContent = text; return el; }
+    function setCount(el, n){ if(!el) return; el.textContent = n ? `${n} total` : ''; }
+    fetch('{{ url_for('recruitment_interview_slots_json') }}')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('Bad response')))
+      .then(data => {
+        const t = Array.isArray(data.today) ? data.today : [];
+        const w = Array.isArray(data.week) ? data.week : [];
+        todayList.innerHTML = '';
+        weekList.innerHTML = '';
+        if(t.length){ t.forEach(x => todayList.appendChild(li(x.label || 'Slot'))); todayEmpty.classList.add('hidden'); } else { todayEmpty.classList.remove('hidden'); }
+        if(w.length){ w.forEach(x => weekList.appendChild(li(x.label || 'Slot'))); weekEmpty.classList.add('hidden'); } else { weekEmpty.classList.remove('hidden'); }
+        setCount(todayCount, t.length);
+        setCount(weekCount, w.length);
+      })
+      .catch(() => {
+        todayEmpty.textContent = 'Failed to load interviews for today.'; todayEmpty.classList.remove('hidden');
+        weekEmpty.textContent = 'Failed to load this week\'s interviews.'; weekEmpty.classList.remove('hidden');
+      });
   })();
 </script>
 {% endblock %}

@@ -1,5 +1,5 @@
-{% extends 'base.html' %} {% block page_title %}{{ 'New Invoice' if mode=='new'
-else 'Edit Invoice' }}{% endblock %} {% block content %}
+{% extends 'base.html' %} {% block page_title %}{{ 'New Kids Club Invoice' if
+mode=='new' else 'Edit Kids Club Invoice' }}{% endblock %} {% block content %}
 <form method="post" class="space-y-6">
   {{ form.hidden_tag() }}
   <section class="soft-card p-4 space-y-4">
@@ -24,6 +24,12 @@ else 'Edit Invoice' }}{% endblock %} {% block content %}
       <div>
         <label class="text-xs font-semibold">{{ form.status.label }}</label>
         {{ form.status(class='soft-input w-full') }}
+      </div>
+      <div>
+        <label class="text-xs font-semibold"
+          >{{ form.payment_method.label }}</label
+        >
+        {{ form.payment_method(class='soft-input w-full') }}
       </div>
     </div>
   </section>

@@ -56,18 +56,27 @@
     </style>
   </head>
   <body class="min-h-screen bg-slate-50">
-    <div class="max-w-6xl mx-auto p-4">
-      <div class="flex items-center gap-3 mb-4">
+    <!-- Header -->
+    <header
+      class="bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow"
+    >
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
         <img
           src="{{ url_for('static', filename='img/excel tutors logo 2023.png') }}"
-          class="h-8 w-auto"
+          class="h-8 w-auto rounded-sm bg-white/90 p-1"
           alt="Excel Tutors"
         />
-        <h1 class="text-base font-semibold">
-          {% block page_title %}{% endblock %}
-        </h1>
+        <div>
+          <div class="text-sm/5 opacity-90">Excel Tutors</div>
+          <h1 class="text-base font-semibold tracking-tight">
+            {% block page_title %}{% endblock %}
+          </h1>
+        </div>
         <div class="ml-auto"></div>
       </div>
+    </header>
+
+    <div class="max-w-6xl mx-auto p-4">
       {% with messages = get_flashed_messages(with_categories=true) %} {% if
       messages %}
       <div class="space-y-2 mb-4">
@@ -80,9 +89,20 @@
         {% endfor %}
       </div>
       {% endif %} {% endwith %} {% block content %}{% endblock %}
-      <div class="mt-8 text-center text-xs text-slate-500">
-        © 2025 Excel Tutors
-      </div>
+      <!-- Footer -->
+      <footer class="mt-10">
+        <div class="soft-card p-4 text-center text-xs text-slate-600">
+          <div>© 2025 Excel Tutors • All rights reserved</div>
+          <div class="mt-1">
+            Questions? Email
+            <a
+              href="mailto:jobs@exceltutors.co.uk"
+              class="text-indigo-600 hover:underline"
+              >jobs@exceltutors.co.uk</a
+            >
+          </div>
+        </div>
+      </footer>
     </div>
     {% block page_scripts %}{% endblock %}
   </body>

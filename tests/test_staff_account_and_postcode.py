@@ -1,6 +1,7 @@
 import io
 import os
 from datetime import date
+from uuid import uuid4
 
 import pytest
 
@@ -26,8 +27,9 @@ def test_staff_create_creates_user(client, app, login_superadmin):
         'bank_name': 'Test Bank',
         'bank_account_number': '12345678',
     }
-    # attach a small file for photo
-    data['photo'] = (io.BytesIO(b"fake-image-data"), 'photo.jpg')
+    # attach a small file for photo with unique name, to be cleaned up after
+    unique_photo = f"photo-test-{uuid4().hex[:8]}.jpg"
+    data['photo'] = (io.BytesIO(b"fake-image-data"), unique_photo)
 
     # Act
     resp = client.post('/staff/new', data=data, content_type='multipart/form-data', follow_redirects=True)
@@ -44,7 +46,13 @@ def test_staff_create_creates_user(client, app, login_superadmin):
         assert u.email == 'test.staff@example.com'
     # Photo file saved
     uploads = os.path.join(app.root_path, 'static', 'uploads')
-    assert os.path.exists(os.path.join(uploads, 'photo.jpg'))
+    photo_path = os.path.join(uploads, unique_photo)
+    assert os.path.exists(photo_path)
+    # Cleanup file created by the test
+    try:
+        os.remove(photo_path)
+    except Exception:
+        pass
 
 
 def test_postcode_lookup_proxy(client, login_superadmin):

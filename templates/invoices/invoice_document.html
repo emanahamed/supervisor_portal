@@ -6,7 +6,7 @@ endmacro %} {% set inv = invoice %}{% set s = invoice.company %}
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Invoice {{ inv.invoice_no }}</title>
+    <title>Kids Club Invoice {{ inv.invoice_no }}</title>
     {% if inline_css %}
     <style>
               {{ inline_css|safe }}
@@ -74,6 +74,14 @@ endmacro %} {% set inv = invoice %}{% set s = invoice.company %}
             <tr>
               <td>Due Date:</td>
               <td>{{ inv.due_date|fmt_date }}</td>
+            </tr>
+            <tr>
+              <td>Payment Method:</td>
+              <td>{{ inv.payment_method or '-' }}</td>
+            </tr>
+            <tr>
+              <td>Status:</td>
+              <td>{{ inv.status or '-' }}</td>
             </tr>
           </table>
         </div>
