@@ -1051,6 +1051,8 @@ class StaffInvoice(db.Model):
 
     # Line items relationship (added Oct 2025)
     items = db.relationship('StaffInvoiceItem', backref='invoice', cascade='all, delete-orphan', lazy=True)
+    # Attachments (student attendance sheets, etc.)
+    attachments = db.relationship('StaffInvoiceAttachment', backref='invoice', cascade='all, delete-orphan', lazy=True)
 
     def compute_total(self) -> float:
         try:
@@ -1088,6 +1090,16 @@ class StaffInvoiceItem(db.Model):
     description = db.Column(db.String(400))
     rate = db.Column(db.Numeric(10,2), nullable=False, default=0)
     amount = db.Column(db.Numeric(10,2), nullable=False, default=0)
+
+
+class StaffInvoiceAttachment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('staff_invoice.id', ondelete='CASCADE'), nullable=False, index=True)
+    path = db.Column(db.String(500), nullable=False)  # relative to static or absolute
+    original_name = db.Column(db.String(255))
+    content_type = db.Column(db.String(120))
+    file_size = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
 class Branch(db.Model):

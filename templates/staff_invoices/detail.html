@@ -118,4 +118,88 @@
   </div>
 </div>
 
+<div class="mt-6">
+  <h2 class="font-medium mb-2">Attachments</h2>
+  {% if inv.attachments %}
+  <ul class="list-disc pl-5">
+    {% for a in inv.attachments %}
+    <li class="mb-1">
+      <span>{{ a.original_name or a.path }}</span>
+      <a
+        class="icon-btn secondary ml-2"
+        href="{{ url_for('staff_invoice_attachment_view', invoice_id=inv.id, att_id=a.id) }}"
+        target="_blank"
+        title="View attachment"
+      >
+        <svg
+          class="icon-svg"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M15 10l4.553-2.276A2 2 0 0122 9.618v4.764a2 2 0 01-2.447 1.894L15 14M4 6h8v12H4z"
+          ></path>
+        </svg>
+        <span class="btn-label">View</span>
+      </a>
+      <a
+        class="icon-btn primary ml-2"
+        href="{{ url_for('staff_invoice_attachment_download', invoice_id=inv.id, att_id=a.id) }}"
+        title="Download attachment"
+      >
+        <svg
+          class="icon-svg"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 3v12m0 0l3-3m-3 3l-3-3M21 21H3"
+          ></path>
+        </svg>
+        <span class="btn-label">Download</span>
+      </a>
+      {% if manager or (inv.status == 'Draft' and inv.created_by_id ==
+      (current_user and current_user.id)) %}
+      <form
+        method="post"
+        action="{{ url_for('staff_invoice_attachment_delete', invoice_id=inv.id, att_id=a.id) }}"
+        class="inline ml-2"
+        onsubmit="return confirm('Delete this attachment?');"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button type="submit" class="icon-btn danger" title="Delete attachment">
+          <svg
+            class="icon-svg"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 2a1 1 0 00-1 1v1H3a1 1 0 100 2h14a1 1 0 100-2h-2V3a1 1 0 00-1-1H6zm2 7a1 1 0 012 0v5a1 1 0 11-2 0V9zm4 0a1 1 0 012 0v5a1 1 0 11-2 0V9z"
+              clip-rule="evenodd"
+            ></path>
+          </svg>
+          <span class="btn-label">Delete</span>
+        </button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="text-gray-500">No attachments.</div>
+  {% endif %}
+</div>
+
 {% endblock %}

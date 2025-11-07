@@ -67,7 +67,7 @@
         <button type="button" @click="resetFilters" class="soft-btn text-xs">Reset</button>
         <label class="text-[10px] font-semibold">Per Page
           <select x-model="per_page" @change="page=1; reload()" class="soft-input h-8 ml-1">
-            {% for size in per_page_choices %}<option value="{{ size }}" {% if per_page==size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+            {% for value,label in per_page_choices %}<option value="{{ value }}" {% if per_page==value %}selected{% endif %}>{{ label }}</option>{% endfor %}
           </select>
         </label>
       </div>
@@ -333,15 +333,21 @@
   // Inject initial page of books from server to avoid immediate reload loop
   const INITIAL_BOOKS = {{ books|tojson|safe }};
   const CSRF_TOKEN = '{{ csrf_token() if csrf_token else '' }}';
+  const BOOK_SELECTION_KEY = 'books-selected-v1';
   function booksCrud(){
     return {
   books: INITIAL_BOOKS,
   selectedIds: [],
+  selectedMeta: {},
   orderModal: { open:false, delivery_date:'', items:[] },
+      init(){
+        this.restoreSelection();
+        this.syncVisibleSelection();
+      },
       page: {{ page|default(1) }},
       pages: {{ pages|default(1) }},
       total: {{ total|default(0) }},
-      per_page: {{ per_page|default(25) }},
+  per_page: '{{ per_page or '25' }}',
   // year options are rendered server-side from distinct Book.year_group values
       filters: {
         q: '{{ q or '' }}',
@@ -371,6 +377,66 @@
         p.set('page', this.page);
         p.set('per_page', this.per_page);
         return p.toString();
+      },
+      restoreSelection(){
+        this.selectedIds = [];
+        this.selectedMeta = {};
+        if(!('localStorage' in window)) return;
+        const raw = localStorage.getItem(BOOK_SELECTION_KEY);
+        if(!raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if(Array.isArray(parsed)){
+            parsed.forEach(entry => {
+              if(!entry || entry.id == null) return;
+              const id = Number(entry.id);
+              if(!Number.isFinite(id)) return;
+              if(!this.selectedIds.includes(id)) this.selectedIds.push(id);
+              this.selectedMeta[id] = {
+                id,
+                name: entry.name || '',
+                print_format: entry.print_format || '',
+                finishing: entry.finishing || ''
+              };
+            });
+          }
+        } catch(err){
+          console.warn('booksCrud: failed to parse stored selections', err);
+        }
+      },
+      persistSelection(){
+        if(!('localStorage' in window)) return;
+        try {
+          const payload = this.selectedIds.map(id => {
+            const meta = this.selectedMeta[id] || {};
+            return {
+              id,
+              name: meta.name || '',
+              print_format: meta.print_format || '',
+              finishing: meta.finishing || ''
+            };
+          });
+          localStorage.setItem(BOOK_SELECTION_KEY, JSON.stringify(payload));
+        } catch(err){
+          console.warn('booksCrud: failed to persist selections', err);
+        }
+      },
+      buildSelectionEntry(book){
+        if(!book) return null;
+        return {
+          id: book.id,
+          name: book.name || '',
+          print_format: book.print_format || '',
+          finishing: book.finishing || ''
+        };
+      },
+      syncVisibleSelection(){
+        this.books.forEach(b => {
+          if(this.selectedIds.includes(b.id)){
+            this.selectedMeta[b.id] = this.buildSelectionEntry(b) || this.selectedMeta[b.id] || { id: b.id };
+          }
+        });
+        this.persistSelection();
       },
       applyAndReload(){ this.page = 1; this.reload(); },
       reload(){ window.location = '{{ url_for('books_index') }}' + '?' + this.buildParams(); },
@@ -405,12 +471,42 @@
         const idx = this.form.finishing.indexOf(opt);
         if(idx>=0) this.form.finishing.splice(idx,1); else this.form.finishing.push(opt);
       },
-      toggleSelect(id){ const i=this.selectedIds.indexOf(id); if(i>=0) this.selectedIds.splice(i,1); else this.selectedIds.push(id); },
-      toggleAll(evt){ if(evt.target.checked){ this.selectedIds = this.books.map(b=>b.id); } else { this.selectedIds=[]; } },
-      get allVisibleSelected(){ return this.books.length>0 && this.selectedIds.length===this.books.length; },
+      toggleSelect(id){
+        const idx = this.selectedIds.indexOf(id);
+        if(idx>=0){
+          this.selectedIds.splice(idx,1);
+          delete this.selectedMeta[id];
+        } else {
+          const book = this.books.find(bb => bb.id === id) || null;
+          if(!this.selectedIds.includes(id)) this.selectedIds.push(id);
+          const meta = this.buildSelectionEntry(book);
+          if(meta) this.selectedMeta[id] = meta;
+        }
+        this.persistSelection();
+      },
+      toggleAll(evt){
+        if(evt.target.checked){
+          this.books.forEach(b => {
+            if(!this.selectedIds.includes(b.id)) this.selectedIds.push(b.id);
+            const meta = this.buildSelectionEntry(b);
+            if(meta) this.selectedMeta[b.id] = meta;
+          });
+        } else {
+          this.books.forEach(b => {
+            const idx = this.selectedIds.indexOf(b.id);
+            if(idx>=0) this.selectedIds.splice(idx,1);
+            delete this.selectedMeta[b.id];
+          });
+        }
+        this.persistSelection();
+      },
+      get allVisibleSelected(){ return this.books.length>0 && this.books.every(b => this.selectedIds.includes(b.id)); },
       openOrderModal(){
         if(this.selectedIds.length===0){ console.warn('openOrderModal: no selected ids'); return; }
-        this.orderModal.items = this.selectedIds.map(id=>{ const b=this.books.find(bb=>bb.id===id)||{}; return { book_id:id, name:b.name||'', print_format:b.print_format||'', finishing:b.finishing||'', quantity:1 }; });
+        this.orderModal.items = this.selectedIds.map(id=>{
+          const meta = this.selectedMeta[id] || this.buildSelectionEntry(this.books.find(bb=>bb.id===id)) || {};
+          return { book_id:id, name:meta.name||'', print_format:meta.print_format||'', finishing:meta.finishing||'', quantity:1 };
+        });
         this.orderModal.delivery_date='';
         this.orderModal.open=true;
         // order modal opened
@@ -435,7 +531,7 @@
             }
             return {success:false,error:'Unexpected server response '+r.status};
           })
-          .then(resp=>{ if(!resp || !resp.success){ this.toast('Order failed: '+(resp&&resp.error||'Unknown'), 'danger'); } else { this.toast('Order sent (#'+resp.order_id+')','success'); this.selectedIds=[]; this.orderModal.open=false; window.location='{{ url_for('book_orders_index') }}'; } })
+          .then(resp=>{ if(!resp || !resp.success){ this.toast('Order failed: '+(resp&&resp.error||'Unknown'), 'danger'); } else { this.toast('Order sent (#'+resp.order_id+')','success'); this.selectedIds=[]; this.selectedMeta={}; this.persistSelection(); this.orderModal.open=false; window.location='{{ url_for('book_orders_index') }}'; } })
           .catch(e=> { console.error('Order create network error', e); this.toast('Network error creating order','danger'); });
       },
       toast(message,type='info'){ window.dispatchEvent(new CustomEvent('toast',{detail:{message,type}})); }

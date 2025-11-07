@@ -220,7 +220,9 @@
       <div>
         <label class="block text-xs font-semibold mb-1">Participant (who will meet)</label>
         <select name="participant_id" class="soft-input w-full">
-          <option value="{{ current_user.id }}">{{ current_user.name }}</option>
+          {% for user in meeting_participants %}
+          <option value="{{ user.id }}" {% if user.id == current_user.id %}selected{% endif %}>{{ user.name }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="grid grid-cols-2 gap-2">

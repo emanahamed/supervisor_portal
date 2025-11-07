@@ -529,21 +529,39 @@ block page_title %}Job Application – Tutor{% endblock %} {% block content %}
         highlight(false);
       })
     );
-    // Important: do NOT preventDefault on drop so the browser can populate input.files natively
-    fileInput.addEventListener("drop", () => {
-      // Hide overlay and update label after the browser updates input.files
+    dz.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       highlight(false);
-      // Use a microtask to read the updated files list
-      setTimeout(() => {
-        const f = fileInput.files && fileInput.files[0];
-        if (f && !validExt(f.name)) {
-          alert("Invalid file type. Please upload a PDF or Word document.");
-          try { fileInput.value = ""; } catch (e) {}
-          setFileDisplay(null);
+      const droppedFiles = (e.dataTransfer && e.dataTransfer.files) || null;
+      if (!droppedFiles || !droppedFiles.length) {
+        setFileDisplay(null);
+        try { fileInput.value = ""; } catch (_) {}
+        return;
+      }
+      const firstFile = droppedFiles[0];
+      if (!validExt(firstFile.name)) {
+        alert("Invalid file type. Please upload a PDF or Word document.");
+        try { fileInput.value = ""; } catch (_) {}
+        setFileDisplay(null);
+        return;
+      }
+      const supportsDataTransfer = typeof DataTransfer !== "undefined";
+      if (supportsDataTransfer) {
+        try {
+          const dt = new DataTransfer();
+          dt.items.add(firstFile);
+          fileInput.files = dt.files;
+          fileInput.dispatchEvent(new Event("change", { bubbles: true }));
           return;
+        } catch (_) {
+          // Intentionally fall through to picker warning
         }
-        setFileDisplay(f);
-      }, 0);
+      }
+      // If DataTransfer manipulation isn't supported, fall back gracefully
+      try { fileInput.value = ""; } catch (_) {}
+      alert("Your browser couldn't attach that file via drag-and-drop. Please use the file picker instead.");
+      setFileDisplay(null);
     });
   })();
 </script>

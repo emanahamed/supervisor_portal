@@ -1,5 +1,20 @@
 # Version History
 
+## 2.2.0 - 2025-11-07
+
+Attendance Import Reliability, Hours Calculation & Staff Attendance Console Refresh
+
+- Attendance importer: now auto-detects two-row headers (e.g. "First time zone"/"On-duty") and flattens vendor spreadsheets before processing; flexible column detection covers columns E–H and fallback letter positions.
+- Time parsing: handles Excel serials, HHMM numerics, multiple string formats, and midnight roll-overs while logging anomalies; computes first/second shift durations and caches `hours_seconds` for each row.
+- Duplicate handling: imports overwrite the most recent row per (machine/staff, date, branch) and purge stale duplicates while preserving audit trails; branch updates propagate to existing rows.
+- Import preview: displays computed hours alongside check-in/out, and branch selection now carries through confirmation without the "Run: Whitechapel" shortcut button.
+- Attendance list: redesigned filter bar (employee search, month picker, machine ID, per-page selector), sortable table headers, richer pagination summary, branch pills, and consistent check-in/out/hour formatting.
+
+Notes:
+
+- No schema changes; pure application-layer and template updates.
+- Recommended: rerun attendance imports after clearing legacy duplicates to take advantage of the new calculations.
+
 ## 2.1.2 - 2025-10-27
 
 Role Permissions: Tutor column added; email branding standardized to logo-only header

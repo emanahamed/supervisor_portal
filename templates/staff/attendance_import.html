@@ -16,6 +16,12 @@
     <label class="label">Spreadsheet (XLSX/CSV)</label>
     <input type="file" name="file" accept=".xlsx,.xls,.csv" class="input" />
   </div>
+  <div class="mb-4 flex items-center gap-2">
+    <input id="quick" type="checkbox" name="quick" value="1" />
+    <label for="quick" class="label"
+      >Commit immediately (skip preview when layout is recognized)</label
+    >
+  </div>
   <div>
     <button type="submit" class="btn btn-primary">Upload and Import</button>
     <a href="{{ url_for('staff_attendance_index') }}" class="btn btn-secondary"

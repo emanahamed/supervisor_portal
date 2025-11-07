@@ -30,6 +30,7 @@
           <th>Date</th>
           <th>Check In</th>
           <th>Check Out</th>
+          <th>Hours</th>
           <th>Late (min)</th>
         </tr>
       </thead>
@@ -42,6 +43,7 @@
           <td>{{ r.date or '—' }}</td>
           <td>{{ r.check_in or '—' }}</td>
           <td>{{ r.check_out or '—' }}</td>
+          <td>{{ r.hours or '—' }}</td>
           <td>{{ r.late_min or '—' }}</td>
         </tr>
         {% endfor %}

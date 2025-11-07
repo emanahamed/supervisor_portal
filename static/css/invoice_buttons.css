@@ -3,21 +3,33 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-radius: 6px;
-  padding: 8px;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 10px 14px;
   text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  white-space: nowrap;
 }
 .icon-btn .btn-label {
-  display: none;
-  font-size: 0.9rem;
-}
-.icon-btn:hover .btn-label {
   display: inline-block;
 }
 .icon-btn-xs {
-  padding: 6px;
+  padding: 6px 10px;
   border-radius: 6px;
+  font-size: 0.85rem;
+}
+.icon-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+  box-shadow: 0 8px 14px -10px rgba(15, 23, 42, 0.35);
+}
+.icon-btn:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.45);
+  outline-offset: 2px;
 }
 .icon-btn.primary {
   background-color: #0ea5a4;
@@ -26,6 +38,9 @@
 .icon-btn.secondary {
   background-color: #64748b;
   color: #fff;
+}
+.icon-btn.secondary:hover {
+  filter: brightness(1.08);
 }
 .icon-btn.warn {
   background-color: #f59e0b;
@@ -59,6 +74,7 @@
   text-decoration: none;
   border: none;
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .btn-sm {
   padding: 6px 10px;
@@ -81,6 +97,14 @@
 .btn-danger {
   background: #ef4444;
   color: #fff;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 14px -10px rgba(15, 23, 42, 0.3);
+}
+.btn:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.45);
+  outline-offset: 2px;
 }
 
 .table-auto th,

@@ -106,6 +106,41 @@
   </tbody>
 </table>
 
+<div class="mt-6">
+  <h3 class="font-semibold">Attachments</h3>
+  {% if inv.attachments %}
+  <ul class="list-disc pl-5">
+    {% for a in inv.attachments %}
+    <li class="mb-1">
+      <span>{{ a.original_name or a.path }}</span>
+      <a
+        class="btn btn-ghost btn-sm ml-2"
+        href="{{ url_for('staff_invoice_attachment_view', invoice_id=inv.id, att_id=a.id) }}"
+        target="_blank"
+        >View</a
+      >
+      <a
+        class="btn btn-secondary btn-sm ml-2"
+        href="{{ url_for('staff_invoice_attachment_download', invoice_id=inv.id, att_id=a.id) }}"
+        >Download</a
+      >
+      <form
+        method="post"
+        action="{{ url_for('staff_invoice_attachment_delete', invoice_id=inv.id, att_id=a.id) }}"
+        class="inline ml-2"
+        onsubmit="return confirm('Delete this attachment?');"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button type="submit" class="btn btn-error btn-sm">Delete</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="text-gray-500 text-sm">No attachments uploaded.</div>
+  {% endif %}
+</div>
+
 {# Totals and branch breakdown placed at the bottom of the detail view #}
 <div class="mt-6">
   {% if branch_breakdown %}

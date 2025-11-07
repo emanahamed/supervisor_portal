@@ -13,7 +13,14 @@ ISSUE_STATUS_CHOICES = [("Pending","Pending"),("In Progress","In Progress"),("Re
 ISSUE_CRITICALITY_CHOICES = [("Minor","Minor"),("Significant","Significant"),("Medium","Medium"),("Critical","Critical")]
 ISSUE_URGENCY_CHOICES = [("Low","Low"),("Medium","Medium"),("High","High")]
 TODO_STATUS_CHOICES = [("Pending","Pending"),("Done","Done")]
-RESOURCE_TYPE_CHOICES = [("Laptop","Laptop"),("Walkie Talkie","Walkie Talkie"),("Tablet","Tablet"),("Other","Other")]
+RESOURCE_TYPE_CHOICES = [
+    ("Laptop","Laptop"),
+    ("Walkie Talkie","Walkie Talkie"),
+    ("Tablet","Tablet"),
+    ("Electronic","Electronic"),
+    ("Science Lab","Science Lab"),
+    ("Other","Other"),
+]
 RESOURCE_STATUS_CHOICES = [("functional","Functional"),("need_repair","Need Repair"),("lost","Lost"),("archived","Archived")]
 STAFF_INVOICE_STATUS_CHOICES = [("Pending","Pending"),("Approved","Approved"),("Rejected","Rejected")]
 

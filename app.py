@@ -4,9 +4,10 @@ import csv
 import io
 import json
 import logging
+import math
 import os
 import random
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
 from types import SimpleNamespace
@@ -15,14 +16,15 @@ from uuid import uuid4
 import click
 import pandas as pd
 from flask import (Flask, abort, flash, jsonify, make_response, redirect,
-                   render_template, request, send_file, session, url_for)
+                   render_template, request, send_file, send_from_directory,
+                   session, url_for)
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import and_, case, or_, text
+from sqlalchemy import and_, asc, case, desc, func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -46,7 +48,8 @@ from email_utils import (build_appointment_admin_email,
                          build_meeting_student_email,
                          build_task_notification_email, send_email,
                          send_recruitment_email)
-from forms import (AppointmentBookingActionForm, AppointmentBookingForm,
+from forms import (RESOURCE_STATUS_CHOICES, RESOURCE_TYPE_CHOICES,
+                   AppointmentBookingActionForm, AppointmentBookingForm,
                    AppointmentSlotActionForm, AppointmentSlotBulkForm,
                    AppointmentSlotForm, AvailabilityForm, BookForm,
                    CompanyForm, CycleForm, InvoiceForm, IssueForm, LoginForm,
@@ -59,14 +62,85 @@ from models import (AppointmentBooking, AppointmentSlot, Availability, Book,
                     Observation, ObservationCycle, Permission, PermissionAudit,
                     Resource, ResourceLoan, RolePermission, Staff,
                     StaffAttendance, StaffAttendanceAudit, StaffInvoice,
-                    StaffInvoiceItem, Student, StudentChange, SupervisorShift,
-                    Todo, User, UserPermission, db)
-from utils import (BRANCH_CHOICES, allowed_file, get_setting,
-                   normalize_staff_dataframe, parse_preferred_contact,
-                   parse_schedule_message, set_setting)
+                    StaffInvoiceAttachment, StaffInvoiceItem, Student,
+                    StudentChange, SupervisorShift, Todo, User, UserPermission,
+                    db)
+from utils import (BRANCH_CHOICES, allowed_file, ensure_form_branch_choices,
+                   get_setting, normalize_staff_dataframe,
+                   parse_preferred_contact, parse_schedule_message,
+                   set_setting)
 from version_info import VERSION, changelog_json, get_changelog, latest_entry
 
 SUPPORTED_LANGUAGES = {'en': 'English', 'bn': 'বাংলা'}
+
+# Allowed attachment extensions for staff invoice uploads (case-insensitive)
+ATTACH_ALLOWED_EXTS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'}
+
+def _is_allowed_attachment(filename: str) -> bool:
+    try:
+        _, ext = os.path.splitext(filename or '')
+        return ext.lower() in ATTACH_ALLOWED_EXTS
+    except Exception:
+        return False
+
+def _attachment_storage_dir(invoice_id: int) -> str:
+    base = os.path.join(app.static_folder, 'uploads', 'staff_invoices', str(invoice_id))
+    try:
+        os.makedirs(base, exist_ok=True)
+    except Exception:
+        pass
+    return base
+
+def _save_invoice_attachments(inv: StaffInvoice, files) -> list[StaffInvoiceAttachment]:
+    """Persist uploaded files and create attachment rows. Returns list of created attachments."""
+    created: list[StaffInvoiceAttachment] = []
+    if not inv or not files:
+        return created
+    storage_dir = _attachment_storage_dir(inv.id)
+    rel_base = os.path.relpath(storage_dir, app.static_folder)
+    for f in (files or []):
+        try:
+            if not getattr(f, 'filename', None):
+                continue
+            orig = f.filename
+            if not _is_allowed_attachment(orig):
+                continue
+            from werkzeug.utils import secure_filename as _secure
+            name = _secure(orig)
+            if not name:
+                continue
+            # Deduplicate filename
+            dest = os.path.join(storage_dir, name)
+            name_noext, ext = os.path.splitext(name)
+            counter = 1
+            while os.path.exists(dest):
+                name = f"{name_noext}_{counter}{ext}"
+                dest = os.path.join(storage_dir, name)
+                counter += 1
+            # Save file
+            f.save(dest)
+            try:
+                size = os.path.getsize(dest)
+            except Exception:
+                size = None
+            rel_path = os.path.join(rel_base, name)
+            att = StaffInvoiceAttachment(
+                invoice_id=inv.id,
+                path=rel_path.replace('\\','/'),
+                original_name=orig,
+                content_type=getattr(f, 'content_type', None),
+                file_size=(int(size) if size is not None else None),
+            )
+            db.session.add(att)
+            created.append(att)
+        except Exception:
+            continue
+    if created:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    return created
 
 PUBLIC_BOOKING_COPY = {
     'en': {
@@ -658,9 +732,9 @@ with app.app_context():  # pragma: no cover - simple safety patch
             ('manage_supervisor_shifts','Manage supervisor shifts'),
         ]
         created = False
-        for k, desc in needed_perms:
+        for k, description in needed_perms:
             if not Permission.query.filter_by(key=k).first():
-                db.session.add(Permission(key=k, description=desc))
+                db.session.add(Permission(key=k, description=description))
                 created = True
         if created:
             db.session.commit()
@@ -1521,9 +1595,9 @@ def create_tables_and_superadmin():
             ('manage_recruitment','Manage recruitment applications and communications'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
-        for k, desc in base_permissions:
+        for k, description in base_permissions:
             if k not in existing_keys:
-                db.session.add(Permission(key=k, description=desc))
+                db.session.add(Permission(key=k, description=description))
         db.session.commit()
 
         # Refresh permission list after potential inserts
@@ -2213,32 +2287,439 @@ def floor_shifts_new():
     return redirect(url_for('floor_shifts_index'))
 
 
-def _process_attendance_df(df, branch):
+def _prepare_attendance_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None:
+        return df
+    try:
+        working = df.copy()
+        if working.empty:
+            return working
+
+        if isinstance(working.columns, pd.MultiIndex):
+            flattened = []
+            for col_tuple in working.columns:
+                parts = []
+                for part in col_tuple:
+                    if part is None:
+                        continue
+                    text = str(part).strip()
+                    if not text or text.lower().startswith('unnamed'):
+                        continue
+                    parts.append(text)
+                flat = ' '.join(parts).strip()
+                flattened.append(flat or 'column')
+            working.columns = flattened
+
+        column_tokens = [str(col).strip() for col in working.columns]
+        first_row = working.iloc[0] if len(working) else None
+        has_subheader = False
+        if first_row is not None:
+            tokens = {str(v).strip().lower() for v in first_row.values if isinstance(v, str) or not pd.isna(v)}
+            sub_tokens = {'on-duty', 'off-duty', 'on duty', 'off duty'}
+            has_subheader = any(token in sub_tokens for token in tokens)
+
+        combined_headers: list[str] = []
+        if has_subheader:
+            for idx, major in enumerate(column_tokens):
+                major_clean = major.strip()
+                if major_clean.lower().startswith('unnamed'):
+                    major_clean = ''
+                minor_raw = first_row.iloc[idx] if idx < len(first_row) else ''
+                minor_clean = str(minor_raw).strip()
+                if minor_clean.lower().startswith('unnamed'):
+                    minor_clean = ''
+                label_parts = [part for part in [major_clean, minor_clean] if part]
+                label = ' '.join(label_parts).strip()
+                if not label:
+                    label = f'column_{idx+1}'
+                combined_headers.append(label)
+            working = working.iloc[1:].reset_index(drop=True)
+        else:
+            for idx, major in enumerate(column_tokens):
+                major_clean = major.strip()
+                if major_clean.lower().startswith('unnamed') or not major_clean:
+                    major_clean = f'column_{idx+1}'
+                combined_headers.append(major_clean)
+
+        seen: dict[str, int] = {}
+        final_headers: list[str] = []
+        for header in combined_headers:
+            clean = ' '.join(header.split())
+            clean = clean.replace('__', ' ').replace('  ', ' ').strip()
+            if not clean:
+                clean = 'column'
+            base = clean
+            idx = seen.get(base.lower(), 0)
+            if idx:
+                clean = f"{base} {idx+1}"
+            seen[base.lower()] = idx + 1
+            final_headers.append(clean)
+
+        working.columns = final_headers
+        return working
+    except Exception:
+        return df
+
+
+def _attendance_column_aliases(df):
+    columns = list(df.columns)
+    lookup = {}
+    for col in columns:
+        key = str(col).lower().strip() if isinstance(col, str) else ''
+        if key and key not in lookup:
+            lookup[key] = col
+
+    def col_any(keys):
+        for key in keys:
+            if key and key in lookup:
+                return lookup[key]
+        return None
+
+    index_lookup = {col: idx for idx, col in enumerate(columns)}
+
+    def idx_for_letter(letter):
+        pos = ord(letter.lower()) - ord('a')
+        return pos if 0 <= pos < len(columns) else None
+
+    machine_col = col_any(['machineid', 'machine_id', 'machine'])
+    staffid_col = col_any(['staffid', 'staff_id', 'id'])
+    date_col = col_any(['date', 'day'])
+    checkin_col = col_any([
+        'checkin', 'check_in', 'timein', 'on',
+        'on-duty', 'first time zone on-duty', 'first time zone on duty'
+    ])
+    checkout_col = col_any([
+        'checkout', 'check_out', 'timeout', 'off',
+        'off-duty', 'first time zone off-duty', 'first time zone off duty'
+    ])
+    checkin2_col = col_any([
+        'second time zone on-duty', 'second time zone on duty', 'on-duty 2',
+        'on2', 'timein2', 'checkin2'
+    ])
+    checkout2_col = col_any([
+        'second time zone off-duty', 'second time zone off duty', 'off-duty 2',
+        'off2', 'timeout2', 'checkout2'
+    ])
+    late_col = col_any(['late', 'late_minutes', 'late_min', 'late time(min)', 'late time (min)'])
+
+    letter_indexes = {letter: idx_for_letter(letter) for letter in ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p']}
+
+    return {
+        'columns': columns,
+        'colmap': lookup,
+        'machine': machine_col,
+        'staffid': staffid_col,
+        'date': date_col,
+        'checkin': checkin_col,
+        'checkout': checkout_col,
+        'checkin2': checkin2_col,
+        'checkout2': checkout2_col,
+        'late': late_col,
+        'machine_idx': index_lookup.get(machine_col),
+        'staffid_idx': index_lookup.get(staffid_col),
+        'date_idx': index_lookup.get(date_col),
+        'checkin_idx': index_lookup.get(checkin_col),
+        'checkout_idx': index_lookup.get(checkout_col),
+        'checkin2_idx': index_lookup.get(checkin2_col),
+        'checkout2_idx': index_lookup.get(checkout2_col),
+        'late_idx': index_lookup.get(late_col),
+        'letter_indexes': letter_indexes,
+    }
+
+
+def _attendance_cell_has_value(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip() != ''
+    try:
+        return not pd.isna(value)
+    except Exception:
+        return True
+
+
+def _extract_row_value(row, label=None, idx=None):
+    if label is not None:
+        try:
+            if label in row.index:
+                value = row[label]
+                if _attendance_cell_has_value(value):
+                    return value
+        except Exception:
+            pass
+        label_str = str(label)
+        try:
+            if label_str in row.index:
+                value = row[label_str]
+                if _attendance_cell_has_value(value):
+                    return value
+        except Exception:
+            pass
+    if idx is not None and 0 <= idx < len(row):
+        value = row.iloc[idx]
+        if _attendance_cell_has_value(value):
+            return value
+    return None
+
+
+def _resolve_attendance_slots(row, aliases, capture_anomalies=False, anomaly_log=None):
+    checkin_col = aliases.get('checkin')
+    checkout_col = aliases.get('checkout')
+    checkin2_col = aliases.get('checkin2')
+    checkout2_col = aliases.get('checkout2')
+    checkin_idx = aliases.get('checkin_idx')
+    checkout_idx = aliases.get('checkout_idx')
+    checkin2_idx = aliases.get('checkin2_idx')
+    checkout2_idx = aliases.get('checkout2_idx')
+    letter_indexes = aliases.get('letter_indexes', {})
+
+    def parse_time(raw):
+        if not _attendance_cell_has_value(raw):
+            return None, None
+
+        if isinstance(raw, datetime):
+            return raw.time(), None
+
+        if isinstance(raw, time):
+            return raw, None
+
+        if isinstance(raw, str):
+            text_value = raw.strip()
+            if not text_value:
+                return None, None
+            # Try a handful of common human-readable formats before deferring to pandas
+            for fmt in ('%H:%M:%S', '%H:%M', '%I:%M %p', '%I:%M%p', '%H.%M'):
+                try:
+                    return datetime.strptime(text_value, fmt).time(), None
+                except Exception:
+                    continue
+
+        if isinstance(raw, (int, float)):
+            try:
+                numeric = float(raw)
+                if math.isnan(numeric):
+                    numeric = None
+            except Exception:
+                numeric = None
+            if numeric is not None:
+                # Excel stores pure times as the fractional part of a day (0.0–1.0)
+                normalized = numeric % 1
+                # Some vendors store 4-digit HHMM integers (e.g. 930 for 09:30)
+                if abs(numeric - int(numeric)) < 1e-6 and 0 <= numeric <= 2400:
+                    hours = int(numeric) // 100
+                    minutes = int(numeric) % 100
+                    if hours < 24 and minutes < 60:
+                        return time(hour=hours, minute=minutes), None
+                if numeric >= 1 and normalized == 0 and 0 < numeric < 24:
+                    normalized = numeric / 24
+                if 0 <= normalized < 1:
+                    total_seconds = int(round(normalized * 86400))
+                    total_seconds = max(0, total_seconds)
+                    hours = (total_seconds // 3600) % 24
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    return time(hour=hours, minute=minutes, second=seconds), None
+
+        try:
+            parsed = pd.to_datetime(raw)
+            if isinstance(parsed, pd.Series):
+                parsed = parsed.iloc[0]
+            if pd.isna(parsed):
+                return None, None
+            if isinstance(parsed, pd.Timestamp):
+                return parsed.time(), None
+            if isinstance(parsed, datetime):
+                return parsed.time(), None
+        except Exception:
+            pass
+
+        return None, str(raw)
+
+    used_keys = set()
+    candidates = []
+
+    def register(ci_label=None, co_label=None, ci_index=None, co_index=None):
+        ci_key = ci_index if ci_index is not None else (f"label:{ci_label}" if ci_label is not None else None)
+        co_key = co_index if co_index is not None else (f"label:{co_label}" if co_label is not None else None)
+        key = (ci_key, co_key)
+        if key in used_keys:
+            return
+        used_keys.add(key)
+        candidates.append((ci_label, co_label, ci_index, co_index))
+
+    register(checkin_col, checkout_col, checkin_idx, checkout_idx)
+    register(checkin2_col, checkout2_col, checkin2_idx, checkout2_idx)
+
+    idx_e = letter_indexes.get('e')
+    idx_f = letter_indexes.get('f')
+    idx_g = letter_indexes.get('g')
+    idx_h = letter_indexes.get('h')
+
+    if idx_e is not None or idx_f is not None:
+        register(ci_index=idx_e, co_index=idx_f)
+    if idx_g is not None or idx_h is not None:
+        register(ci_index=idx_g, co_index=idx_h)
+
+    slots = []
+    for ci_label, co_label, ci_index, co_index in candidates:
+        raw_ci = _extract_row_value(row, ci_label, ci_index)
+        raw_co = _extract_row_value(row, co_label, co_index)
+        if not _attendance_cell_has_value(raw_ci) and not _attendance_cell_has_value(raw_co):
+            continue
+        ci_time, ci_error = parse_time(raw_ci)
+        co_time, co_error = parse_time(raw_co)
+        slots.append({
+            'check_in': ci_time,
+            'check_out': co_time,
+            'raw_check_in': raw_ci,
+            'raw_check_out': raw_co,
+            'check_in_error': ci_error,
+            'check_out_error': co_error,
+        })
+
+    if len(slots) >= 2:
+        first, second = slots[0], slots[1]
+        if first.get('check_in') and not first.get('check_out') and not second.get('check_in') and second.get('check_out'):
+            first['check_out'] = second['check_out']
+            first['check_out_error'] = second['check_out_error']
+            slots.pop(1)
+        elif not first.get('check_in') and first.get('check_out') and second.get('check_in') and not second.get('check_out'):
+            first['check_in'] = second['check_in']
+            first['check_in_error'] = second['check_in_error']
+            slots.pop(1)
+
+    meaningful = []
+    for slot in slots:
+        if slot.get('check_in') or slot.get('check_out') or slot.get('check_in_error') or slot.get('check_out_error'):
+            meaningful.append(slot)
+        if len(meaningful) >= 2:
+            break
+
+    if capture_anomalies and anomaly_log and anomaly_log.get('collector') is not None:
+        collector = anomaly_log['collector']
+        date_value = anomaly_log.get('date')
+        if isinstance(date_value, datetime):
+            date_str = date_value.strftime('%Y-%m-%d')
+        elif isinstance(date_value, date):
+            date_str = date_value.strftime('%Y-%m-%d')
+        elif date_value:
+            date_str = str(date_value)
+        else:
+            date_str = ''
+        staffid = anomaly_log.get('staffid')
+        machine = anomaly_log.get('machine')
+        for idx, slot in enumerate(meaningful):
+            suffix = '' if idx == 0 else '_2'
+            if slot.get('check_in_error'):
+                collector.append({
+                    'where': f'check_in{suffix}',
+                    'value': slot['check_in_error'],
+                    'date': date_str,
+                    'staffid': staffid,
+                    'machine': machine,
+                })
+            if slot.get('check_out_error'):
+                collector.append({
+                    'where': f'check_out{suffix}',
+                    'value': slot['check_out_error'],
+                    'date': date_str,
+                    'staffid': staffid,
+                    'machine': machine,
+                })
+
+    return meaningful
+
+
+def _calculate_hours_seconds(date_value, slots):
+    if not date_value:
+        return None
+    total = 0
+    for slot in slots:
+        ci = slot.get('check_in')
+        co = slot.get('check_out')
+        if ci and co:
+            try:
+                delta = (datetime.combine(date_value, co) - datetime.combine(date_value, ci)).total_seconds()
+            except Exception:
+                continue
+            if delta > 0:
+                total += int(delta)
+    return total if total > 0 else None
+
+
+def _seconds_to_hhmmss(seconds):
+    if seconds is None:
+        return None
+    seconds = int(seconds)
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    return f"{hours:02}:{minutes:02}:{secs:02}"
+
+
+def _purge_duplicate_attendance_rows(keep_row_id, machine, staff_id, attendance_date):
+    try:
+        if not keep_row_id or not attendance_date:
+            return
+        query = StaffAttendance.query.filter(StaffAttendance.id != keep_row_id, StaffAttendance.date == attendance_date)
+        if machine:
+            query = query.filter(StaffAttendance.machine_id == machine)
+        elif staff_id:
+            query = query.filter(StaffAttendance.staff_id == staff_id)
+        else:
+            return
+        for duplicate in query.all():
+            db.session.delete(duplicate)
+    except Exception:
+        pass
+
+
+def _process_attendance_df(df, branch, capture_anomalies: bool = False):
     """Process a pandas DataFrame of attendance rows and persist to DB.
 
-    Returns tuple (imported_count, updated_count)
+    Returns tuple (imported_count, updated_count, anomalies_dict)
+
+    anomalies_dict keys (when capture_anomalies=True):
+      - total_rows: int
+      - skipped_no_date: int
+      - unmapped_staff: list[dict]
+      - bad_time: list[dict]  # rows with unparsable time strings
     """
+    df = _prepare_attendance_dataframe(df)
+
     imported = 0
     updated = 0
-    # Build colmap/heuristics
-    colmap = {c.lower().strip(): c for c in df.columns}
-    def col_any(keys):
-        for k in keys:
-            if k in colmap:
-                return colmap[k]
-        return None
-    machine_col = col_any(['machineid','machine_id','machine','id'])
-    staffid_col = col_any(['staffid','staff_id','id'])
-    date_col = col_any(['date','day'])
-    checkin_col = col_any(['checkin','check_in','timein','on'])
-    checkout_col = col_any(['checkout','check_out','timeout','off'])
-    late_col = col_any(['late','late_minutes','late_min'])
+    total_rows = 0
+    skipped_no_date = 0
+    unmapped_staff = []
+    bad_time = []
+    aliases = _attendance_column_aliases(df)
+    machine_col = aliases.get('machine')
+    staffid_col = aliases.get('staffid')
+    date_col = aliases.get('date')
+    late_col = aliases.get('late')
+    letter_indexes = aliases.get('letter_indexes', {})
 
     for _, row in df.iterrows():
         try:
-            machine = str(row[machine_col]).strip() if machine_col and pd.notna(row.get(machine_col)) else None
-            staffid = int(row[staffid_col]) if staffid_col and pd.notna(row.get(staffid_col)) else None
-            d_raw = row[date_col] if date_col and pd.notna(row.get(date_col)) else None
+            total_rows += 1
+            machine_raw = _extract_row_value(row, machine_col, aliases.get('machine_idx'))
+            machine = str(machine_raw).strip() if machine_raw is not None else None
+            # Staff ID may be float/string; coerce safely
+            staffid = None
+            staffid_raw = _extract_row_value(row, staffid_col, aliases.get('staffid_idx'))
+            if staffid_raw is None:
+                staffid_raw = _extract_row_value(row, None, letter_indexes.get('a'))
+            if staffid_raw is not None:
+                sval = str(staffid_raw).strip()
+                if sval:
+                    try:
+                        staffid = int(float(sval))
+                    except Exception:
+                        staffid = None
+            d_raw = _extract_row_value(row, date_col, aliases.get('date_idx'))
+            if d_raw is None:
+                d_raw = _extract_row_value(row, None, letter_indexes.get('c'))
             if isinstance(d_raw, str):
                 try:
                     d = datetime.strptime(d_raw, '%d/%m/%Y').date()
@@ -2247,22 +2728,35 @@ def _process_attendance_df(df, branch):
             else:
                 d = pd.to_datetime(d_raw).date() if d_raw is not None and not pd.isna(d_raw) else None
             if not d:
+                skipped_no_date += 1
                 continue
-            ci_raw = row[checkin_col] if checkin_col and pd.notna(row.get(checkin_col)) else None
-            co_raw = row[checkout_col] if checkout_col and pd.notna(row.get(checkout_col)) else None
-            ci = None
-            co = None
-            try:
-                if pd.notna(ci_raw):
-                    ci = pd.to_datetime(ci_raw).time()
-            except Exception:
-                ci = None
-            try:
-                if pd.notna(co_raw):
-                    co = pd.to_datetime(co_raw).time()
-            except Exception:
-                co = None
-            late_min = int(row[late_col]) if late_col and pd.notna(row.get(late_col)) else None
+            slots = _resolve_attendance_slots(
+                row,
+                aliases,
+                capture_anomalies=capture_anomalies,
+                anomaly_log={
+                    'collector': bad_time,
+                    'date': d,
+                    'staffid': staffid,
+                    'machine': machine,
+                }
+            )
+            ci = slots[0]['check_in'] if slots else None
+            co = slots[0]['check_out'] if slots else None
+            ci2 = slots[1]['check_in'] if len(slots) > 1 else None
+            co2 = slots[1]['check_out'] if len(slots) > 1 else None
+            # Late minutes: handle blank/strings robustly with column/letter fallback
+            late_min = None
+            late_raw = _extract_row_value(row, late_col, aliases.get('late_idx'))
+            if late_raw is None:
+                late_raw = _extract_row_value(row, None, letter_indexes.get('i'))
+            if late_raw is not None:
+                lraw = str(late_raw).strip()
+                if lraw:
+                    try:
+                        late_min = int(float(lraw))
+                    except Exception:
+                        late_min = None
 
             # Map machine id to staff record if possible (check all 4 machine id fields)
             mapped_staff = None
@@ -2275,28 +2769,40 @@ def _process_attendance_df(df, branch):
                 ).first()
             if not mapped_staff and staffid:
                 mapped_staff = Staff.query.filter((Staff.id == staffid) | (Staff.access_code == str(staffid))).first()
+            if capture_anomalies and not mapped_staff and (machine or staffid):
+                unmapped_staff.append({'date': d.strftime('%Y-%m-%d'), 'machine': machine, 'staffid': staffid})
 
-            # Find existing attendance row: prefer machine+date+branch, else staff+date+branch
+            selected_branch = (branch or '').strip()
+            branch_filter_value = selected_branch or None
+
+            # Find existing attendance row: prefer matching branch first, otherwise fall back to latest entry for that staff/machine/date
             existing = None
-            if machine:
-                existing = StaffAttendance.query.filter_by(machine_id=machine, date=d, branch=branch or None).first()
+            if machine and branch_filter_value is not None:
+                existing = StaffAttendance.query.filter_by(machine_id=machine, date=d, branch=branch_filter_value).order_by(StaffAttendance.updated_at.desc()).first()
+            if not existing and mapped_staff and branch_filter_value is not None:
+                existing = StaffAttendance.query.filter_by(staff_id=mapped_staff.id, date=d, branch=branch_filter_value).order_by(StaffAttendance.updated_at.desc()).first()
+            if not existing and machine:
+                existing = (StaffAttendance.query
+                            .filter(StaffAttendance.machine_id == machine, StaffAttendance.date == d)
+                            .order_by(StaffAttendance.updated_at.desc())
+                            .first())
             if not existing and mapped_staff:
-                existing = StaffAttendance.query.filter_by(staff_id=mapped_staff.id, date=d, branch=branch or None).first()
+                existing = (StaffAttendance.query
+                            .filter(StaffAttendance.staff_id == mapped_staff.id, StaffAttendance.date == d)
+                            .order_by(StaffAttendance.updated_at.desc())
+                            .first())
 
-            hours_secs = None
-            if ci and co:
-                dt_ci = datetime.combine(d, ci)
-                dt_co = datetime.combine(d, co)
-                try:
-                    delta = (dt_co - dt_ci).total_seconds()
-                    if delta < 0:
-                        delta = 0
-                    hours_secs = int(delta)
-                except Exception:
-                    hours_secs = None
+            target_branch = selected_branch or (existing.branch if existing else None)
+
+            hours_secs = _calculate_hours_seconds(d, slots)
 
             payload_json = json.dumps({
-                'machine': machine, 'staffid': staffid, 'date': d.strftime('%Y-%m-%d'), 'check_in': str(ci) if ci else None, 'check_out': str(co) if co else None, 'late_min': late_min
+                'machine': machine, 'staffid': staffid, 'date': d.strftime('%Y-%m-%d'),
+                'check_in': str(ci) if ci else None, 'check_out': str(co) if co else None,
+                'check_in_2': str(ci2) if ci2 else None, 'check_out_2': str(co2) if co2 else None,
+                'late_min': late_min,
+                'hours_seconds': hours_secs,
+                'branch': target_branch
             })
 
             if existing:
@@ -2308,6 +2814,9 @@ def _process_attendance_df(df, branch):
                 if machine and existing.machine_id != machine:
                     db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='machine_id', old_value=str(existing.machine_id), new_value=machine, changed_by_id=current_user.id if current_user.is_authenticated else None))
                     existing.machine_id = machine; changed = True
+                if target_branch != existing.branch:
+                    db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='branch', old_value=str(existing.branch), new_value=str(target_branch), changed_by_id=current_user.id if current_user.is_authenticated else None))
+                    existing.branch = target_branch; changed = True
                 if ci and (existing.check_in != ci):
                     db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='check_in', old_value=str(existing.check_in), new_value=str(ci), changed_by_id=current_user.id if current_user.is_authenticated else None))
                     existing.check_in = ci; changed = True
@@ -2320,16 +2829,20 @@ def _process_attendance_df(df, branch):
                 if hours_secs is not None and existing.hours_seconds != hours_secs:
                     db.session.add(StaffAttendanceAudit(attendance_id=existing.id, field='hours_seconds', old_value=str(existing.hours_seconds), new_value=str(hours_secs), changed_by_id=current_user.id if current_user.is_authenticated else None))
                     existing.hours_seconds = hours_secs; changed = True
+                if existing.day != _shift_day_for(d):
+                    existing.day = _shift_day_for(d)
+                    changed = True
                 existing.raw_payload = payload_json
                 if changed:
                     updated += 1
                 existing.updated_at = datetime.utcnow()
                 db.session.add(existing)
+                _purge_duplicate_attendance_rows(existing.id, machine, existing.staff_id, d)
             else:
                 na = StaffAttendance(
                     staff_id=(mapped_staff.id if mapped_staff else None),
                     machine_id=machine,
-                    branch=branch or None,
+                    branch=target_branch,
                     day=_shift_day_for(d),
                     date=d,
                     check_in=ci,
@@ -2339,6 +2852,11 @@ def _process_attendance_df(df, branch):
                     raw_payload=payload_json,
                 )
                 db.session.add(na)
+                try:
+                    db.session.flush()
+                    _purge_duplicate_attendance_rows(na.id, machine, na.staff_id, d)
+                except Exception:
+                    pass
                 imported += 1
         except Exception:
             # skip bad rows
@@ -2347,6 +2865,14 @@ def _process_attendance_df(df, branch):
         db.session.commit()
     except Exception:
         db.session.rollback()
+    if capture_anomalies:
+        anomalies = {
+            'total_rows': total_rows,
+            'skipped_no_date': skipped_no_date,
+            'unmapped_staff': unmapped_staff,
+            'bad_time': bad_time,
+        }
+        return imported, updated, anomalies
     return imported, updated
 
 def _is_weekday(d):
@@ -2440,26 +2966,40 @@ def staff_attendance_index():
     """
     from models import Staff, StaffAttendance
 
-    # Filters
-    company = (request.args.get('company') or '').strip()
-    branch = (request.args.get('branch') or '').strip()
-    staff_id = request.args.get('staff_id', type=int)
-    machine_id = (request.args.get('machine_id') or '').strip() or None
-    late = (request.args.get('late') or '').strip().lower()
-    start = (request.args.get('start') or '').strip()
-    end = (request.args.get('end') or '').strip()
-    page = max(1, int(request.args.get('page') or 1))
-    per_page = int(request.args.get('per_page') or 50)
+    filters_raw = request.args.to_dict(flat=True)
+    branch = (filters_raw.get('branch') or '').strip()
+    employee_term = (filters_raw.get('employee') or '').strip()
+    machine_id = (filters_raw.get('machine_id') or '').strip()
+    late = (filters_raw.get('late') or '').strip().lower()
+    start = (filters_raw.get('start') or '').strip()
+    end = (filters_raw.get('end') or '').strip()
+    month = (filters_raw.get('month') or '').strip()
+    per_page = int(filters_raw.get('per_page') or 50)
+    per_page = min(max(per_page, 10), 500)
+    page = max(1, int(filters_raw.get('page') or 1))
+    sort = (filters_raw.get('sort') or 'date').lower()
+    direction = (filters_raw.get('direction') or 'desc').lower()
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
+    staff_id_filter = request.args.get('staff_id', type=int)
+    if staff_id_filter is not None:
+        filters_raw['staff_id'] = str(staff_id_filter)
 
     q = StaffAttendance.query
+    join_staff = False
+    if employee_term or sort == 'staff':
+        q = q.outerjoin(Staff, StaffAttendance.staff_id == Staff.id)
+        join_staff = True
+
     if branch:
         q = q.filter(StaffAttendance.branch == branch)
-    if staff_id:
-        q = q.filter(StaffAttendance.staff_id == staff_id)
+    if staff_id_filter:
+        q = q.filter(StaffAttendance.staff_id == staff_id_filter)
     if machine_id:
-        q = q.filter(StaffAttendance.machine_id == machine_id)
+        q = q.filter(func.lower(StaffAttendance.machine_id).like(f"%{machine_id.lower()}%"))
     if late == 'yes':
         q = q.filter(StaffAttendance.late_minutes.isnot(None), StaffAttendance.late_minutes > 0)
+
     if start:
         try:
             sd = datetime.strptime(start, '%d/%m/%Y').date()
@@ -2472,13 +3012,124 @@ def staff_attendance_index():
             q = q.filter(StaffAttendance.date <= ed)
         except Exception:
             pass
+    if month:
+        parsed_month = None
+        for fmt in ('%Y-%m', '%m/%Y', '%Y/%m', '%b %Y', '%B %Y'):
+            try:
+                parsed_month = datetime.strptime(month, fmt)
+                break
+            except Exception:
+                continue
+        if parsed_month:
+            month_start = date(parsed_month.year, parsed_month.month, 1)
+            if parsed_month.month == 12:
+                next_month = date(parsed_month.year + 1, 1, 1)
+            else:
+                next_month = date(parsed_month.year, parsed_month.month + 1, 1)
+            q = q.filter(StaffAttendance.date >= month_start, StaffAttendance.date < next_month)
 
-    total = q.count()
-    records = q.order_by(StaffAttendance.date.desc(), StaffAttendance.check_in.asc()).limit(per_page).offset((page-1)*per_page).all()
+    if employee_term:
+        name_term = f"%{employee_term.lower()}%"
+        predicates = [
+            func.lower(Staff.name).like(name_term) if join_staff else None,
+            func.lower(Staff.first_name).like(name_term) if join_staff else None,
+            func.lower(Staff.last_name).like(name_term) if join_staff else None,
+            func.lower(Staff.access_code).like(name_term) if join_staff else None,
+            func.lower(StaffAttendance.machine_id).like(name_term),
+        ]
+        if employee_term.isdigit():
+            predicates.append(StaffAttendance.staff_id == int(employee_term))
+        predicates = [p for p in predicates if p is not None]
+        if predicates:
+            q = q.filter(or_(*predicates))
+
+    total = q.order_by(None).count()
+    if total and (page - 1) * per_page >= total:
+        page = max(1, math.ceil(total / per_page))
+    offset = (page - 1) * per_page
+
+    if sort == 'staff' and not join_staff:
+        q = q.outerjoin(Staff, StaffAttendance.staff_id == Staff.id)
+        join_staff = True
+
+    sort_map = {
+        'date': StaffAttendance.date,
+        'branch': StaffAttendance.branch,
+        'check_in': StaffAttendance.check_in,
+        'check_out': StaffAttendance.check_out,
+        'hours': StaffAttendance.hours_seconds,
+        'late': StaffAttendance.late_minutes,
+    }
+    if join_staff:
+        sort_map['staff'] = func.lower(Staff.name)
+
+    sort_column = sort_map.get(sort)
+    if not sort_column:
+        sort = 'date'
+        sort_column = sort_map['date']
+        direction = 'desc'
+
+    order_primary = asc(sort_column) if direction == 'asc' else desc(sort_column)
+    order_columns = [order_primary]
+    if sort != 'date':
+        order_columns.append(desc(StaffAttendance.date))
+    if sort != 'check_in':
+        order_columns.append(asc(StaffAttendance.check_in))
+    order_columns.append(desc(StaffAttendance.id))
+
+    records = (q.order_by(*order_columns)
+                 .offset(offset)
+                 .limit(per_page)
+                 .all())
+
+    total_pages = max(1, math.ceil(total / per_page)) if per_page else 1
+    from_record = offset + 1 if total else 0
+    to_record = offset + len(records) if total else 0
+    has_prev = page > 1
+    has_next = page < total_pages
+
+    base_params = {k: v for k, v in filters_raw.items() if k != 'page' and v not in (None, '')}
+    base_params['per_page'] = str(per_page)
+    base_params['sort'] = sort
+    base_params['direction'] = direction
+    if branch:
+        base_params['branch'] = branch
+
+    prev_url = url_for('staff_attendance_index', **{**base_params, 'page': page - 1}) if has_prev else None
+    next_url = url_for('staff_attendance_index', **{**base_params, 'page': page + 1}) if has_next else None
+
+    sort_targets = ('date', 'staff', 'branch', 'check_in', 'check_out', 'hours', 'late')
+    sort_urls = {}
+    for target in sort_targets:
+        params = {**base_params, 'page': 1, 'sort': target}
+        params['direction'] = 'asc' if sort != target or direction == 'desc' else 'desc'
+        sort_urls[target] = url_for('staff_attendance_index', **params)
+
+    per_page_options = [25, 50, 100, 200]
 
     staff_map = {s.id: s for s in Staff.query.all()}
     branches = BRANCH_CHOICES()
-    return render_template('staff/attendance.html', records=records, staff_map=staff_map, branches=branches, filters=request.args, page=page, per_page=per_page, total=total)
+    return render_template(
+        'staff/attendance.html',
+        records=records,
+        staff_map=staff_map,
+        branches=branches,
+        filters=filters_raw,
+        page=page,
+        per_page=per_page,
+        total=total,
+        total_pages=total_pages,
+        from_record=from_record,
+        to_record=to_record,
+        has_prev=has_prev,
+        has_next=has_next,
+        prev_url=prev_url,
+        next_url=next_url,
+        sort=sort,
+        direction=direction,
+        sort_urls=sort_urls,
+        per_page_options=per_page_options,
+    )
 
 
 @app.route('/staff/attendance/import', methods=['GET','POST'])
@@ -2503,7 +3154,7 @@ def staff_attendance_import():
     # Confirm step: process existing temp file saved in session
     if action == 'confirm':
         tmp = session.get('attendance_import_tmp')
-        branch = session.get('attendance_import_branch')
+        branch = (request.form.get('branch') or session.get('attendance_import_branch') or '').strip()
         if not tmp:
             flash('No pending import found. Please upload the file first.', 'warning')
             return redirect(url_for('staff_attendance_import'))
@@ -2529,6 +3180,7 @@ def staff_attendance_import():
         except Exception as e:
             flash(f'Failed to reopen uploaded file: {e}', 'danger')
             return redirect(url_for('staff_attendance_import'))
+        df = _prepare_attendance_dataframe(df)
         # Process DataFrame rows and commit (reuse existing per-row logic below)
         imported, updated = _process_attendance_df(df, branch)
         # Clean up
@@ -2581,28 +3233,72 @@ def staff_attendance_import():
                 flash(f'Failed to parse uploaded spreadsheet: {e}', 'danger')
                 return redirect(url_for('staff_attendance_import'))
 
-    # Build a lightweight preview: map machine ids to staff and show first 50 rows
+    df = _prepare_attendance_dataframe(df)
+
+    # Decide if we can commit immediately (quick import): either user asked for it or layout is known
+    def _known_layout(_df):
+        cols = {str(c).lower().strip() for c in _df.columns}
+        has_date = 'date' in cols or 'day' in cols
+        has_time_pair = (
+            ('checkin' in cols or 'check_in' in cols or 'timein' in cols or 'on' in cols) and
+            ('checkout' in cols or 'check_out' in cols or 'timeout' in cols or 'off' in cols)
+        ) or (
+            'first time zone on-duty' in cols and 'first time zone off-duty' in cols
+        )
+        has_identifier = (
+            'machineid' in cols or 'machine_id' in cols or 'machine' in cols or
+            'staffid' in cols or 'staff_id' in cols or 'id' in cols
+        )
+        return has_date and has_time_pair and has_identifier
+
+    quick = (request.form.get('quick') == '1') or _known_layout(df)
+    if quick:
+        imported, updated, anomalies = _process_attendance_df(df, branch, capture_anomalies=True)
+        # Clean up temp file and session
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+        session.pop('attendance_import_tmp', None)
+        session.pop('attendance_import_branch', None)
+        return render_template(
+            'staff/attendance_import_summary.html',
+            imported=imported,
+            updated=updated,
+            anomalies=anomalies,
+            branch=branch or ''
+        )
+
+    # Build a lightweight preview: map machine ids to staff and show first 200 rows
     preview_rows = []
-    colmap = {c.lower().strip(): c for c in df.columns}
-    def col_any(keys):
-        for k in keys:
-            if k in colmap:
-                return colmap[k]
-        return None
-    machine_col = col_any(['machineid','machine_id','machine','id'])
-    staffid_col = col_any(['staffid','staff_id','id'])
-    date_col = col_any(['date','day'])
-    checkin_col = col_any(['checkin','check_in','timein','on'])
-    checkout_col = col_any(['checkout','check_out','timeout','off'])
-    late_col = col_any(['late','late_minutes','late_min'])
+    aliases_preview = _attendance_column_aliases(df)
+    machine_col = aliases_preview.get('machine')
+    staffid_col = aliases_preview.get('staffid')
+    date_col = aliases_preview.get('date')
+    late_col = aliases_preview.get('late')
+    letter_indexes = aliases_preview.get('letter_indexes', {})
 
     for idx, row in df.iterrows():
         if len(preview_rows) >= 200:
             break
         try:
-            machine = str(row[machine_col]).strip() if machine_col and pd.notna(row.get(machine_col)) else None
-            staffid = int(row[staffid_col]) if staffid_col and pd.notna(row.get(staffid_col)) else None
-            d_raw = row[date_col] if date_col and pd.notna(row.get(date_col)) else None
+            machine_raw = _extract_row_value(row, machine_col, aliases_preview.get('machine_idx'))
+            machine = str(machine_raw).strip() if machine_raw is not None else None
+            # Staff ID may be float/string; coerce safely
+            staffid = None
+            staffid_raw = _extract_row_value(row, staffid_col, aliases_preview.get('staffid_idx'))
+            if staffid_raw is None:
+                staffid_raw = _extract_row_value(row, None, letter_indexes.get('a'))
+            if staffid_raw is not None:
+                sval = str(staffid_raw).strip()
+                if sval:
+                    try:
+                        staffid = int(float(sval))
+                    except Exception:
+                        staffid = None
+            d_raw = _extract_row_value(row, date_col, aliases_preview.get('date_idx'))
+            if d_raw is None:
+                d_raw = _extract_row_value(row, None, letter_indexes.get('c'))
             try:
                 if isinstance(d_raw, str):
                     d = datetime.strptime(d_raw, '%d/%m/%Y').date()
@@ -2610,19 +3306,20 @@ def staff_attendance_import():
                     d = pd.to_datetime(d_raw).date() if d_raw is not None and not pd.isna(d_raw) else None
             except Exception:
                 d = None
-            ci = None
-            co = None
-            try:
-                if checkin_col and pd.notna(row.get(checkin_col)):
-                    ci = pd.to_datetime(row.get(checkin_col)).time()
-            except Exception:
-                ci = None
-            try:
-                if checkout_col and pd.notna(row.get(checkout_col)):
-                    co = pd.to_datetime(row.get(checkout_col)).time()
-            except Exception:
-                co = None
-            late_min = int(row[late_col]) if late_col and pd.notna(row.get(late_col)) else None
+            slots = _resolve_attendance_slots(row, aliases_preview)
+            ci = slots[0]['check_in'] if slots else None
+            co = slots[0]['check_out'] if slots else None
+            hours_secs = _calculate_hours_seconds(d, slots)
+            hours_label = _seconds_to_hhmmss(hours_secs)
+            # Late minutes: handle blank/strings robustly
+            late_min = None
+            if late_col and pd.notna(row.get(late_col)):
+                lraw = str(row.get(late_col)).strip()
+                if lraw:
+                    try:
+                        late_min = int(float(lraw))
+                    except Exception:
+                        late_min = None
             mapped = None
             if machine:
                 mapped = Staff.query.filter(
@@ -2640,6 +3337,7 @@ def staff_attendance_import():
                 'date': d.strftime('%d/%m/%Y') if d else None,
                 'check_in': ci.strftime('%H:%M:%S') if ci else None,
                 'check_out': co.strftime('%H:%M:%S') if co else None,
+                'hours': hours_label,
                 'late_min': late_min,
             })
         except Exception:
@@ -4426,11 +5124,10 @@ def floor_call_list_new():
         except Exception as exc:
             db.session.rollback(); flash(f'Failed to save call: {exc}','danger')
         return redirect(url_for('floor_call_list_index'))
-    # GET -> modal content
+    # GET -> modal content (do NOT preload all students; rely on /api/students/suggest for autocomplete)
     reasons = ['absence','lateness','payment issue','detention','meeting','event','other']
     staff_opts = User.query.filter(User.role.in_(['superadmin','centre_manager','supervisor','admin'])).order_by(User.name.asc()).all()
-    students = Student.query.order_by(Student.name.asc()).all()
-    return render_template('floor/calls/form.html', record=None, reasons=reasons, staff_opts=staff_opts, students=students, today=date.today())
+    return render_template('floor/calls/form.html', record=None, reasons=reasons, staff_opts=staff_opts, today=date.today())
 
 @app.route('/floor/call-list/<int:cid>/edit', methods=['GET','POST'])
 @login_required
@@ -4499,8 +5196,8 @@ def floor_call_list_edit(cid: int):
         return redirect(url_for('floor_call_list_index'))
     reasons = ['absence','lateness','payment issue','detention','meeting','event','other']
     staff_opts = User.query.filter(User.role.in_(['superadmin','centre_manager','supervisor','admin'])).order_by(User.name.asc()).all()
-    students = Student.query.order_by(Student.name.asc()).limit(500).all()
-    return render_template('floor/calls/form.html', record=rec, reasons=reasons, staff_opts=staff_opts, students=students, today=rec.date or date.today())
+    # Avoid preloading students; autocomplete will query the API
+    return render_template('floor/calls/form.html', record=rec, reasons=reasons, staff_opts=staff_opts, today=rec.date or date.today())
 
 @app.route('/floor/call-list/<int:cid>/delete', methods=['POST'])
 @login_required
@@ -6995,6 +7692,15 @@ def _resource_branch_initials(branch: str) -> str:
         return 'DL'
     return (branch or '')[:2].upper()
 
+def _resource_bind_form_choices(form) -> None:
+    branches = [(b, b) for b in BRANCH_CHOICES()]
+    if hasattr(form, 'branch'):
+        form.branch.choices = branches
+    if hasattr(form, 'type'):
+        form.type.choices = RESOURCE_TYPE_CHOICES
+    if hasattr(form, 'status'):
+        form.status.choices = RESOURCE_STATUS_CHOICES
+
 def _resource_next_seq(rtype: str) -> int:
     from models import Resource
     latest = (Resource.query.filter_by(type=rtype)
@@ -7002,10 +7708,11 @@ def _resource_next_seq(rtype: str) -> int:
               .first())
     return (latest.type_seq + 1) if latest and latest.type_seq else 1
 
-def _resource_generate_ids(rtype: str, branch: str) -> tuple[str,str,str,int]:
+def _resource_generate_ids(rtype: str, branch: str, type_other: str | None = None) -> tuple[str,str,str,int]:
     # Legacy helper retained but now delegates numeric ID generation.
     seq = _resource_next_seq(rtype)
-    type_slug = rtype.strip().replace(' ', '').upper()
+    type_slug_source = type_other if (rtype == 'Other' and type_other) else rtype
+    type_slug = type_slug_source.strip().replace(' ', '').upper()
     br_init = _resource_branch_initials(branch)
     name = f"{type_slug}-{seq}-{br_init}"
     # Numeric resource ID equals barcode value (Code128 content)
@@ -7050,7 +7757,12 @@ def _resource_next_numeric_id(length: int = 10) -> str:
 def resources_index():
     # Data for table rendered server-side, DataTables JS enhances it
     items = Resource.query.order_by(Resource.created_at.desc()).all()
-    return render_template('resources/index.html', items=items, branch_choices=BRANCH_CHOICES())
+    return render_template(
+        'resources/index.html',
+        items=items,
+        branch_choices=BRANCH_CHOICES(),
+        resource_type_choices=RESOURCE_TYPE_CHOICES,
+    )
 
 @app.route('/resources/loans')
 @login_required
@@ -7263,18 +7975,25 @@ def resources_dashboard():
 @permission_required('manage_resources')
 def resources_create():
     form = ResourceForm()
+    _resource_bind_form_choices(form)
     if not form.validate_on_submit():
         return jsonify({'success': False, 'errors': form.errors}), 400
     rtype = form.type.data
     branch = form.branch.data
     type_other = (form.type_other.data or '').strip() if rtype == 'Other' else None
-    rid, barcode_val, name_default, seq = _resource_generate_ids(rtype, branch)
+    if rtype == 'Other' and not type_other:
+        return jsonify({'success': False, 'errors': {'type_other': ['Please specify the category when selecting Other.']}}), 400
+    rid, barcode_val, name_default, seq = _resource_generate_ids(rtype, branch, type_other)
     name = (form.name.data or '').strip() or name_default
     res = Resource(type=rtype, type_other=type_other, branch=branch, type_seq=seq,
                    resource_id=rid, name=name, barcode_value=barcode_val,
                    status=form.status.data)
     db.session.add(res)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'errors': {'_': ['Save failed: duplicate identifier']}}), 400
     return jsonify({'success': True, 'id': res.id})
 
 @app.route('/api/resources/bulk', methods=['POST'])
@@ -7282,6 +8001,7 @@ def resources_create():
 @permission_required('manage_resources')
 def resources_bulk_create():
     form = ResourceBulkForm()
+    _resource_bind_form_choices(form)
     if not form.validate_on_submit():
         return jsonify({'success': False, 'errors': form.errors}), 400
     rtype = form.type.data
@@ -7289,9 +8009,11 @@ def resources_bulk_create():
     qty = form.quantity.data or 1
     status = form.status.data or 'functional'
     type_other = (form.type_other.data or '').strip() if rtype == 'Other' else None
+    if rtype == 'Other' and not type_other:
+        return jsonify({'success': False, 'errors': {'type_other': ['Please specify the category when selecting Other.']}}), 400
     created_ids: list[int] = []
     for _ in range(qty):
-        rid, barcode_val, name_default, seq = _resource_generate_ids(rtype, branch)
+        rid, barcode_val, name_default, seq = _resource_generate_ids(rtype, branch, type_other)
         res = Resource(
             type=rtype,
             type_other=type_other,
@@ -7311,6 +8033,9 @@ def resources_bulk_create():
             continue
     try:
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'errors': {'_': ['Bulk create failed: duplicate identifier']}}), 400
     except Exception as _exc:
         db.session.rollback()
         return jsonify({'success': False, 'errors': {'_': ['Bulk create failed']}}), 500
@@ -8327,8 +9052,27 @@ def books_index():
     legacy_inactive_flag = bool(request.args.get('inactive'))
     sort = (request.args.get('sort') or 'name').strip().lower()
     direction = (request.args.get('direction') or 'asc').strip().lower()
-    page = max(1, int(request.args.get('page', 1) or 1))
-    per_page = min(100, int(request.args.get('per_page', 25) or 25))
+    page_raw = (request.args.get('page') or '1').strip()
+    per_page_raw = (request.args.get('per_page') or '25').strip().lower()
+
+    per_page = None
+    if per_page_raw == 'all':
+        page = 1
+    else:
+        try:
+            per_page = max(1, min(100, int(per_page_raw or '25')))
+            per_page_raw = str(per_page)
+            page = max(1, int(page_raw or '1'))
+        except ValueError:
+            per_page = 25
+            per_page_raw = '25'
+            try:
+                page = max(1, int(page_raw or '1'))
+            except ValueError:
+                page = 1
+
+    if per_page is None:
+        page = 1
 
     # ---------------- Base Query & Filters ---------------- #
     base_q = Book.query
@@ -8370,12 +9114,27 @@ def books_index():
     books_query = base_q.order_by(sort_col, Book.id.asc())  # deterministic tie-break
 
     total = books_query.count()
-    books_rows = (books_query
-                  .offset((page-1)*per_page)
-                  .limit(per_page)
-                  .all())
+
+    if total == 0:
+        page = 1
+
+    if per_page is None:
+        books_rows = books_query.all()
+        pages = 1 if total else 0
+    else:
+        books_rows = (books_query
+                      .offset((page-1)*per_page)
+                      .limit(per_page)
+                      .all())
+        pages = (total // per_page) + (1 if total % per_page else 0)
+        if pages and page > pages:
+            page = pages
+            books_rows = (books_query
+                          .offset((page-1)*per_page)
+                          .limit(per_page)
+                          .all())
+
     books = [b.serialize() for b in books_rows]
-    pages = (total // per_page) + (1 if total % per_page else 0)
 
     # Distinct subjects for filter dropdown
     subjects = [r[0] for r in db.session.query(Book.subject)
@@ -8404,13 +9163,13 @@ def books_index():
     except Exception:
         pass
 
-    per_page_choices = [10,25,50,100]
+    per_page_choices = [('10','10'), ('25','25'), ('50','50'), ('100','100'), ('all','All')]
     return render_template('tools/books_index.html',
                            books=books,
                            page=page,
                            pages=pages,
                            total=total,
-                           per_page=per_page,
+                           per_page=per_page_raw,
                            per_page_choices=per_page_choices,
                            sort=sort,
                            direction=direction,
@@ -9582,6 +10341,8 @@ except Exception:
 @login_required
 def availability_new():
     form = AvailabilityForm()
+    ensure_form_branch_choices(form)
+    allowed_branch_values = {value for value, _ in getattr(form.branches, 'choices', [])}
     # Populate department choices from existing distinct departments (Availability ∪ Staff)
     dept_av = [r[0] for r in db.session.query(Availability.department).distinct().filter(Availability.department.isnot(None)).all()]
     dept_st = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).all()]
@@ -9606,12 +10367,13 @@ def availability_new():
                 cand = cand.filter(Staff.department == q_dept)
             st = cand.first()
             if st and (st.branch or ''):
-                form.branches.data = [b for b in (st.branch or '').split(',') if b]
+                form.branches.data = [b for b in (st.branch or '').split(',') if b and b in allowed_branch_values]
     if form.validate_on_submit():
+        selected_branches = [b for b in (form.branches.data or []) if b in allowed_branch_values]
         a = Availability(
             name=form.name.data.strip(),
             department=(form.department.data or '').strip() or None,
-            branches=",".join(form.branches.data) if form.branches.data else None,
+            branches=",".join(selected_branches) if selected_branches else None,
             days=form.days.data.strip() if form.days.data else None,
             subjects=form.subjects.data.strip() if form.subjects.data else None,
             notes=form.notes.data.strip() if form.notes.data else None,
@@ -9636,6 +10398,8 @@ def availability_new():
 def availability_edit(aid):
     a = Availability.query.get_or_404(aid)
     form = AvailabilityForm()
+    ensure_form_branch_choices(form)
+    allowed_branch_values = {value for value, _ in getattr(form.branches, 'choices', [])}
     dept_av = [r[0] for r in db.session.query(Availability.department).distinct().filter(Availability.department.isnot(None)).all()]
     dept_st = [r[0] for r in db.session.query(Staff.department).distinct().filter(Staff.department.isnot(None)).all()]
     dept_rows = sorted(set([d for d in dept_av + dept_st if d]))
@@ -9645,14 +10409,15 @@ def availability_edit(aid):
     if request.method == 'GET':
         form.name.data = a.name
         form.department.data = a.department or ''
-        form.branches.data = [b for b in (a.branches or '').split(',') if b]
+        form.branches.data = [b for b in (a.branches or '').split(',') if b and b in allowed_branch_values]
         form.days.data = a.days
         form.subjects.data = a.subjects
         form.notes.data = a.notes
     if form.validate_on_submit():
+        selected_branches = [b for b in (form.branches.data or []) if b in allowed_branch_values]
         a.name = form.name.data.strip()
         a.department = (form.department.data or '').strip() or None
-        a.branches = ",".join(form.branches.data) if form.branches.data else None
+        a.branches = ",".join(selected_branches) if selected_branches else None
         a.days = form.days.data.strip() if form.days.data else None
         a.subjects = form.subjects.data.strip() if form.subjects.data else None
         a.notes = form.notes.data.strip() if form.notes.data else None
@@ -11543,6 +12308,13 @@ def staff_invoice_new():
             db.session.add(item)
         si.amount = float(total)
         db.session.commit()
+        # Handle attachments upload (optional multi-attachments)
+        try:
+            files = request.files.getlist('attachments') or []
+            if files:
+                _save_invoice_attachments(si, files)
+        except Exception as _e:
+            print(f"[WARN] Attachment upload failed: {_e}")
         if is_submit:
             # Send confirmation email to the submitter (branded HTML)
             try:
@@ -11575,6 +12347,132 @@ def staff_invoice_detail(invoice_id):
     manager = _is_staff_invoice_manager()
     return render_template('staff_invoices/detail.html', inv=inv, manager=manager)
 
+
+@app.route('/staff-invoices/<int:invoice_id>/attachments/<int:att_id>/download')
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_attachment_download(invoice_id, att_id):
+    inv = _get_staff_invoice_or_404(invoice_id)
+    att = StaffInvoiceAttachment.query.filter_by(id=att_id, invoice_id=inv.id).first_or_404()
+    # Serve as download
+    abs_path = os.path.join(app.static_folder, att.path)
+    if not os.path.exists(abs_path):
+        abort(404)
+    directory = os.path.dirname(abs_path)
+    filename = os.path.basename(abs_path)
+    return send_from_directory(directory, filename, as_attachment=True, download_name=(att.original_name or filename))
+
+
+@app.route('/staff-invoices/<int:invoice_id>/attachments/<int:att_id>/view')
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_attachment_view(invoice_id, att_id):
+    inv = _get_staff_invoice_or_404(invoice_id)
+    att = StaffInvoiceAttachment.query.filter_by(id=att_id, invoice_id=inv.id).first_or_404()
+    abs_path = os.path.join(app.static_folder, att.path)
+    if not os.path.exists(abs_path):
+        abort(404)
+    directory = os.path.dirname(abs_path)
+    filename = os.path.basename(abs_path)
+    # Serve inline if browser supports content type
+    resp = send_from_directory(directory, filename)
+    if att.content_type:
+        try:
+            resp.headers['Content-Type'] = att.content_type
+        except Exception:
+            pass
+    return resp
+
+@app.route('/staff-invoices/<int:invoice_id>/attachments/<int:att_id>/delete', methods=['POST'])
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_attachment_delete(invoice_id, att_id):
+    inv = _get_staff_invoice_or_404(invoice_id)
+    att = StaffInvoiceAttachment.query.filter_by(id=att_id, invoice_id=inv.id).first_or_404()
+    manager = _is_staff_invoice_manager()
+    # Only managers or owners of Draft invoices can delete attachments
+    if (not manager) and (inv.created_by_id != current_user.id or inv.status != 'Draft'):
+        abort(403)
+    # Remove the file from disk if present
+    try:
+        abs_path = os.path.join(app.static_folder, att.path)
+        if os.path.exists(abs_path) and os.path.isfile(abs_path):
+            os.remove(abs_path)
+    except Exception:
+        pass
+    db.session.delete(att)
+    db.session.commit()
+    if request.headers.get('Accept') == 'application/json' or request.is_json:
+        return jsonify({'success': True})
+    flash('Attachment deleted', 'success')
+    return redirect(url_for('staff_invoice_detail', invoice_id=inv.id))
+
+@app.route('/staff-invoices/<int:invoice_id>/attachments/upload', methods=['POST'])
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_attachment_upload(invoice_id):
+    inv = _get_staff_invoice_or_404(invoice_id)
+    manager = _is_staff_invoice_manager()
+    # Only managers or owners of Draft invoices can upload attachments
+    if (not manager) and (inv.created_by_id != current_user.id or inv.status != 'Draft'):
+        abort(403)
+    files = request.files.getlist('file') or request.files.getlist('attachments') or []
+    if not files:
+        return jsonify({'success': False, 'error': 'No files uploaded'}), 400
+    created = _save_invoice_attachments(inv, files)
+    if not created:
+        return jsonify({'success': False, 'error': 'No valid files'}), 400
+    def _att_json(a: StaffInvoiceAttachment):
+        return {
+            'id': a.id,
+            'name': a.original_name or os.path.basename(a.path),
+            'view_url': url_for('staff_invoice_attachment_view', invoice_id=inv.id, att_id=a.id),
+            'download_url': url_for('staff_invoice_attachment_download', invoice_id=inv.id, att_id=a.id),
+            'delete_url': url_for('staff_invoice_attachment_delete', invoice_id=inv.id, att_id=a.id),
+            'content_type': a.content_type,
+            'file_size': a.file_size,
+        }
+    return jsonify({'success': True, 'attachments': [_att_json(a) for a in created]})
+
+@app.route('/staff-invoices/start-draft', methods=['POST'])
+@login_required
+@permission_required('submit_staff_invoices','manage_staff_invoices', any=True)
+def staff_invoice_start_draft():
+    # Create a minimal Draft invoice so the user can use drag-and-drop uploads on the edit page
+    try:
+        month_str = (request.form.get('month') or '').strip()
+        year_str = (request.form.get('year') or '').strip()
+        month = int(month_str) if month_str.isdigit() else None
+        year = int(year_str) if year_str.isdigit() else None
+    except Exception:
+        month = None
+        year = None
+    # Default to current month/year if not provided
+    today = date.today()
+    if not month:
+        month = today.month
+    if not year:
+        year = today.year
+    # Build automatic name similar to 'new' route
+    try:
+        import calendar as _cal
+        month_label = _cal.month_name[int(month or 0)]
+    except Exception:
+        month_label = str(month or '')
+    name_default = f"{getattr(current_user,'name', 'Invoice')} {month_label} {year}"
+    inv = StaffInvoice(
+        name=name_default,
+        month=month,
+        year=year,
+        amount=0.0,
+        status='Draft',
+        created_by_id=current_user.id,
+        submitted_at=None,
+    )
+    db.session.add(inv)
+    db.session.commit()
+    flash('Draft created. You can now add items and upload attachments.', 'success')
+    return redirect(url_for('staff_invoice_edit', invoice_id=inv.id))
 
 @app.route('/staff-invoices/<int:invoice_id>/edit', methods=['GET','POST'])
 @login_required
@@ -11675,6 +12573,13 @@ def staff_invoice_edit(invoice_id):
                 except Exception as _e:
                     print(f"[WARN] Staff invoice confirmation email failed: {_e}")
             db.session.commit()
+            # Handle new attachments added during edit (reuse common helper; includes HEIC/HEIF)
+            try:
+                files = request.files.getlist('attachments') or []
+                if files:
+                    _save_invoice_attachments(inv, files)
+            except Exception as _e:
+                print(f"[WARN] Attachment upload failed: {_e}")
             flash('Invoice updated', 'success')
             return redirect(url_for('staff_invoice_detail', invoice_id=inv.id))
     # Provide a default_rate from staff record so new rows added client-side can default to it
@@ -14346,9 +15251,52 @@ def student_concerns_index():
         .order_by(func.count(StudentConcern.id).asc())\
         .limit(5).all()
 
+    eligible_meeting_roles = {'admin', 'supervisor', 'centre_manager', 'superadmin'}
+    meeting_participants = (User.query
+                            .filter(User.is_active.is_(True), User.is_approved.is_(True))
+                            .filter(User.role.in_(tuple(eligible_meeting_roles)))
+                            .order_by(User.name.asc())
+                            .all())
+    if current_user.is_authenticated:
+        participant_ids = {user.id for user in meeting_participants}
+        if current_user.id not in participant_ids:
+            meeting_participants.append(current_user)
+            meeting_participants.sort(key=lambda u: (u.name or '').lower())
+
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     records = pagination.items
-    return render_template('concerns/index.html', records=records, pagination=pagination, q=q, student=student, years=years, subjects_selected=subjects, tutors_selected=tutors, reasons_selected=reasons, statuses_selected=statuses, sort=sort, direction=direction, subject_options=subject_options, year_options=year_options, tutor_options=tutor_options, reason_options=reason_options, status_options=status_options, metrics_overall=metrics_overall, metrics_filtered=metrics_filtered, dept_overall=dept_overall, tutors_top_overall=tutors_top_overall, tutors_least_overall=tutors_least_overall, subjects_top_overall=subjects_top_overall, subjects_least_overall=subjects_least_overall, dept_filtered=dept_filtered, tutors_top_filtered=tutors_top_filtered, tutors_least_filtered=tutors_least_filtered, subjects_top_filtered=subjects_top_filtered, subjects_least_filtered=subjects_least_filtered)
+    return render_template(
+        'concerns/index.html',
+        records=records,
+        pagination=pagination,
+        q=q,
+        student=student,
+        years=years,
+        subjects_selected=subjects,
+        tutors_selected=tutors,
+        reasons_selected=reasons,
+        statuses_selected=statuses,
+        sort=sort,
+        direction=direction,
+        subject_options=subject_options,
+        year_options=year_options,
+        tutor_options=tutor_options,
+        reason_options=reason_options,
+        status_options=status_options,
+        metrics_overall=metrics_overall,
+        metrics_filtered=metrics_filtered,
+        dept_overall=dept_overall,
+        tutors_top_overall=tutors_top_overall,
+        tutors_least_overall=tutors_least_overall,
+        subjects_top_overall=subjects_top_overall,
+        subjects_least_overall=subjects_least_overall,
+        dept_filtered=dept_filtered,
+        tutors_top_filtered=tutors_top_filtered,
+        tutors_least_filtered=tutors_least_filtered,
+        subjects_top_filtered=subjects_top_filtered,
+        subjects_least_filtered=subjects_least_filtered,
+        meeting_participants=meeting_participants,
+    )
 
 
 @app.route('/student-concerns/export')

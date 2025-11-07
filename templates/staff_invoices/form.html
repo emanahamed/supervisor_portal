@@ -6,7 +6,7 @@
 {% block content %}
 <h1 class="text-xl font-semibold mb-4">{{ 'Edit' if inv else 'New' }} Staff Invoice</h1>
 
-<form method="post" action="{{ url_for('staff_invoice_edit', invoice_id=inv.id) if (inv is defined and inv) else url_for('staff_invoice_new') }}" x-data="invoiceForm()" @submit="beforeSubmit($event)" class="w-full">
+<form method="post" enctype="multipart/form-data" action="{{ url_for('staff_invoice_edit', invoice_id=inv.id) if (inv is defined and inv) else url_for('staff_invoice_new') }}" x-data="invoiceForm()" @submit="beforeSubmit($event)" class="w-full">
   {{ csrf_field() }}
   {{ form.hidden_tag() }}
   <div class="w-full max-w-7xl mx-auto space-y-6 px-3 sm:px-6 lg:px-8">
@@ -121,6 +121,41 @@
       </div>
     </div>
 
+    <div class="bg-white border rounded p-4">
+      <label class="block text-sm text-gray-600 mb-2">Attach attendance sheets (optional)</label>
+      <input id="attachments-input" type="file" name="attachments" multiple accept=".pdf,image/*" class="form-input w-full" />
+      <div id="attachments-drop" class="mt-3 p-4 border-2 border-dashed rounded text-center text-sm text-gray-600">
+        Drag and drop files here to upload, or use the file picker above.
+        <div id="attachments-progress" class="mt-2 hidden">
+          <div class="w-full bg-gray-100 rounded h-2">
+            <div class="bg-blue-600 h-2 rounded" style="width:0%" id="attachments-progress-bar"></div>
+          </div>
+          <div class="text-xs text-gray-500 mt-1" id="attachments-progress-text"></div>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mt-2">You can attach PDFs or images (including HEIC/HEIF). These will be linked to this invoice.</p>
+      {% if inv and inv.attachments %}
+      <div class="mt-3 text-sm text-gray-700">
+        <div class="font-medium mb-1">Existing attachments</div>
+        <ul class="list-disc pl-5">
+          {% for a in inv.attachments %}
+            <li>
+              {{ a.original_name or a.path }}
+              <a class="text-blue-700 hover:underline ml-2" href="{{ url_for('staff_invoice_attachment_view', invoice_id=inv.id, att_id=a.id) }}" target="_blank">View</a>
+              <a class="text-blue-700 hover:underline ml-2" href="{{ url_for('staff_invoice_attachment_download', invoice_id=inv.id, att_id=a.id) }}">Download</a>
+              {% if manager or (inv.status == 'Draft' and inv.created_by_id == (current_user and current_user.id)) %}
+              <form method="post" action="{{ url_for('staff_invoice_attachment_delete', invoice_id=inv.id, att_id=a.id) }}" class="inline ml-2" onsubmit="return confirm('Delete this attachment?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="text-red-700 hover:underline">Delete</button>
+              </form>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+
     <div class="flex items-center justify-end gap-6">
       <div class="text-sm text-gray-700">
         <div class="font-medium">Total Hours</div>
@@ -143,6 +178,17 @@
         <svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"></path></svg>
         <span class="btn-label">Submit Invoice</span>
       </button>
+      {% if not inv %}
+      <form id="start-draft-form" method="post" action="{{ url_for('staff_invoice_start_draft') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input type="hidden" name="month" id="start-draft-month" />
+        <input type="hidden" name="year" id="start-draft-year" />
+        <button class="icon-btn secondary" type="submit" title="Create draft and continue editing">
+          <svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          <span class="btn-label">Create Draft & Continue</span>
+        </button>
+      </form>
+      {% endif %}
     </div>
   </div>
   
@@ -346,6 +392,99 @@ function invoiceForm() {
   }
 }
 function itemRow() { return {} }
+</script>
+
+<script>
+// Lightweight drag-and-drop upload with progress
+(function(){
+  const drop = document.getElementById('attachments-drop');
+  if (!drop) return;
+  const input = document.getElementById('attachments-input');
+  const bar = document.getElementById('attachments-progress-bar');
+  const box = document.getElementById('attachments-progress');
+  const txt = document.getElementById('attachments-progress-text');
+  const csrf = (document.querySelector('meta[name="csrf-token"]')||{}).content || (document.querySelector('input[name="csrf_token"]')||{}).value || '';
+  function uploadFiles(files){
+    if(!files || !files.length) return;
+    const url = '{{ inv and url_for('staff_invoice_attachment_upload', invoice_id=inv.id) or '' }}';
+    if(!url){ return; }
+    const fd = new FormData();
+    // send files under 'file' field
+    Array.from(files).forEach(f=> fd.append('file', f));
+    box.classList.remove('hidden');
+    bar.style.width = '0%';
+    txt.textContent = 'Starting upload…';
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    if (csrf) xhr.setRequestHeader('X-CSRFToken', csrf);
+    xhr.responseType = 'json';
+    xhr.upload.addEventListener('progress', (e)=>{
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        bar.style.width = pct + '%';
+        txt.textContent = 'Uploading… ' + pct + '%';
+      }
+    });
+    xhr.addEventListener('load', ()=>{
+      if (xhr.status>=200 && xhr.status<300 && xhr.response && xhr.response.success) {
+        bar.style.width = '100%';
+        txt.textContent = 'Upload complete';
+        try {
+          const list = document.querySelector('.list-disc.pl-5');
+          if (list && xhr.response.attachments) {
+            xhr.response.attachments.forEach(a => {
+              const li = document.createElement('li');
+              li.className = 'mb-1';
+              li.innerHTML = `${'${'}a.name{'}'} <a class="text-blue-700 hover:underline ml-2" target="_blank" href="${'${'}a.view_url{'}'}">View</a> <a class="text-blue-700 hover:underline ml-2" href="${'${'}a.download_url{'}'}">Download</a> <button type="button" class="text-red-700 hover:underline ml-2 att-delete-ajax" data-delete-url="${'${'}a.delete_url{'}'}">Delete</button>`;
+              list.appendChild(li);
+            });
+          }
+        } catch (e) {}
+      } else {
+        txt.textContent = 'Upload failed';
+      }
+      setTimeout(()=>{ box.classList.add('hidden'); }, 1200);
+    });
+    xhr.addEventListener('error', ()=>{
+      txt.textContent = 'Upload failed';
+      setTimeout(()=>{ box.classList.add('hidden'); }, 1200);
+    });
+    xhr.send(fd);
+  }
+  drop.addEventListener('dragover', (e)=>{ e.preventDefault(); drop.classList.add('bg-gray-50'); });
+  drop.addEventListener('dragleave', ()=> drop.classList.remove('bg-gray-50'));
+  drop.addEventListener('drop', (e)=>{ e.preventDefault(); drop.classList.remove('bg-gray-50'); uploadFiles(e.dataTransfer.files); });
+  input && input.addEventListener('change', (e)=> uploadFiles(e.target.files));
+  // delegated click for just-uploaded delete buttons
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.att-delete-ajax');
+    if (!btn) return;
+    e.preventDefault();
+    const url = btn.getAttribute('data-delete-url');
+    if (!url) return;
+    if (!confirm('Delete this attachment?')) return;
+    fetch(url, { method: 'POST', headers: csrf ? { 'X-CSRFToken': csrf, 'Accept':'application/json' } : { 'Accept':'application/json' } })
+      .then(r => r.json()).then(resp => {
+        if (resp && resp.success) {
+          const li = btn.closest('li');
+          if (li) li.parentNode.removeChild(li);
+        }
+      }).catch(()=>{});
+  });
+})();
+// Populate the start-draft hidden fields from current Month/Year selection
+(function(){
+  const f = document.getElementById('start-draft-form');
+  if (!f) return;
+  f.addEventListener('submit', ()=>{
+    const monthSel = document.querySelector('select[name="{{ form.month.name }}"]');
+    const yearInput = document.querySelector('input[name="{{ form.year.name }}"]');
+    const m = document.getElementById('start-draft-month');
+    const y = document.getElementById('start-draft-year');
+    if (m && monthSel) m.value = monthSel.value || '';
+    if (y && yearInput) y.value = yearInput.value || '';
+  });
+})();
 </script>
 
 {% endblock %}

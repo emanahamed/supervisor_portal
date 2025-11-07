@@ -1,18 +1,32 @@
 {% extends 'base.html' %}
 
 {% block content %}
+{% macro sort_label(label, key) %}
+  {% set url = sort_urls.get(key, '#') %}
+  <a href="{{ url }}" class="inline-flex items-center gap-1 hover:text-indigo-600">
+    <span>{{ label }}</span>
+    {% if sort == key %}
+      <span class="text-xs">{% if direction == 'asc' %}&uarr;{% else %}&darr;{% endif %}</span>
+    {% else %}
+      <span class="text-xs opacity-50">&varr;</span>
+    {% endif %}
+  </a>
+{% endmacro %}
+
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-xl font-semibold">Staff Attendance</h1>
   <div class="flex items-center gap-2">
     <button id="open-import-modal" class="btn btn-primary">Import Attendance</button>
-    <a href="{{ url_for('staff_attendance_index') }}?branch=Whitechapel" class="btn btn-ghost">Run: Whitechapel</a>
   </div>
 </div>
 
-<form method="get" class="mb-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+<form method="get" class="mb-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 items-end bg-white p-4 rounded shadow-sm">
+  <input type="hidden" name="sort" value="{{ sort }}" />
+  <input type="hidden" name="direction" value="{{ direction }}" />
+
   <div>
     <label class="label">Branch</label>
-    <select name="branch" class="input">
+    <select name="branch" class="input w-full">
       <option value="">All</option>
       {% for b in branches %}
       <option value="{{ b }}" {% if filters.get('branch')==b %}selected{% endif %}>{{ b }}</option>
@@ -20,73 +34,134 @@
     </select>
   </div>
   <div>
-    <label class="label">Staff ID</label>
-    <input type="text" name="staff_id" value="{{ filters.get('staff_id','') }}" class="input" />
+    <label class="label">Employee (name / ID / code)</label>
+    <input type="text" name="employee" value="{{ filters.get('employee','') }}" class="input w-full" placeholder="e.g. Jane" />
+  </div>
+  <div>
+    <label class="label">Staff ID (exact)</label>
+    <input type="text" name="staff_id" value="{{ filters.get('staff_id','') }}" class="input w-full" />
+  </div>
+  <div>
+    <label class="label">Machine ID (contains)</label>
+    <input type="text" name="machine_id" value="{{ filters.get('machine_id','') }}" class="input w-full" />
+  </div>
+  <div>
+    <label class="label">Month</label>
+    <input type="month" name="month" value="{{ filters.get('month','') }}" class="input w-full" />
+  </div>
+  <div>
+    <label class="label">Start Date (dd/mm/yyyy)</label>
+    <input type="text" name="start" value="{{ filters.get('start','') }}" class="input w-full" />
+  </div>
+  <div>
+    <label class="label">End Date (dd/mm/yyyy)</label>
+    <input type="text" name="end" value="{{ filters.get('end','') }}" class="input w-full" />
   </div>
   <div>
     <label class="label">Late</label>
-    <select name="late" class="input">
+    <select name="late" class="input w-full">
       <option value="">Any</option>
       <option value="yes" {% if filters.get('late')=='yes' %}selected{% endif %}>Yes</option>
     </select>
   </div>
   <div>
-    <label class="label">Start Date (dd/mm/yyyy)</label>
-    <input type="text" name="start" value="{{ filters.get('start','') }}" class="input" />
+    <label class="label">Per page</label>
+    <select name="per_page" class="input w-full">
+      {% for option in per_page_options %}
+      <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
   </div>
-  <div>
-    <label class="label">End Date (dd/mm/yyyy)</label>
-    <input type="text" name="end" value="{{ filters.get('end','') }}" class="input" />
-  </div>
-  <div class="flex items-end">
-    <button type="submit" class="btn btn-primary">Filter</button>
-    <a href="{{ url_for('staff_attendance_index') }}" class="ml-2 btn btn-secondary">Reset</a>
+  <div class="flex flex-wrap gap-2 items-center">
+    <button type="submit" class="btn btn-primary">Apply Filters</button>
+    <a href="{{ url_for('staff_attendance_index') }}" class="btn btn-secondary">Reset</a>
   </div>
 </form>
+
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 text-sm text-gray-600">
+  <div>
+    {% if total %}
+    Showing {{ from_record }} – {{ to_record }} of {{ total }} record{% if total != 1 %}s{% endif %}
+    {% else %}
+    No attendance records found for the selected filters.
+    {% endif %}
+  </div>
+  <div class="flex items-center gap-2">
+    {% if has_prev %}
+    <a href="{{ prev_url }}" class="btn btn-sm btn-secondary">Prev</a>
+    {% else %}
+    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Prev</span>
+    {% endif %}
+    <span>Page {{ page }} of {{ total_pages }}</span>
+    {% if has_next %}
+    <a href="{{ next_url }}" class="btn btn-sm btn-secondary">Next</a>
+    {% else %}
+    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Next</span>
+    {% endif %}
+  </div>
+</div>
 
 <div class="overflow-x-auto bg-white rounded shadow">
   <table class="table-auto w-full text-sm divide-y">
   <thead>
     <tr>
-      <th>Staff ID</th>
-      <th>Name</th>
-      <th>Branch</th>
-      <th>Day</th>
-      <th>Date</th>
-      <th>Check In</th>
-      <th>Check Out</th>
-      <th>Late</th>
-      <th>Hours</th>
+      <th class="text-left px-4 py-3">{{ sort_label('Staff', 'staff') }}</th>
+      <th class="text-left px-4 py-3">Machine</th>
+      <th class="text-left px-4 py-3">{{ sort_label('Branch', 'branch') }}</th>
+      <th class="text-left px-4 py-3">{{ sort_label('Date', 'date') }}</th>
+      <th class="text-left px-4 py-3">Day</th>
+      <th class="text-left px-4 py-3">{{ sort_label('Check In', 'check_in') }}</th>
+      <th class="text-left px-4 py-3">{{ sort_label('Check Out', 'check_out') }}</th>
+      <th class="text-left px-4 py-3">{{ sort_label('Hours', 'hours') }}</th>
+      <th class="text-left px-4 py-3">{{ sort_label('Late (min)', 'late') }}</th>
     </tr>
   </thead>
   <tbody>
     {% for r in records %}
-    <tr>
-      <td>{{ r.staff_id or r.machine_id or '—' }}</td>
-      <td>{{ staff_map.get(r.staff_id).name if r.staff_id and staff_map.get(r.staff_id) else '—' }}</td>
-      <td>{{ r.branch or '—' }}</td>
-      <td>{{ r.day or '—' }}</td>
-      <td>{{ r.date.strftime('%d/%m/%Y') if r.date else '—' }}</td>
-      <td>{{ r.check_in.strftime('%H:%M:%S') if r.check_in else '—' }}</td>
-      <td>{{ r.check_out.strftime('%H:%M:%S') if r.check_out else '—' }}</td>
-      <td>{{ r.late_minutes or '—' }}</td>
-      <td>{{ r.hours_hhmmss() }}</td>
+    <tr class="odd:bg-slate-50">
+      <td class="px-4 py-3">
+        {% set staff_obj = staff_map.get(r.staff_id) if r.staff_id else None %}
+        <div class="font-medium text-slate-800">{{ staff_obj.name if staff_obj else 'Unassigned' }}</div>
+        <div class="text-xs text-slate-500">ID: {{ r.staff_id or '—' }}</div>
+      </td>
+      <td class="px-4 py-3 text-slate-700">{{ r.machine_id or '—' }}</td>
+      <td class="px-4 py-3">
+        {% if r.branch %}
+        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{{ r.branch }}</span>
+        {% else %}
+        <span class="text-slate-400">—</span>
+        {% endif %}
+      </td>
+      <td class="px-4 py-3">{{ r.date.strftime('%d/%m/%Y') if r.date else '—' }}</td>
+      <td class="px-4 py-3 text-slate-600">{{ r.day or '—' }}</td>
+      <td class="px-4 py-3">{{ r.check_in.strftime('%H:%M:%S') if r.check_in else '—' }}</td>
+      <td class="px-4 py-3">{{ r.check_out.strftime('%H:%M:%S') if r.check_out else '—' }}</td>
+      <td class="px-4 py-3 font-mono text-sm">{{ r.hours_hhmmss() }}</td>
+      <td class="px-4 py-3">{{ r.late_minutes if r.late_minutes is not none else '—' }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="9">No records found</td></tr>
+    <tr>
+      <td colspan="9" class="px-4 py-6 text-center text-slate-500">Upload an attendance sheet or adjust your filters to see results.</td>
+    </tr>
     {% endfor %}
   </tbody>
 </table>
 
 </div>
 
-<div class="mt-4 flex items-center justify-between text-sm text-gray-600">
-  <div>Showing page {{ page }} ({{ per_page }} per page) — total {{ total }}</div>
+<div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600 gap-2">
+  <div>Page {{ page }} of {{ total_pages }} — displaying up to {{ per_page }} rows per page.</div>
   <div class="flex items-center gap-2">
-    {% if page|int > 1 %}
-    <a href="?page={{ page-1 }}" class="btn btn-sm btn-secondary">Prev</a>
+    {% if has_prev %}
+    <a href="{{ prev_url }}" class="btn btn-sm btn-secondary">Prev</a>
+    {% else %}
+    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Prev</span>
     {% endif %}
-    <a href="?page={{ page+1 }}" class="btn btn-sm btn-secondary">Next</a>
+    {% if has_next %}
+    <a href="{{ next_url }}" class="btn btn-sm btn-secondary">Next</a>
+    {% else %}
+    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Next</span>
+    {% endif %}
   </div>
 </div>
 

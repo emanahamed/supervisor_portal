@@ -1,0 +1,105 @@
+{% extends 'base.html' %} {% block content %}
+<h1 class="text-xl font-semibold mb-4">Attendance Import Summary</h1>
+
+<div class="grid md:grid-cols-2 gap-4 mb-6">
+  <div class="p-4 bg-white rounded shadow">
+    <div class="text-gray-600 text-sm">Branch</div>
+    <div class="text-lg">{{ branch or '—' }}</div>
+  </div>
+  <div class="p-4 bg-white rounded shadow">
+    <div class="text-gray-600 text-sm">Rows processed</div>
+    <div class="text-lg">{{ anomalies.total_rows if anomalies else '—' }}</div>
+  </div>
+  <div class="p-4 bg-white rounded shadow">
+    <div class="text-gray-600 text-sm">Inserted</div>
+    <div class="text-lg text-emerald-700">{{ imported }}</div>
+  </div>
+  <div class="p-4 bg-white rounded shadow">
+    <div class="text-gray-600 text-sm">Updated</div>
+    <div class="text-lg text-blue-700">{{ updated }}</div>
+  </div>
+  <div class="p-4 bg-white rounded shadow">
+    <div class="text-gray-600 text-sm">Skipped (no date)</div>
+    <div class="text-lg text-orange-700">
+      {{ anomalies.skipped_no_date if anomalies else 0 }}
+    </div>
+  </div>
+</div>
+
+{% if anomalies and anomalies.unmapped_staff %}
+<div class="mb-6">
+  <h2 class="text-lg font-semibold mb-2">Unmapped staff</h2>
+  <div class="overflow-x-auto bg-white rounded shadow">
+    <table class="table-auto w-full text-sm">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Machine</th>
+          <th>Staff ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in anomalies.unmapped_staff[:100] %}
+        <tr>
+          <td>{{ it.date }}</td>
+          <td>{{ it.machine or '—' }}</td>
+          <td>{{ it.staffid or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if anomalies.unmapped_staff|length > 100 %}
+  <div class="text-sm text-gray-500 mt-2">
+    + {{ anomalies.unmapped_staff|length - 100 }} more...
+  </div>
+  {% endif %}
+  <p class="text-sm text-gray-600 mt-2">
+    Tip: ensure Machine ID or Staff ID/Access Code matches a staff record.
+  </p>
+</div>
+{% endif %} {% if anomalies and anomalies.bad_time %}
+<div class="mb-6">
+  <h2 class="text-lg font-semibold mb-2">Unparsable time values</h2>
+  <div class="overflow-x-auto bg-white rounded shadow">
+    <table class="table-auto w-full text-sm">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Field</th>
+          <th>Value</th>
+          <th>Staff ID</th>
+          <th>Machine</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in anomalies.bad_time[:100] %}
+        <tr>
+          <td>{{ it.date }}</td>
+          <td>{{ it.where }}</td>
+          <td>{{ it.value }}</td>
+          <td>{{ it.staffid or '—' }}</td>
+          <td>{{ it.machine or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if anomalies.bad_time|length > 100 %}
+  <div class="text-sm text-gray-500 mt-2">
+    + {{ anomalies.bad_time|length - 100 }} more...
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="flex gap-2">
+  <a href="{{ url_for('staff_attendance_index') }}" class="btn btn-primary"
+    >Back to Attendance</a
+  >
+  <a href="{{ url_for('staff_attendance_import') }}" class="btn btn-secondary"
+    >Import another file</a
+  >
+</div>
+
+{% endblock %}
