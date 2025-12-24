@@ -30,7 +30,19 @@
         </tr>
       </thead>
       <tbody>
-        {% for p in perms %}
+        {% set groups = permission_groups if permission_groups is defined and permission_groups else [{'slug': 'all', 'label': 'All Permissions', 'description': '', 'permissions': perms}] %}
+        {% for group in groups %}
+        <tr class="bg-slate-100/70">
+          <td class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600" colspan="3">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <span>{{ group.label }}</span>
+              {% if group.description %}
+              <span class="text-[11px] font-normal text-slate-500">{{ group.description }}</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% for p in group.permissions %}
         {% set ov = overrides.get(p.key) %}
         <tr class="border-t border-slate-200 hover:bg-slate-50/50">
           <td class="px-3 py-2 font-mono text-xs">{{ p.key }}</td>
@@ -43,6 +55,7 @@
             </div>
           </td>
         </tr>
+        {% endfor %}
         {% endfor %}
       </tbody>
     </table>

@@ -1,0 +1,244 @@
+{% extends 'base.html' %}
+{% from 'components/forms_macros.html' import csrf_field %}
+{% block title %}Admission Assessment #{{ submission.id }} — Excel Tutors{% endblock %}
+{% block page_title %}Admission Assessment Detail{% endblock %}
+{% block content %}
+<div class="space-y-6">
+  <div class="flex items-center gap-2 text-xs">
+    <a class="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500" href="{{ url_for('admission_assessments_index') }}">
+      <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+      Back to submissions
+    </a>
+  </div>
+
+  {% set hero_status_map = {
+    'Application Submitted': 'bg-white/20 text-white border border-white/30',
+    'Contacted': 'bg-amber-200/90 text-amber-900',
+    'Enrolled': 'bg-emerald-300/90 text-emerald-900',
+    'Not Enrolled': 'bg-rose-300/90 text-rose-900'
+  } %}
+
+  <section class="rounded-3xl bg-gradient-to-r from-indigo-600 via-sky-500 to-blue-500 p-6 text-white shadow-xl md:p-8">
+    <div class="flex flex-wrap items-start justify-between gap-6">
+      <div class="space-y-3">
+        <span class="inline-flex items-center gap-2 text-xs uppercase tracking-wider text-white/80">
+          Submission #{{ submission.id }}
+          <span class="h-1 w-1 rounded-full bg-white/50"></span>
+          {{ submission.created_at|fmt_datetime }}
+        </span>
+        <h2 class="text-2xl font-semibold md:text-3xl">{{ submission.student_name }}</h2>
+        <div class="flex flex-wrap gap-3 text-sm text-white/85">
+          {% if submission.student_year_group %}
+          <span class="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1">Year {{ submission.student_year_group }}</span>
+          {% endif %}
+          <span class="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1">{{ submission.branch or 'Branch not set' }}</span>
+          <span class="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1">{{ submission.heard_about or 'Discovery not set' }}</span>
+        </div>
+      </div>
+      <div class="flex flex-col gap-3 rounded-2xl bg-white/90 px-5 py-4 text-sm text-slate-800 shadow-lg">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-slate-900">Current status</span>
+          <span class="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold {{ hero_status_map.get(submission.status or 'Application Submitted', 'bg-white/20 text-white border border-white/30') }}">{{ submission.status or 'Application Submitted' }}</span>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wide text-slate-500">Parent / guardian</div>
+          <div class="font-medium text-slate-900">{{ submission.parent_name }}</div>
+          <div class="text-xs text-slate-600">{{ submission.parent_email or 'Email not provided' }}</div>
+          <div class="text-xs text-slate-600">{{ submission.parent_phone }}</div>
+        </div>
+        <div class="text-[11px] text-slate-500">Last updated {{ submission.updated_at|fmt_datetime if submission.updated_at else '—' }}</div>
+      </div>
+    </div>
+    {% if subjects %}
+    <div class="mt-6 flex flex-wrap gap-2">
+      {% for subj in subjects %}
+      <span class="inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white/90 ring-1 ring-white/40">{{ subj }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <div class="grid gap-6 xl:grid-cols-[2fr,1fr]">
+    <section class="space-y-6">
+      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <form method="post" action="{{ url_for('admission_assessment_update_status', submission_id=submission.id) }}" class="space-y-4">
+          {{ csrf_field() }}
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-base font-semibold text-slate-800">Status &amp; next step</h3>
+              <p class="text-xs text-slate-500">Last change {{ submission.status_updated_at|fmt_datetime if submission.status_updated_at else '—' }}</p>
+            </div>
+            <span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">{{ submission.status or 'Application Submitted' }}</span>
+          </div>
+          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr),auto]">
+            <select class="soft-input w-full rounded-xl border-slate-200" name="status">
+              {% for s in statuses %}
+              <option value="{{ s }}" {% if (submission.status or 'Application Submitted') == s %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="soft-btn soft-btn-primary px-6">Update</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-800">Assessment scores</h3>
+            <p class="text-xs text-slate-500">Percentages auto-calculate when you update marks or totals.</p>
+          </div>
+          {% if submission.parent_email %}
+          <span class="text-[11px] text-slate-400">Parent email: {{ submission.parent_email }}</span>
+          {% endif %}
+        </div>
+
+        <form method="post" action="{{ url_for('admission_assessment_save_scores', submission_id=submission.id) }}" class="space-y-4">
+          {{ csrf_field() }}
+          <div class="space-y-4">
+            {% for subj in subjects %}
+            {% set score = scores_map.get(subj) %}
+              <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm" data-score-card>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <h4 class="text-sm font-semibold text-slate-800">{{ subj }}</h4>
+                  <div class="flex items-center gap-2 text-[11px] text-slate-500">
+                    <span class="text-sm font-semibold text-indigo-600" data-score-display>{{ '%.1f%%'|format(score.percentage|float) if score and score.percentage is not none else '—' }}</span>
+                    <span>Auto-calculated from marks ÷ total</span>
+                  </div>
+                </div>
+              <input type="hidden" name="scores-{{ loop.index0 }}-subject" value="{{ subj }}" />
+              <div class="grid gap-3 md:grid-cols-3">
+                <div class="space-y-1">
+                    <label class="text-[11px] font-medium text-slate-500">Marks achieved</label>
+                  <input class="soft-input w-full" type="number" step="0.01" min="0" name="scores-{{ loop.index0 }}-marks" value="{{ '{:.2f}'.format(score.marks_achieved) if score and score.marks_achieved is not none else '' }}" data-score-marks />
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[11px] font-medium text-slate-500">Total marks</label>
+                  <input class="soft-input w-full" type="number" step="0.01" min="0" name="scores-{{ loop.index0 }}-total" value="{{ '{:.2f}'.format(score.total_marks) if score and score.total_marks is not none else '' }}" data-score-total />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-medium text-slate-500">Percentage</label>
+                  <input class="soft-input w-full bg-white" type="number" step="0.01" min="0" max="100" name="scores-{{ loop.index0 }}-percentage" value="{{ '{:.2f}'.format(score.percentage) if score and score.percentage is not none else '' }}" data-score-percentage readonly />
+                </div>
+              </div>
+              <div class="space-y-1">
+                <label class="text-[11px] font-medium text-slate-500">Improvement recommendation</label>
+                <textarea class="soft-input w-full text-sm" rows="2" name="scores-{{ loop.index0 }}-recommendation">{{ score.recommendation if score and score.recommendation else '' }}</textarea>
+              </div>
+            </div>
+            {% endfor %}
+            {% if not subjects %}
+            <div class="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">No subjects were supplied on the original submission.</div>
+            {% endif %}
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <button type="submit" class="soft-btn soft-btn-primary">Save scores</button>
+            <span class="text-[11px] text-slate-400">Save updates before sending to parents.</span>
+          </div>
+        </form>
+
+        <form method="post" action="{{ url_for('admission_assessment_send_scores', submission_id=submission.id) }}" class="flex justify-end">
+          {{ csrf_field() }}
+          <button type="submit" class="soft-btn bg-indigo-600 text-white hover:bg-indigo-500" {% if not subjects %}disabled{% endif %}>Send scores email</button>
+        </form>
+      </div>
+    </section>
+
+    <aside class="space-y-6">
+      <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-semibold text-slate-800">Internal notes</h3>
+          <span class="text-[11px] text-slate-400">Visible to admissions staff only</span>
+        </div>
+        <form method="post" action="{{ url_for('admission_assessment_add_note', submission_id=submission.id) }}" class="space-y-2">
+          {{ csrf_field() }}
+          <textarea class="soft-input w-full text-sm" name="note_body" rows="3" placeholder="Add a note for colleagues..."></textarea>
+          <button type="submit" class="soft-btn bg-slate-900 text-white hover:bg-slate-700">Add note</button>
+        </form>
+        <div class="space-y-4">
+          {% for note in notes %}
+          <div class="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3 shadow-sm">
+            <div class="flex items-center justify-between text-[11px] text-slate-500">
+              <span>{{ note.user.name if note.user else 'System' }}</span>
+              <span>{{ note.created_at|fmt_datetime }}</span>
+            </div>
+            <p class="mt-2 text-sm text-slate-700">{{ note.body }}</p>
+          </div>
+          {% else %}
+          <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">No notes yet.</div>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% if current_user.is_superadmin %}
+      <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+        <h3 class="text-base font-semibold text-slate-800">Change log</h3>
+        <div class="space-y-3 max-h-80 overflow-auto pr-1">
+          {% for change in changes %}
+          <div class="rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 text-xs text-slate-600">
+            <div class="flex items-center justify-between">
+              <span class="font-medium text-slate-800">{{ change.field }}</span>
+              <span class="text-[10px] text-slate-400">{{ change.created_at|fmt_datetime }}</span>
+            </div>
+            <div class="mt-1 text-[11px] text-slate-500">By {{ change.user.name if change.user else 'System' }}</div>
+            <div class="mt-2 grid gap-1 text-[11px]">
+              <div><span class="font-medium text-slate-500">From:</span> {{ change.old_value or '—' }}</div>
+              <div><span class="font-medium text-slate-500">To:</span> {{ change.new_value or '—' }}</div>
+            </div>
+          </div>
+          {% else %}
+          <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">No changes recorded yet.</div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const cards = document.querySelectorAll('[data-score-card]');
+  cards.forEach((card) => {
+    const marks = card.querySelector('[data-score-marks]');
+    const total = card.querySelector('[data-score-total]');
+    const percentage = card.querySelector('[data-score-percentage]');
+    const display = card.querySelector('[data-score-display]');
+    if (!marks || !total || !percentage) {
+      return;
+    }
+    const recalc = () => {
+      const marksValue = parseFloat(marks.value);
+      const totalValue = parseFloat(total.value);
+      const existingPct = percentage.value && percentage.value.trim() !== '' ? parseFloat(percentage.value) : null;
+      if (!isFinite(marksValue) || !isFinite(totalValue) || totalValue === 0) {
+        if (!percentage.value) {
+          percentage.value = '';
+        }
+        if (display) {
+          if (existingPct !== null && isFinite(existingPct)) {
+            display.textContent = `${existingPct.toFixed(1)}%`;
+          } else if (percentage.value) {
+            display.textContent = `${percentage.value}`;
+          } else {
+            display.textContent = '—';
+          }
+        }
+        return;
+      }
+      const pct = (marksValue / totalValue) * 100;
+      percentage.value = pct.toFixed(2);
+      if (display) {
+        display.textContent = `${pct.toFixed(1)}%`;
+      }
+    };
+    ['input', 'change'].forEach((eventName) => {
+      marks.addEventListener(eventName, recalc);
+      total.addEventListener(eventName, recalc);
+    });
+    recalc();
+  });
+})();
+</script>
+{% endblock %}

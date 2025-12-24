@@ -11,13 +11,8 @@
   <input type="hidden" name="action" value="confirm" />
   <div class="mb-4">
     <label class="label">Branch</label>
-    <input
-      type="text"
-      class="input"
-      name="branch"
-      value="{{ branch }}"
-      readonly
-    />
+    <input type="hidden" name="branch" value="{{ branch }}" />
+    <input type="text" class="input" value="{{ branch or '—' }}" readonly />
   </div>
 
   <div class="overflow-auto max-h-96 mb-4">

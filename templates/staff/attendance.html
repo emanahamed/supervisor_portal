@@ -13,72 +13,77 @@
   </a>
 {% endmacro %}
 
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-xl font-semibold">Staff Attendance</h1>
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-800">Staff Attendance</h1>
+    <p class="text-sm text-slate-500">Review staff hours, late arrivals, and import history per branch.</p>
+  </div>
   <div class="flex items-center gap-2">
-    <button id="open-import-modal" class="btn btn-primary">Import Attendance</button>
+    <button id="open-import-modal" class="soft-btn soft-btn-primary">Import Attendance</button>
   </div>
 </div>
 
-<form method="get" class="mb-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 items-end bg-white p-4 rounded shadow-sm">
-  <input type="hidden" name="sort" value="{{ sort }}" />
-  <input type="hidden" name="direction" value="{{ direction }}" />
+<div class="soft-card p-4 mb-6">
+  <form method="get" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+    <input type="hidden" name="sort" value="{{ sort }}" />
+    <input type="hidden" name="direction" value="{{ direction }}" />
 
-  <div>
-    <label class="label">Branch</label>
-    <select name="branch" class="input w-full">
-      <option value="">All</option>
-      {% for b in branches %}
-      <option value="{{ b }}" {% if filters.get('branch')==b %}selected{% endif %}>{{ b }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div>
-    <label class="label">Employee (name / ID / code)</label>
-    <input type="text" name="employee" value="{{ filters.get('employee','') }}" class="input w-full" placeholder="e.g. Jane" />
-  </div>
-  <div>
-    <label class="label">Staff ID (exact)</label>
-    <input type="text" name="staff_id" value="{{ filters.get('staff_id','') }}" class="input w-full" />
-  </div>
-  <div>
-    <label class="label">Machine ID (contains)</label>
-    <input type="text" name="machine_id" value="{{ filters.get('machine_id','') }}" class="input w-full" />
-  </div>
-  <div>
-    <label class="label">Month</label>
-    <input type="month" name="month" value="{{ filters.get('month','') }}" class="input w-full" />
-  </div>
-  <div>
-    <label class="label">Start Date (dd/mm/yyyy)</label>
-    <input type="text" name="start" value="{{ filters.get('start','') }}" class="input w-full" />
-  </div>
-  <div>
-    <label class="label">End Date (dd/mm/yyyy)</label>
-    <input type="text" name="end" value="{{ filters.get('end','') }}" class="input w-full" />
-  </div>
-  <div>
-    <label class="label">Late</label>
-    <select name="late" class="input w-full">
-      <option value="">Any</option>
-      <option value="yes" {% if filters.get('late')=='yes' %}selected{% endif %}>Yes</option>
-    </select>
-  </div>
-  <div>
-    <label class="label">Per page</label>
-    <select name="per_page" class="input w-full">
-      {% for option in per_page_options %}
-      <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="flex flex-wrap gap-2 items-center">
-    <button type="submit" class="btn btn-primary">Apply Filters</button>
-    <a href="{{ url_for('staff_attendance_index') }}" class="btn btn-secondary">Reset</a>
-  </div>
-</form>
+    <div class="sm:col-span-2">
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Search staff</label>
+      <input type="search" name="employee" value="{{ filters.get('employee','') }}" class="soft-input" placeholder="Name, ID or code" />
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Branch</label>
+      <select name="branch" class="soft-input">
+        <option value="">All branches</option>
+        {% for b in branches %}
+        <option value="{{ b }}" {% if filters.get('branch')==b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Staff ID (exact)</label>
+      <input type="text" name="staff_id" value="{{ filters.get('staff_id','') }}" class="soft-input" />
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Machine ID</label>
+      <input type="text" name="machine_id" value="{{ filters.get('machine_id','') }}" class="soft-input" placeholder="Contains…" />
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Month</label>
+      <input type="month" name="month" value="{{ filters.get('month','') }}" class="soft-input" />
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Start date</label>
+      <input type="date" name="start" value="{{ filters.get('start','') }}" class="soft-input" />
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">End date</label>
+      <input type="date" name="end" value="{{ filters.get('end','') }}" class="soft-input" />
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Late arrivals</label>
+      <select name="late" class="soft-input">
+        <option value="">Any</option>
+        <option value="yes" {% if filters.get('late')=='yes' %}selected{% endif %}>Late only</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Rows per page</label>
+      <select name="per_page" class="soft-input">
+        {% for option in per_page_options %}
+        <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="sm:col-span-2 lg:col-span-2 xl:col-span-2 flex flex-wrap items-center gap-2 pt-1">
+      <button type="submit" class="soft-btn soft-btn-primary">Apply filters</button>
+      <a href="{{ url_for('staff_attendance_index') }}" class="soft-btn bg-slate-100">Reset</a>
+    </div>
+  </form>
+</div>
 
-<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 text-sm text-gray-600">
+<div class="soft-card mb-4 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-slate-600">
   <div>
     {% if total %}
     Showing {{ from_record }} – {{ to_record }} of {{ total }} record{% if total != 1 %}s{% endif %}
@@ -88,20 +93,21 @@
   </div>
   <div class="flex items-center gap-2">
     {% if has_prev %}
-    <a href="{{ prev_url }}" class="btn btn-sm btn-secondary">Prev</a>
+    <a href="{{ prev_url }}" class="soft-btn bg-slate-100">Prev</a>
     {% else %}
-    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Prev</span>
+    <span class="soft-btn bg-slate-100 opacity-60 cursor-not-allowed">Prev</span>
     {% endif %}
-    <span>Page {{ page }} of {{ total_pages }}</span>
+    <span class="text-slate-500">Page {{ page }} of {{ total_pages }}</span>
     {% if has_next %}
-    <a href="{{ next_url }}" class="btn btn-sm btn-secondary">Next</a>
+    <a href="{{ next_url }}" class="soft-btn bg-slate-100">Next</a>
     {% else %}
-    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Next</span>
+    <span class="soft-btn bg-slate-100 opacity-60 cursor-not-allowed">Next</span>
     {% endif %}
   </div>
 </div>
 
-<div class="overflow-x-auto bg-white rounded shadow">
+<div class="soft-card p-0 overflow-hidden">
+  <div class="overflow-x-auto">
   <table class="table-auto w-full text-sm divide-y">
   <thead>
     <tr>
@@ -146,22 +152,6 @@
     {% endfor %}
   </tbody>
 </table>
-
-</div>
-
-<div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600 gap-2">
-  <div>Page {{ page }} of {{ total_pages }} — displaying up to {{ per_page }} rows per page.</div>
-  <div class="flex items-center gap-2">
-    {% if has_prev %}
-    <a href="{{ prev_url }}" class="btn btn-sm btn-secondary">Prev</a>
-    {% else %}
-    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Prev</span>
-    {% endif %}
-    {% if has_next %}
-    <a href="{{ next_url }}" class="btn btn-sm btn-secondary">Next</a>
-    {% else %}
-    <span class="btn btn-sm btn-secondary pointer-events-none opacity-50">Next</span>
-    {% endif %}
   </div>
 </div>
 

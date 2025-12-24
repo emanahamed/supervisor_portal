@@ -2,6 +2,7 @@ import os
 import smtplib
 from datetime import datetime
 from datetime import datetime as _dt
+from decimal import Decimal
 from email.message import EmailMessage
 from typing import Optional, Tuple
 
@@ -516,6 +517,176 @@ def _render_email_shell(title: str, headline: str, intro: str, body_inner: str, 
 </body>
 </html>
 """
+
+
+# ---------------- Admission Assessment Emails ---------------- #
+
+def _admissions_public_url() -> str:
+    fallback = 'https://exceltutors.org.uk/admissions'
+    try:
+        from flask import current_app
+
+        for key in (
+            'PUBLIC_ADMISSIONS_URL',
+            'PUBLIC_ADMISSION_URL',
+            'ADMISSIONS_PORTAL_URL',
+            'ADMISSIONS_LANDING_URL',
+        ):
+            value = current_app.config.get(key)
+            if value:
+                return value
+    except Exception:
+        pass
+    return fallback
+
+
+def _format_decimal_display(value, *, suffix: str = '') -> str:
+    if value is None or value == '':
+        return '—'
+    try:
+        if isinstance(value, Decimal):
+            quant = value
+        else:
+            quant = Decimal(str(value))
+        text = format(quant.normalize(), 'f')
+    except Exception:
+        text = str(value)
+    if '.' in text:
+        text = text.rstrip('0').rstrip('.')
+    return f"{text}{suffix}"
+
+
+def build_admission_assessment_confirmation_email(submission) -> Tuple[str, str]:
+    parent_name = submission.parent_name or 'Parent/Guardian'
+    student_label = submission.student_name or 'your child'
+    requested_at = getattr(submission, 'created_at', None)
+    if requested_at:
+        try:
+            requested_label = requested_at.strftime('%A, %d %B %Y at %I:%M %p').lstrip('0')
+        except Exception:
+            requested_label = str(requested_at)
+    else:
+        requested_label = 'Just now'
+    subjects = list(submission.subjects_list()) if hasattr(submission, 'subjects_list') else []
+    other = (submission.subjects_other or '').strip() if getattr(submission, 'subjects_other', None) else ''
+    if other and other not in subjects:
+        subjects.append(other)
+    subjects_label = ', '.join(subjects) if subjects else '—'
+    admissions_url = _admissions_public_url()
+    subject = (
+        f"We've received {submission.student_name}'s admission assessment request"
+        if submission.student_name else
+        "We've received your admission assessment request"
+    )
+    intro = (
+        f"Dear {parent_name},<br/><br/>Thank you for submitting the admission assessment enquiry "
+        f"for {student_label}. Our admissions team will review the details within one working day."
+    )
+
+    def _summary_row(label: str, value: str) -> str:
+        safe_value = (value or '—').replace('\n', '<br/>')
+        return (
+            "<tr>"
+            f"<td style='padding:6px 0;width:200px;color:#64748b;font-weight:600;'>{label}</td>"
+            f"<td style='padding:6px 0;color:#0f172a;'>{safe_value}</td>"
+            "</tr>"
+        )
+
+    body_parts = [
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Here's a quick summary of what you sent us:</p>",
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>",
+        _summary_row('Student name', submission.student_name or '—'),
+        _summary_row('Year group', submission.student_year_group or '—'),
+        _summary_row('Preferred branch', submission.branch or '—'),
+        _summary_row('Parent contact number', submission.parent_phone or '—'),
+        _summary_row('Parent email', submission.parent_email or '—'),
+        _summary_row('Subjects of interest', subjects_label),
+        _summary_row('Heard about Excel Tutors via', submission.heard_about or '—'),
+        _summary_row('Submitted on', requested_label),
+        "</table>",
+        (
+            "<div style='margin:24px 0 16px;text-align:center;'>"
+            f"<a href='{admissions_url}' style='display:inline-block;background:#2563eb;color:#ffffff;padding:11px 22px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;'>Complete the admissions form</a>"
+            "</div>"
+        ),
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Next steps:</p>",
+        (
+            "<ul style='margin:0 0 12px 18px;padding:0;font-size:14px;color:#475569;list-style:disc;'>"
+            "<li>We will call you to confirm the most suitable assessment slot at your preferred branch.</li>"
+            "<li>Please complete the admissions form linked above so we can prepare your child's assessment file.</li>"
+            "<li>On the day of the assessment, arrive 5 minutes early and bring any recent school reports if possible.</li>"
+            "</ul>"
+        ),
+        "<p style='margin:0;font-size:13px;color:#64748b;'>If you have any questions before we reach out, reply to this email or phone 0207 0011 411.</p>",
+    ]
+    html = _render_email_shell('Admission assessment received', 'Admission assessment received', intro, ''.join(body_parts))
+    return subject, html
+
+
+def build_admission_assessment_scores_email(submission, scores: list) -> Tuple[str, str]:
+    parent_name = submission.parent_name or 'Parent/Guardian'
+    student_label = submission.student_name or 'your child'
+    admissions_url = _admissions_public_url()
+    subject = (
+        f"Admission assessment results for {submission.student_name}"
+        if submission.student_name else
+        "Admission assessment results"
+    )
+    intro = (
+        f"Dear {parent_name},<br/><br/>Thank you for completing the admission assessment with Excel Tutors. "
+        f"Below is the breakdown of {student_label}'s performance along with our academic recommendations."
+    )
+
+    rows = []
+    for score in scores:
+        subject_name = getattr(score, 'subject', 'Subject') or 'Subject'
+        marks = _format_decimal_display(getattr(score, 'marks_achieved', None))
+        total = _format_decimal_display(getattr(score, 'total_marks', None))
+        percentage = _format_decimal_display(getattr(score, 'percentage', None), suffix='%')
+        recommendation = (getattr(score, 'recommendation', None) or '—').replace('\n', '<br/>')
+        rows.append(
+            "<tr style='border-top:1px solid #e2e8f0;'>"
+            f"<td style='padding:10px 12px;font-weight:600;color:#0f172a;'>{subject_name}</td>"
+            f"<td style='padding:10px 12px;color:#0f172a;'>{marks}</td>"
+            f"<td style='padding:10px 12px;color:#0f172a;'>{total}</td>"
+            f"<td style='padding:10px 12px;color:#0f172a;'>{percentage}</td>"
+            f"<td style='padding:10px 12px;color:#334155;'>{recommendation}</td>"
+            "</tr>"
+        )
+
+    summary_block = []
+    summary_block.append(
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:13px;color:#0f172a;margin:0 0 18px;'>"
+        "<tr style='background:#f8fafc;'>"
+        "<th align='left' style='padding:10px 12px;color:#1e293b;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;'>Subject</th>"
+        "<th align='left' style='padding:10px 12px;color:#1e293b;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;'>Marks</th>"
+        "<th align='left' style='padding:10px 12px;color:#1e293b;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;'>Out of</th>"
+        "<th align='left' style='padding:10px 12px;color:#1e293b;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;'>Percentage</th>"
+        "<th align='left' style='padding:10px 12px;color:#1e293b;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;'>Recommendation</th>"
+        "</tr>"
+        + ''.join(rows)
+        + "</table>"
+    )
+
+    branch_line = submission.branch or 'your chosen branch'
+    closing = (
+        f"<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Our admissions team will contact you shortly to discuss the results and outline the best learning plan for {student_label}. "
+        f"If you have not already done so, please complete the admissions form so we can secure the most appropriate timetable at {branch_line}.</p>"
+    )
+    cta_html = (
+        "<div style='margin:18px 0 0;text-align:center;'>"
+        f"<a href='{admissions_url}' style='display:inline-block;background:#22c55e;color:#ffffff;padding:10px 22px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;'>Submit admissions form</a>"
+        "</div>"
+    )
+    support = "<p style='margin:18px 0 0;font-size:13px;color:#64748b;'>Questions? Reply to this email or phone 0207 0011 411 and the admissions desk will be happy to help.</p>"
+
+    html = _render_email_shell(
+        'Admission assessment results',
+        'Admission assessment results',
+        intro,
+        ''.join(summary_block + [closing, cta_html, support]),
+    )
+    return subject, html
 
 
 def build_job_application_confirmation_email(applicant) -> Tuple[str, str]:

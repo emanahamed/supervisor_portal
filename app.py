@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import random
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -56,7 +57,9 @@ from forms import (RESOURCE_STATUS_CHOICES, RESOURCE_TYPE_CHOICES,
                    MeetingForm, ObservationForm, PricingConfigForm,
                    RegisterForm, ResourceBulkForm, ResourceForm, StaffForm,
                    StaffInvoiceForm, StudentForm, TodoForm, UserProfileForm)
-from models import (AppointmentBooking, AppointmentSlot, Availability, Book,
+from models import (AdmissionAssessmentChange, AdmissionAssessmentNote,
+                    AdmissionAssessmentScore, AdmissionAssessmentSubmission,
+                    AppointmentBooking, AppointmentSlot, Availability, Book,
                     BookOrder, BookOrderItem, Company, EndOfDayChecklist,
                     ErrorReport, Invoice, Issue, IssueChange, Meeting,
                     Observation, ObservationCycle, Permission, PermissionAudit,
@@ -208,6 +211,88 @@ PUBLIC_BOOKING_COPY = {
         'back_home': 'বুকিং পাতায় ফিরে যান',
     },
 }
+
+
+ADMISSION_ASSESSMENT_STATUSES = [
+    'Application Submitted',
+    'Contacted',
+    'Enrolled',
+    'Not Enrolled',
+]
+
+
+def _admission_subject_choices() -> list[str]:
+    subjects: set[str] = set()
+    try:
+        rows = (
+            db.session.query(Book.subject)
+            .filter(Book.subject.isnot(None))
+            .filter(func.trim(Book.subject) != '')
+            .distinct()
+            .order_by(Book.subject.asc())
+            .all()
+        )
+        for value, in rows:
+            clean = (value or '').strip()
+            if clean:
+                subjects.add(clean)
+    except Exception:
+        pass
+    # Include known teaching subjects as baseline
+    fallback = ['Maths', 'English', 'Science', 'Computer Science', 'Economics', 'Business', 'Psychology', '11+', 'Physics', 'Chemistry', 'Biology']
+    for default in fallback:
+        subjects.add(default)
+    return sorted(subjects, key=lambda x: x.lower())
+
+
+def _admission_heard_about_choices() -> list[str]:
+    return [
+        'Google',
+        'Facebook',
+        'Instagram',
+        'TikTok',
+        'Friend/Referral',
+        'Walk-in / Poster',
+        'University society',
+        'Other',
+    ]
+
+
+def _record_assessment_change(submission: AdmissionAssessmentSubmission, field: str, old_value: str | None, new_value: str | None) -> None:
+    try:
+        change = AdmissionAssessmentChange(
+            submission_id=submission.id,
+            user_id=getattr(current_user, 'id', None),
+            field=field,
+            old_value=old_value,
+            new_value=new_value,
+        )
+        db.session.add(change)
+    except Exception:
+        pass
+
+
+def _score_recommendation(subject: str, percentage: float) -> str:
+    subject_label = subject or 'this subject'
+    if percentage >= 85:
+        return (
+            f"Excellent performance in {subject_label}. We recommend continuing with extension tasks to keep the challenge level high. "
+            "Excel Tutors can provide advanced resources and targeted workshops to stretch their learning further."
+        )
+    if percentage >= 70:
+        return (
+            f"Strong understanding in {subject_label}. A focused revision plan will help secure top grades. "
+            "Excel Tutors can support with exam technique sessions and skill-specific practice."
+        )
+    if percentage >= 50:
+        return (
+            f"Developing progress in {subject_label}. Building confidence with core topics will have the biggest impact. "
+            "Excel Tutors recommends weekly tutoring sessions to reinforce fundamentals and close knowledge gaps."
+        )
+    return (
+        f"This score suggests {subject_label} needs immediate attention. Targeted intervention will help rebuild foundations. "
+        "Excel Tutors can provide 1:1 tutoring, diagnostic assessments, and structured catch-up plans to accelerate improvement."
+    )
 
 
 def _current_booking_language() -> str:
@@ -1593,6 +1678,7 @@ def create_tables_and_superadmin():
             ('manage_email_logs','Manage email logs'),
             # Recruitment / Applications
             ('manage_recruitment','Manage recruitment applications and communications'),
+            ('manage_admission_assessments','Manage admission assessment submissions'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, description in base_permissions:
@@ -1608,9 +1694,9 @@ def create_tables_and_superadmin():
             'tutor': {'view_dashboard','manage_tasks','view_reports','submit_staff_invoices'},
             'staff': {'view_dashboard','manage_tasks','submit_staff_invoices'},
             'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books','manage_students','manage_staff_invoices'},
-            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment',
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment','manage_admission_assessments',
                                'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list','manage_students'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_kids_club_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment',
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_kids_club_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment','manage_admission_assessments',
                       'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
         }
         # Admin should also manage students (append if not present for backward runs)
@@ -2295,6 +2381,16 @@ def _prepare_attendance_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         if working.empty:
             return working
 
+        working = working.reset_index(drop=True)
+
+        # If columns already look normalised (no "Unnamed" noise and we have key fields), leave as-is
+        normalised_cols = {str(c).strip().lower() for c in working.columns}
+        if normalised_cols and 'date' in normalised_cols and (
+            'checkin' in normalised_cols or 'check_in' in normalised_cols or
+            'first time zone on-duty' in normalised_cols or 'on-duty' in normalised_cols
+        ):
+            return working
+
         if isinstance(working.columns, pd.MultiIndex):
             flattened = []
             for col_tuple in working.columns:
@@ -2310,36 +2406,113 @@ def _prepare_attendance_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                 flattened.append(flat or 'column')
             working.columns = flattened
 
-        column_tokens = [str(col).strip() for col in working.columns]
-        first_row = working.iloc[0] if len(working) else None
-        has_subheader = False
-        if first_row is not None:
-            tokens = {str(v).strip().lower() for v in first_row.values if isinstance(v, str) or not pd.isna(v)}
-            sub_tokens = {'on-duty', 'off-duty', 'on duty', 'off duty'}
-            has_subheader = any(token in sub_tokens for token in tokens)
+        def _row_tokens(row) -> tuple[list[str], list[str]]:
+            values: list[str] = []
+            lowered: list[str] = []
+            for cell in row:
+                if cell is None:
+                    continue
+                try:
+                    if pd.isna(cell):
+                        continue
+                except Exception:
+                    pass
+                text = str(cell).strip()
+                if not text:
+                    continue
+                values.append(text)
+                lowered.append(text.lower())
+            return values, lowered
 
+        header_row_idx = None
+        subheader_row_idx = None
+        header_keywords = (
+            'date', 'time', 'zone', 'check', 'duty', 'machine', 'staff', 'employee',
+            'name', 'id', 'department', 'branch'
+        )
+        for idx in range(min(len(working), 25)):
+            values, lowered = _row_tokens(working.iloc[idx])
+            if not values:
+                continue
+            keyword_hits = sum(1 for token in lowered if any(key in token for key in header_keywords))
+            has_date = any('date' in token for token in lowered)
+            has_timeish = any(key in token for token in lowered for key in ('time', 'zone', 'check', 'duty'))
+            if len(values) >= 3 and keyword_hits >= 3 and has_date and has_timeish:
+                header_row_idx = idx
+                break
+
+        if header_row_idx is not None:
+            maybe_sub_idx = header_row_idx + 1
+            subheader_keywords = ('on-duty', 'off-duty', 'on duty', 'off duty', 'check-in', 'check-out')
+            if maybe_sub_idx < len(working):
+                _, lowered = _row_tokens(working.iloc[maybe_sub_idx])
+                sub_hits = sum(1 for token in lowered if any(sk in token for sk in subheader_keywords))
+                if sub_hits >= 2:
+                    subheader_row_idx = maybe_sub_idx
+
+        column_tokens = [str(col).strip() for col in working.columns]
         combined_headers: list[str] = []
-        if has_subheader:
-            for idx, major in enumerate(column_tokens):
-                major_clean = major.strip()
-                if major_clean.lower().startswith('unnamed'):
-                    major_clean = ''
-                minor_raw = first_row.iloc[idx] if idx < len(first_row) else ''
-                minor_clean = str(minor_raw).strip()
-                if minor_clean.lower().startswith('unnamed'):
-                    minor_clean = ''
+
+        def _cell_text(value) -> str:
+            if value is None:
+                return ''
+            try:
+                if pd.isna(value):
+                    return ''
+            except Exception:
+                pass
+            text = str(value).strip()
+            return '' if text.lower().startswith('unnamed') else text
+
+        if header_row_idx is not None:
+            major_row = working.iloc[header_row_idx]
+            minor_row = working.iloc[subheader_row_idx] if subheader_row_idx is not None else None
+            last_major = ''
+            for idx, major in enumerate(major_row):
+                major_clean = _cell_text(major)
+                if not major_clean and last_major:
+                    major_clean = last_major
+                elif major_clean:
+                    last_major = major_clean
+                minor_clean = _cell_text(minor_row.iloc[idx]) if minor_row is not None and idx < len(minor_row) else ''
+                if not major_clean and minor_clean:
+                    major_clean = last_major
                 label_parts = [part for part in [major_clean, minor_clean] if part]
                 label = ' '.join(label_parts).strip()
                 if not label:
                     label = f'column_{idx+1}'
                 combined_headers.append(label)
-            working = working.iloc[1:].reset_index(drop=True)
+            data_start_idx = (subheader_row_idx + 1) if subheader_row_idx is not None else (header_row_idx + 1)
+            working = working.iloc[data_start_idx:].reset_index(drop=True)
         else:
-            for idx, major in enumerate(column_tokens):
-                major_clean = major.strip()
-                if major_clean.lower().startswith('unnamed') or not major_clean:
-                    major_clean = f'column_{idx+1}'
-                combined_headers.append(major_clean)
+            first_row = working.iloc[0] if len(working) else None
+            has_subheader = False
+            if first_row is not None:
+                tokens = {str(v).strip().lower() for v in first_row.values if isinstance(v, str) or not pd.isna(v)}
+                sub_tokens = {'on-duty', 'off-duty', 'on duty', 'off duty'}
+                has_subheader = any(token in sub_tokens for token in tokens)
+
+            if has_subheader and first_row is not None:
+                for idx, major in enumerate(column_tokens):
+                    major_clean = major.strip()
+                    if major_clean.lower().startswith('unnamed'):
+                        major_clean = ''
+                    minor_raw = first_row.iloc[idx] if idx < len(first_row) else ''
+                    minor_clean = str(minor_raw).strip()
+                    if minor_clean.lower().startswith('unnamed'):
+                        minor_clean = ''
+                    label_parts = [part for part in [major_clean, minor_clean] if part]
+                    label = ' '.join(label_parts).strip()
+                    if not label:
+                        label = f'column_{idx+1}'
+                    combined_headers.append(label)
+                working = working.iloc[1:].reset_index(drop=True)
+            else:
+                for idx, major in enumerate(column_tokens):
+                    major_clean = major.strip()
+                    if major_clean.lower().startswith('unnamed') or not major_clean:
+                        major_clean = f'column_{idx+1}'
+                    combined_headers.append(major_clean)
 
         seen: dict[str, int] = {}
         final_headers: list[str] = []
@@ -2385,12 +2558,14 @@ def _attendance_column_aliases(df):
     staffid_col = col_any(['staffid', 'staff_id', 'id'])
     date_col = col_any(['date', 'day'])
     checkin_col = col_any([
-        'checkin', 'check_in', 'timein', 'on',
-        'on-duty', 'first time zone on-duty', 'first time zone on duty'
+        'checkin', 'check_in', 'timein', 'on', 'on duty',
+        'on-duty', 'first time zone on-duty', 'first time zone on duty',
+        'second time zone on-duty', 'second time zone on duty'
     ])
     checkout_col = col_any([
-        'checkout', 'check_out', 'timeout', 'off',
-        'off-duty', 'first time zone off-duty', 'first time zone off duty'
+        'checkout', 'check_out', 'timeout', 'off', 'off duty',
+        'off-duty', 'first time zone off-duty', 'first time zone off duty',
+        'second time zone off-duty', 'second time zone off duty'
     ])
     checkin2_col = col_any([
         'second time zone on-duty', 'second time zone on duty', 'on-duty 2',
@@ -2400,6 +2575,11 @@ def _attendance_column_aliases(df):
         'second time zone off-duty', 'second time zone off duty', 'off-duty 2',
         'off2', 'timeout2', 'checkout2'
     ])
+
+    if checkin2_col == checkin_col:
+        checkin2_col = None
+    if checkout2_col == checkout_col:
+        checkout2_col = None
     late_col = col_any(['late', 'late_minutes', 'late_min', 'late time(min)', 'late time (min)'])
 
     letter_indexes = {letter: idx_for_letter(letter) for letter in ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p']}
@@ -2655,6 +2835,30 @@ def _seconds_to_hhmmss(seconds):
     minutes = (seconds % 3600) // 60
     secs = seconds % 60
     return f"{hours:02}:{minutes:02}:{secs:02}"
+
+
+def _parse_date_filter(value: str | None) -> date | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except Exception:
+            continue
+    try:
+        parsed = pd.to_datetime(raw)
+        if isinstance(parsed, pd.Series):
+            parsed = parsed.iloc[0]
+        if pd.isna(parsed):
+            return None
+        if isinstance(parsed, (pd.Timestamp, datetime)):
+            return parsed.date()
+    except Exception:
+        return None
+    return None
 
 
 def _purge_duplicate_attendance_rows(keep_row_id, machine, staff_id, attendance_date):
@@ -2971,8 +3175,8 @@ def staff_attendance_index():
     employee_term = (filters_raw.get('employee') or '').strip()
     machine_id = (filters_raw.get('machine_id') or '').strip()
     late = (filters_raw.get('late') or '').strip().lower()
-    start = (filters_raw.get('start') or '').strip()
-    end = (filters_raw.get('end') or '').strip()
+    start_input = (filters_raw.get('start') or '').strip()
+    end_input = (filters_raw.get('end') or '').strip()
     month = (filters_raw.get('month') or '').strip()
     per_page = int(filters_raw.get('per_page') or 50)
     per_page = min(max(per_page, 10), 500)
@@ -3000,18 +3204,18 @@ def staff_attendance_index():
     if late == 'yes':
         q = q.filter(StaffAttendance.late_minutes.isnot(None), StaffAttendance.late_minutes > 0)
 
-    if start:
-        try:
-            sd = datetime.strptime(start, '%d/%m/%Y').date()
-            q = q.filter(StaffAttendance.date >= sd)
-        except Exception:
-            pass
-    if end:
-        try:
-            ed = datetime.strptime(end, '%d/%m/%Y').date()
-            q = q.filter(StaffAttendance.date <= ed)
-        except Exception:
-            pass
+    start_date = _parse_date_filter(start_input)
+    end_date = _parse_date_filter(end_input)
+    if start_date:
+        q = q.filter(StaffAttendance.date >= start_date)
+        filters_raw['start'] = start_date.strftime('%Y-%m-%d')
+    else:
+        filters_raw['start'] = ''
+    if end_date:
+        q = q.filter(StaffAttendance.date <= end_date)
+        filters_raw['end'] = end_date.strftime('%Y-%m-%d')
+    else:
+        filters_raw['end'] = ''
     if month:
         parsed_month = None
         for fmt in ('%Y-%m', '%m/%Y', '%Y/%m', '%b %Y', '%B %Y'):
@@ -3171,6 +3375,8 @@ def staff_attendance_import():
                 try:
                     df = combine_all_sheets(fh, year=datetime.utcnow().year, month=datetime.utcnow().month)
                 except Exception:
+                    df = None
+                if df is None or df.empty:
                     fh.seek(0)
                     try:
                         df = pd.read_excel(fh)
@@ -3222,6 +3428,8 @@ def staff_attendance_import():
         with open(temp_path, 'rb') as fh:
             df = combine_all_sheets(fh, year=datetime.utcnow().year, month=datetime.utcnow().month)
     except Exception:
+        df = None
+    if df is None or df.empty:
         try:
             df = pd.read_excel(temp_path)
         except Exception:
@@ -5838,6 +6046,147 @@ def reset_user_password(uid):
         flash(f'Failed to reset password: {exc}', 'danger')
     return redirect(url_for('approve_users'))
 
+PERMISSION_GROUP_DEFINITIONS: OrderedDict[str, dict[str, object]] = OrderedDict([
+    (
+        'core',
+        {
+            'label': 'Core Platform',
+            'description': 'Dashboard access and global workforce tools.',
+            'keys': [
+                'view_dashboard',
+                'manage_tasks',
+                'view_reports',
+                'manage_users',
+            ],
+        },
+    ),
+    (
+        'staff_ops',
+        {
+            'label': 'Staff & Operations',
+            'description': 'Staff records, meetings, availability and quality assurance.',
+            'keys': [
+                'manage_staff',
+                'manage_meetings',
+                'manage_availability',
+                'manage_issues',
+                'manage_cycles',
+                'manage_observations',
+            ],
+        },
+    ),
+    (
+        'students',
+        {
+            'label': 'Students & Admissions',
+            'description': 'Student records, admissions pipeline and support tooling.',
+            'keys': [
+                'manage_students',
+                'manage_student_concerns',
+                'manage_admission_assessments',
+                'manage_appointments',
+                'access_enrollment_tool',
+            ],
+        },
+    ),
+    (
+        'resources',
+        {
+            'label': 'Resources & Curriculum',
+            'description': 'Book catalogues, tuition pricing and resource inventory.',
+            'keys': [
+                'manage_books',
+                'order_books',
+                'manage_pricing',
+                'manage_resources',
+            ],
+        },
+    ),
+    (
+        'finance',
+        {
+            'label': 'Finance & Invoicing',
+            'description': 'Invoice management and staff payment workflows.',
+            'keys': [
+                'manage_kids_club_invoices',
+                'manage_staff_invoices',
+                'submit_staff_invoices',
+            ],
+        },
+    ),
+    (
+        'floor_ops',
+        {
+            'label': 'Floor & Centre Operations',
+            'description': 'On-site scheduling, floor dashboards and attendance fixes.',
+            'keys': [
+                'floor_dashboard',
+                'manage_shifts',
+                'manage_supervisor_shifts',
+                'manage_eod_checklist',
+                'manage_floor_reports',
+                'manage_call_list',
+                'manage_attendance_fix',
+            ],
+        },
+    ),
+    (
+        'communications',
+        {
+            'label': 'Communications & Outreach',
+            'description': 'Recruitment comms and email system visibility.',
+            'keys': [
+                'manage_email_logs',
+                'manage_recruitment',
+            ],
+        },
+    ),
+    (
+        'timetabling',
+        {
+            'label': 'Specialist Tools',
+            'description': 'Specialist timetable generators and utilities.',
+            'keys': [
+                'access_timetable_main',
+                'access_timetable_eastham',
+            ],
+        },
+    ),
+])
+
+
+def _organize_permissions(perms: list[Permission]) -> list[dict[str, object]]:
+    """Arrange Permission rows into UI groups with friendly labels."""
+    perms_by_key = {p.key: p for p in perms}
+    used_keys: set[str] = set()
+    groups: list[dict[str, object]] = []
+    for slug, meta in PERMISSION_GROUP_DEFINITIONS.items():
+        keys = meta.get('keys', []) or []
+        group_perms = [perms_by_key[k] for k in keys if k in perms_by_key]
+        if not group_perms:
+            continue
+        used_keys.update(p.key for p in group_perms)
+        groups.append(
+            {
+                'slug': slug,
+                'label': meta.get('label', slug.title()),
+                'description': meta.get('description', ''),
+                'permissions': group_perms,
+            }
+        )
+    remaining = [p for p in perms if p.key not in used_keys]
+    if remaining:
+        groups.append(
+            {
+                'slug': 'other',
+                'label': 'Other Permissions',
+                'description': 'Permissions that are not yet grouped.',
+                'permissions': remaining,
+            }
+        )
+    return groups
+
+
 # ---------------- Permission Management (0.9.0) ----------------
 @app.route('/admin/role-permissions', methods=['GET','POST'])
 @login_required
@@ -5878,7 +6227,14 @@ def role_permissions():
     role_map = {r.role: set() for r in RolePermission.query.with_entities(RolePermission.role).distinct()}
     for rp in RolePermission.query.all():
         role_map.setdefault(rp.role, set()).add(rp.permission_key)
-    return render_template('admin/role_permissions.html', roles=roles, perms=perms, role_map=role_map)
+    permission_groups = _organize_permissions(perms)
+    return render_template(
+        'admin/role_permissions.html',
+        roles=roles,
+        perms=perms,
+        role_map=role_map,
+        permission_groups=permission_groups,
+    )
 
 @app.route('/admin/role-permissions/appointments', methods=['POST'])
 @login_required
@@ -5972,7 +6328,15 @@ def user_permissions():
     overrides = {}
     if selected_user:
         overrides = {up.permission_key: up.allow for up in UserPermission.query.filter_by(user_id=selected_user.id).all()}
-    return render_template('admin/user_permissions.html', users=users, selected_user=selected_user, perms=perms, overrides=overrides)
+    permission_groups = _organize_permissions(perms)
+    return render_template(
+        'admin/user_permissions.html',
+        users=users,
+        selected_user=selected_user,
+        perms=perms,
+        overrides=overrides,
+        permission_groups=permission_groups,
+    )
 
 # ---------------- Appointment Admin ---------------- #
 
@@ -14214,6 +14578,120 @@ def report_student_concern():
     return render_template('public/report_student_concern.html', subjects=subjects)
 
 
+# ---------------- Admission Assessment (Public) ---------------- #
+@csrf.exempt
+@app.route('/admission-assessment', methods=['GET', 'POST'])
+def admission_assessment_public():
+    from utils import BRANCH_CHOICES
+
+    subjects = _admission_subject_choices()
+    heard_choices = _admission_heard_about_choices()
+    branches = BRANCH_CHOICES()
+
+    if request.method == 'POST':
+        if (request.form.get('website') or '').strip():
+            flash('Thank you for your submission.', 'success')
+            return redirect(url_for('admission_assessment_public'))
+
+        student_name = (request.form.get('student_name') or '').strip()
+        student_year_group = (request.form.get('student_year_group') or '').strip()
+        parent_name = (request.form.get('parent_name') or '').strip()
+        parent_email = (request.form.get('parent_email') or '').strip()
+        parent_phone = (request.form.get('parent_phone') or '').strip()
+        heard_about = (request.form.get('heard_about') or '').strip()
+        branch = (request.form.get('branch') or '').strip()
+        subject_other = (request.form.get('subject_other') or '').strip()
+        selected_subjects = [s.strip() for s in request.form.getlist('subjects') if s.strip()]
+
+        errors: list[str] = []
+        if not student_name:
+            errors.append('Student name is required.')
+        if not parent_name:
+            errors.append('Parent name is required.')
+        if parent_email and '@' not in parent_email:
+            errors.append('Parent email address must be valid.')
+        if not parent_phone:
+            errors.append('Parent phone number is required.')
+        if branch and branch not in branches:
+            errors.append('Please select a valid branch.')
+        if not branch:
+            errors.append('Please select a branch.')
+        if heard_choices and heard_about and heard_about not in heard_choices:
+            errors.append('Please select a valid answer for how you heard about us.')
+        if not heard_about:
+            errors.append('Please tell us how you heard about Excel Tutors.')
+        if subject_other:
+            selected_subjects.append(subject_other)
+        # Deduplicate subjects preserving original order
+        unique_subjects: list[str] = []
+        seen = set()
+        for sub in selected_subjects:
+            if sub.lower() == 'other':
+                continue
+            key = sub.lower()
+            if key not in seen:
+                seen.add(key)
+                unique_subjects.append(sub)
+        if not unique_subjects:
+            errors.append('Please select at least one subject.')
+
+        if errors:
+            for msg in errors:
+                flash(msg, 'warning')
+            return render_template(
+                'public/admission_assessment.html',
+                subjects=subjects,
+                heard_choices=heard_choices,
+                branches=branches,
+            )
+
+        submission = AdmissionAssessmentSubmission(
+            student_name=student_name,
+            student_year_group=student_year_group or None,
+            parent_name=parent_name,
+            parent_email=parent_email or None,
+            parent_phone=parent_phone,
+            branch=branch,
+            heard_about=heard_about or None,
+            subjects_other=subject_other or None,
+        )
+        submission.set_subjects(unique_subjects)
+
+        try:
+            db.session.add(submission)
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception('Failed to save admission assessment submission: %s', exc)
+            flash('We could not submit your request right now. Please try again later.', 'danger')
+            return render_template(
+                'public/admission_assessment.html',
+                subjects=subjects,
+                heard_choices=heard_choices,
+                branches=branches,
+            )
+
+        if parent_email:
+            try:
+                from email_utils import \
+                    build_admission_assessment_confirmation_email
+
+                subject_line, html = build_admission_assessment_confirmation_email(submission)
+                send_email(parent_email, subject_line, html)
+            except Exception as mail_exc:  # pragma: no cover - email failures should not block UX
+                app.logger.warning('Admission assessment confirmation email failed for %s: %s', parent_email, mail_exc)
+
+        flash('Thank you. Your details have been submitted and our admissions team will be in touch shortly.', 'success')
+        return redirect(url_for('admission_assessment_public'))
+
+    return render_template(
+        'public/admission_assessment.html',
+        subjects=subjects,
+        heard_choices=heard_choices,
+        branches=branches,
+    )
+
+
 # ---------------- Job Application (Public) ---------------- #
 @csrf.exempt
 @app.route('/jobs/apply', methods=['GET','POST'])
@@ -15115,6 +15593,334 @@ def recruitment_interview_reschedule(aid: int):
     # GET
     groups = _compute_upcoming_interview_slots_with_iso()
     return render_template('recruitment/interviews/reschedule.html', a=a, groups=groups)
+
+
+# ---------------- Admission Assessment (Admin) ---------------- #
+@app.route('/admission-assessments')
+@login_required
+@permission_required('manage_admission_assessments')
+def admission_assessments_index():
+    q = (request.args.get('q') or '').strip()
+    status_filters = [s for s in request.args.getlist('status') if s in ADMISSION_ASSESSMENT_STATUSES]
+    branch_filters = [b for b in request.args.getlist('branch') if b]
+    heard_filters = [h for h in request.args.getlist('heard') if h]
+    subject_filter = (request.args.get('subject') or '').strip()
+    sort = (request.args.get('sort') or 'created_at').strip()
+    direction = (request.args.get('direction') or 'asc').strip().lower()
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 25, type=int), 200)
+
+    query = AdmissionAssessmentSubmission.query.options(joinedload(AdmissionAssessmentSubmission.scores))
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                AdmissionAssessmentSubmission.student_name.ilike(like),
+                AdmissionAssessmentSubmission.parent_name.ilike(like),
+                AdmissionAssessmentSubmission.parent_email.ilike(like),
+                AdmissionAssessmentSubmission.parent_phone.ilike(like),
+                AdmissionAssessmentSubmission.branch.ilike(like),
+                AdmissionAssessmentSubmission.subjects_json.ilike(like),
+            )
+        )
+    if status_filters:
+        query = query.filter(AdmissionAssessmentSubmission.status.in_(status_filters))
+    if branch_filters:
+        query = query.filter(AdmissionAssessmentSubmission.branch.in_(branch_filters))
+    if heard_filters:
+        query = query.filter(AdmissionAssessmentSubmission.heard_about.in_(heard_filters))
+    if subject_filter:
+        query = query.filter(AdmissionAssessmentSubmission.subjects_json.ilike(f"%{subject_filter}%"))
+
+    sort_map = {
+        'student': AdmissionAssessmentSubmission.student_name,
+        'status': AdmissionAssessmentSubmission.status,
+        'branch': AdmissionAssessmentSubmission.branch,
+        'created_at': AdmissionAssessmentSubmission.created_at,
+    }
+    sort_col = sort_map.get(sort, AdmissionAssessmentSubmission.created_at)
+    if direction == 'desc':
+        query = query.order_by(sort_col.desc())
+    else:
+        query = query.order_by(sort_col.asc())
+
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    submissions = pagination.items
+    for submission in submissions:
+        try:
+            submission.score_lookup = {s.subject: s for s in submission.scores}
+        except Exception:
+            submission.score_lookup = {}
+
+    overall_total = AdmissionAssessmentSubmission.query.count()
+    try:
+        recent_anchor = datetime.utcnow()
+    except Exception:
+        recent_anchor = datetime.now()
+    recent_window = recent_anchor - timedelta(days=7)
+    recent_total = (
+        AdmissionAssessmentSubmission.query
+        .filter(AdmissionAssessmentSubmission.created_at >= recent_window)
+        .count()
+    )
+    status_summary_rows = (
+        db.session.query(AdmissionAssessmentSubmission.status, func.count())
+        .group_by(AdmissionAssessmentSubmission.status)
+        .all()
+    )
+    status_summary = {}
+    for status_value, count in status_summary_rows:
+        label = status_value or 'Application Submitted'
+        status_summary[label] = count
+
+    return render_template(
+        'admission_assessments/index.html',
+        submissions=submissions,
+        pagination=pagination,
+        statuses=ADMISSION_ASSESSMENT_STATUSES,
+        status_filters=status_filters,
+        branch_filters=branch_filters,
+        heard_filters=heard_filters,
+        subject_filter=subject_filter,
+        branches=BRANCH_CHOICES(),
+        heard_choices=_admission_heard_about_choices(),
+        subject_choices=_admission_subject_choices(),
+        q=q,
+        sort=sort,
+        direction=direction,
+        per_page=per_page,
+        overall_total=overall_total,
+        recent_total=recent_total,
+        status_summary=status_summary,
+    )
+
+
+@app.route('/admission-assessments/<int:submission_id>')
+@login_required
+@permission_required('manage_admission_assessments')
+def admission_assessment_detail(submission_id: int):
+    submission = (
+        AdmissionAssessmentSubmission.query
+        .options(
+            joinedload(AdmissionAssessmentSubmission.notes).joinedload(AdmissionAssessmentNote.user),
+            joinedload(AdmissionAssessmentSubmission.scores),
+            joinedload(AdmissionAssessmentSubmission.changes).joinedload(AdmissionAssessmentChange.user),
+            joinedload(AdmissionAssessmentSubmission.scores_last_sent_by),
+        )
+        .get_or_404(submission_id)
+    )
+    subjects = submission.subjects_list()
+    if submission.subjects_other:
+        other = submission.subjects_other.strip()
+        if other and other not in subjects:
+            subjects.append(other)
+    notes = sorted(submission.notes, key=lambda n: n.created_at or datetime.min, reverse=True)
+    scores_map = {s.subject: s for s in submission.scores}
+    changes = sorted(submission.changes, key=lambda c: c.created_at or datetime.min, reverse=True)
+
+    return render_template(
+        'admission_assessments/detail.html',
+        submission=submission,
+        subjects=subjects,
+        scores_map=scores_map,
+        notes=notes,
+        changes=changes,
+        statuses=ADMISSION_ASSESSMENT_STATUSES,
+        heard_choices=_admission_heard_about_choices(),
+    )
+
+
+@app.route('/admission-assessments/<int:submission_id>/status', methods=['POST'])
+@login_required
+@permission_required('manage_admission_assessments')
+def admission_assessment_update_status(submission_id: int):
+    submission = AdmissionAssessmentSubmission.query.get_or_404(submission_id)
+    new_status = (request.form.get('status') or '').strip()
+    if new_status not in ADMISSION_ASSESSMENT_STATUSES:
+        flash('Select a valid status option.', 'warning')
+        return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+    current_status = submission.status or 'Application Submitted'
+    if new_status == current_status:
+        flash('Status is already set to that value.', 'info')
+        return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+    submission.status = new_status
+    submission.status_updated_at = datetime.utcnow()
+    submission.updated_at = datetime.utcnow()
+    _record_assessment_change(submission, 'status', current_status, new_status)
+    try:
+        db.session.commit()
+        flash('Status updated.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to update status: {exc}', 'danger')
+    return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+
+
+@app.route('/admission-assessments/<int:submission_id>/notes', methods=['POST'])
+@login_required
+@permission_required('manage_admission_assessments')
+def admission_assessment_add_note(submission_id: int):
+    submission = AdmissionAssessmentSubmission.query.get_or_404(submission_id)
+    body = (request.form.get('note_body') or '').strip()
+    if not body:
+        flash('Note cannot be empty.', 'warning')
+        return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+    note = AdmissionAssessmentNote(submission_id=submission.id, user_id=getattr(current_user, 'id', None), body=body)
+    submission.updated_at = datetime.utcnow()
+    db.session.add(note)
+    _record_assessment_change(submission, 'note', None, body[:250])
+    try:
+        db.session.commit()
+        flash('Note added.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to add note: {exc}', 'danger')
+    return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+
+
+@app.route('/admission-assessments/<int:submission_id>/scores', methods=['POST'])
+@login_required
+@permission_required('manage_admission_assessments')
+def admission_assessment_save_scores(submission_id: int):
+    submission = AdmissionAssessmentSubmission.query.get_or_404(submission_id)
+    raw_rows: dict[str, dict[str, str]] = {}
+    for key, value in request.form.items():
+        if not key.startswith('scores-'):
+            continue
+        parts = key.split('-', 2)
+        if len(parts) != 3:
+            continue
+        _, idx, field = parts
+        raw_rows.setdefault(idx, {})[field] = value
+
+    if not raw_rows:
+        flash('No score data submitted.', 'warning')
+        return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+
+    errors: list[str] = []
+    updated_subjects: list[str] = []
+    for row in raw_rows.values():
+        subject = (row.get('subject') or '').strip()
+        marks_raw = (row.get('marks') or '').strip()
+        total_raw = (row.get('total') or '').strip()
+        pct_raw = (row.get('percentage') or '').strip()
+        rec_raw = (row.get('recommendation') or '').strip()
+
+        if not subject:
+            continue
+
+        def _parse_decimal(raw: str):
+            if not raw:
+                return None
+            try:
+                return Decimal(raw)
+            except Exception:
+                return None
+
+        marks_val = _parse_decimal(marks_raw)
+        total_val = _parse_decimal(total_raw)
+        pct_val = _parse_decimal(pct_raw)
+
+        if marks_raw and marks_val is None:
+            errors.append(f'Enter a valid number for marks in {subject}.')
+            continue
+        if total_raw and total_val is None:
+            errors.append(f'Enter a valid number for total in {subject}.')
+            continue
+        if pct_raw and pct_val is None:
+            errors.append(f'Enter a valid percentage for {subject}.')
+            continue
+        computed_pct = None
+        if marks_val is not None and total_val is not None and total_val != 0:
+            try:
+                computed_pct = (marks_val / total_val) * Decimal('100')
+            except Exception:
+                computed_pct = None
+        elif pct_val is not None:
+            computed_pct = pct_val
+
+        recommendation = rec_raw
+        if (not recommendation) and computed_pct is not None:
+            recommendation = _score_recommendation(subject, float(computed_pct))
+
+        score = AdmissionAssessmentScore.query.filter_by(submission_id=submission.id, subject=subject).first()
+        old_payload = score.as_dict() if score else None
+
+        if not score:
+            score = AdmissionAssessmentScore(submission_id=submission.id, subject=subject, created_by_id=getattr(current_user, 'id', None))
+            db.session.add(score)
+
+        if marks_val is not None:
+            score.marks_achieved = marks_val.quantize(Decimal('0.01'))
+        else:
+            score.marks_achieved = None
+        if total_val is not None:
+            score.total_marks = total_val.quantize(Decimal('0.01'))
+        else:
+            score.total_marks = None
+        if computed_pct is not None:
+            score.percentage = computed_pct.quantize(Decimal('0.01'))
+        else:
+            score.percentage = None
+        score.recommendation = recommendation or None
+
+        new_payload = score.as_dict()
+        if old_payload != new_payload:
+            updated_subjects.append(subject)
+            old_json = json.dumps(old_payload) if old_payload is not None else None
+            new_json = json.dumps(new_payload) if new_payload is not None else None
+            _record_assessment_change(submission, f'score:{subject}', old_json, new_json)
+
+    if updated_subjects:
+        submission.updated_at = datetime.utcnow()
+        try:
+            db.session.commit()
+            flash(f'Scores saved for {len(updated_subjects)} subject(s).', 'success')
+        except Exception as exc:
+            db.session.rollback()
+            flash(f'Failed to save scores: {exc}', 'danger')
+    else:
+        flash('No score changes detected.', 'info')
+
+    for msg in errors:
+        flash(msg, 'warning')
+
+    return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+
+
+@app.route('/admission-assessments/<int:submission_id>/send-scores', methods=['POST'])
+@login_required
+@permission_required('manage_admission_assessments')
+def admission_assessment_send_scores(submission_id: int):
+    submission = (
+        AdmissionAssessmentSubmission.query
+        .options(joinedload(AdmissionAssessmentSubmission.scores))
+        .get_or_404(submission_id)
+    )
+    if not submission.parent_email:
+        flash('Parent email is not available for this submission.', 'warning')
+        return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+    scores = [s for s in submission.scores if (s.marks_achieved is not None or s.percentage is not None)]
+    if not scores:
+        flash('Add scores before sending an email.', 'warning')
+        return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+
+    scores_sorted = sorted(scores, key=lambda s: (s.subject or '').lower())
+    try:
+        from email_utils import build_admission_assessment_scores_email
+
+        subject_line, html = build_admission_assessment_scores_email(submission, scores_sorted)
+        send_email(submission.parent_email, subject_line, html)
+        submission.scores_last_sent_at = datetime.utcnow()
+        submission.scores_last_sent_by_id = getattr(current_user, 'id', None)
+        submission.updated_at = datetime.utcnow()
+        _record_assessment_change(submission, 'scores_sent', None, f"Sent to {submission.parent_email}")
+        db.session.commit()
+        flash('Scores emailed to parent.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to send scores email: {exc}', 'danger')
+    return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
 
 
 @app.route('/student-concerns')

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -1313,5 +1314,97 @@ class JobApplication(db.Model):
             return [b.strip() for b in (self.branches or '').split(',') if b.strip()]
         except Exception:
             return []
+
+
+# ---------------- Admission Assessment Management (Dec 2025) ---------------- #
+class AdmissionAssessmentSubmission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_name = db.Column(db.String(200), nullable=False, index=True)
+    student_year_group = db.Column(db.String(40), index=True)
+    parent_name = db.Column(db.String(200), nullable=False, index=True)
+    parent_email = db.Column(db.String(255), index=True)
+    parent_phone = db.Column(db.String(50), nullable=False, index=True)
+    subjects_json = db.Column(db.Text)
+    subjects_other = db.Column(db.String(255))
+    branch = db.Column(db.String(120), index=True)
+    heard_about = db.Column(db.String(255))
+    status = db.Column(db.String(40), default='Application Submitted', index=True)
+    status_updated_at = db.Column(db.DateTime)
+    scores_last_sent_at = db.Column(db.DateTime)
+    scores_last_sent_by_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+    scores_last_sent_by = db.relationship('User', foreign_keys=[scores_last_sent_by_id], lazy=True)
+
+    notes = db.relationship('AdmissionAssessmentNote', backref='submission', cascade='all, delete-orphan', lazy=True)
+    scores = db.relationship('AdmissionAssessmentScore', backref='submission', cascade='all, delete-orphan', lazy=True)
+    changes = db.relationship('AdmissionAssessmentChange', backref='submission', cascade='all, delete-orphan', lazy=True)
+
+    def subjects_list(self) -> list[str]:
+        try:
+            values = json.loads(self.subjects_json or '[]')
+            if not isinstance(values, list):
+                return []
+            return [str(v).strip() for v in values if str(v).strip()]
+        except Exception:
+            return []
+
+    def set_subjects(self, subjects: list[str]) -> None:
+        try:
+            cleaned = [str(s).strip() for s in subjects if str(s).strip()]
+            self.subjects_json = json.dumps(cleaned)
+        except Exception:
+            self.subjects_json = json.dumps([])
+
+
+class AdmissionAssessmentNote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.Integer, db.ForeignKey('admission_assessment_submission.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), index=True)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    user = db.relationship('User', lazy=True)
+
+
+class AdmissionAssessmentChange(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.Integer, db.ForeignKey('admission_assessment_submission.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), index=True)
+    field = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    user = db.relationship('User', lazy=True)
+
+
+class AdmissionAssessmentScore(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.Integer, db.ForeignKey('admission_assessment_submission.id', ondelete='CASCADE'), nullable=False, index=True)
+    subject = db.Column(db.String(120), nullable=False, index=True)
+    marks_achieved = db.Column(db.Numeric(6, 2))
+    total_marks = db.Column(db.Numeric(6, 2))
+    percentage = db.Column(db.Numeric(5, 2))
+    recommendation = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), index=True)
+
+    created_by = db.relationship('User', lazy=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('submission_id', 'subject', name='uq_admission_score_subject'),
+    )
+
+    def as_dict(self):
+        return {
+            'subject': self.subject,
+            'marks_achieved': float(self.marks_achieved or 0),
+            'total_marks': float(self.total_marks or 0),
+            'percentage': float(self.percentage or 0),
+            'recommendation': self.recommendation,
+        }
 
 

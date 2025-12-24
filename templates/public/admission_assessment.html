@@ -1,0 +1,125 @@
+{% extends 'public/_public_base.html' %}
+{% from 'components/forms_macros.html' import csrf_field %}
+{% block title %}Admission Assessment Enquiry{% endblock %}
+{% block page_title %}Admission Assessment Management{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <form method="post" class="soft-card p-6 shadow-md space-y-6" x-data="assessmentForm()">
+    {{ csrf_field() }}
+    <div class="hidden" aria-hidden="true">
+      <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+    </div>
+
+    <section class="space-y-3">
+      <h2 class="text-base font-semibold">Student Details</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-semibold mb-1">Student name <span class="text-rose-600">*</span></label>
+          <input class="soft-input w-full" type="text" name="student_name" value="{{ request.form.get('student_name','') }}" required />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-semibold mb-1">Student year group</label>
+          <input class="soft-input w-full" type="text" name="student_year_group" placeholder="e.g. Year 6" value="{{ request.form.get('student_year_group','') }}" />
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="text-base font-semibold">Parent / Guardian</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-semibold mb-1">Parent / guardian name <span class="text-rose-600">*</span></label>
+          <input class="soft-input w-full" type="text" name="parent_name" value="{{ request.form.get('parent_name','') }}" required />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Parent email address</label>
+          <input class="soft-input w-full" type="email" placeholder="name@example.com" name="parent_email" value="{{ request.form.get('parent_email','') }}" />
+          <p class="text-[11px] text-slate-500 mt-1">We will send confirmation and score updates here (optional).</p>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Parent phone number <span class="text-rose-600">*</span></label>
+          <input class="soft-input w-full" type="tel" name="parent_phone" value="{{ request.form.get('parent_phone','') }}" required />
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-3">
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-semibold">Subject focus</h2>
+        <span class="soft-badge">Select all that apply</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {% set selected_subjects = request.form.getlist('subjects') %}
+        {% for subj in subjects %}
+        <label class="flex items-center gap-3 soft-card p-3 text-sm">
+          <input type="checkbox" name="subjects" value="{{ subj }}" {% if subj in selected_subjects %}checked{% endif %} />
+          <span>{{ subj }}</span>
+        </label>
+        {% endfor %}
+        <label class="flex items-center gap-3 soft-card p-3 text-sm">
+          <input type="checkbox" name="subjects" value="Other" x-model="otherSelected" @change="handleOtherToggle" {% if request.form.get('subject_other') %}checked{% endif %} />
+          <span>Other</span>
+        </label>
+      </div>
+      <div class="grid grid-cols-1" x-show="otherSelected" x-transition>
+        <label class="block text-xs font-semibold mb-1">Specify other subject</label>
+        <input class="soft-input w-full" type="text" name="subject_other" x-ref="otherInput" value="{{ request.form.get('subject_other','') }}" placeholder="Enter subject name" />
+      </div>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="text-base font-semibold">Location &amp; discovery</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1">Preferred branch <span class="text-rose-600">*</span></label>
+          <select class="soft-input w-full" name="branch" required>
+            <option value="">-- Select a branch --</option>
+            {% set selected_branch = request.form.get('branch','') %}
+            {% for branch in branches %}
+            <option value="{{ branch }}" {% if branch == selected_branch %}selected{% endif %}>{{ branch }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">How did you hear about Excel Tutors? <span class="text-rose-600">*</span></label>
+          <select class="soft-input w-full" name="heard_about" required>
+            <option value="">-- Select an option --</option>
+            {% set heard_selected = request.form.get('heard_about','') %}
+            {% for opt in heard_choices %}
+            <option value="{{ opt }}" {% if opt == heard_selected %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-4">
+      <div class="soft-card bg-slate-50 border border-slate-200 p-4 text-sm text-slate-600">
+        <p class="font-semibold text-slate-700">What happens next?</p>
+        <ul class="list-disc pl-5 mt-2 space-y-1">
+          <li>Our admissions team will review the information within one working day.</li>
+          <li>We will contact you to arrange the admission assessment session.</li>
+          <li>After the assessment, we will share subject-specific scores and recommendations.</li>
+        </ul>
+      </div>
+      <button type="submit" class="soft-btn soft-btn-primary w-full justify-center text-sm font-semibold py-2">
+        Submit admission assessment request
+      </button>
+    </section>
+  </form>
+</div>
+{% endblock %}
+{% block page_scripts %}
+<script>
+  function assessmentForm() {
+    return {
+      otherSelected: {{ 'true' if request.form.get('subject_other') else 'false' }},
+      handleOtherToggle(event) {
+        if (!event.target.checked && this.$refs.otherInput) {
+          this.$refs.otherInput.value = '';
+        }
+      },
+    };
+  }
+</script>
+{% endblock %}
