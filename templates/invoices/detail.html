@@ -7,6 +7,11 @@
     class="soft-btn"
     >Edit</a
   >
+  <a
+    href="{{ url_for('invoice_duplicate', invoice_id=invoice.id) }}"
+    class="soft-btn"
+    >Duplicate</a
+  >
   <a href="{{ url_for('invoice_pdf', invoice_id=invoice.id) }}" class="soft-btn">Print</a>
   <a
     href="{{ url_for('invoice_pdf', invoice_id=invoice.id, download=1) }}"

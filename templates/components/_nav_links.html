@@ -265,6 +265,26 @@
               <span>Error Reports</span>
             </a>
           </li>
+          <li>
+            <a
+              href="{{ url_for('admin_public_forms') }}"
+              class="nav-leaf {{ 'active' if endpoint=='admin_public_forms' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-indigo-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 4h16v16H4z" />
+                <path d="M8 8h8" />
+                <path d="M8 12h8" />
+                <path d="M8 16h5" />
+              </svg>
+              <span>Public Forms</span>
+            </a>
+          </li>
           {% endif %}
         </ul>
       </div>

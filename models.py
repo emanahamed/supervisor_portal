@@ -478,6 +478,23 @@ class Availability(db.Model):
         return [b.strip() for b in (self.branches or '').split(',') if b.strip()]
 
 
+class AvailabilityChange(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    availability_id = db.Column(db.Integer, db.ForeignKey('availability.id', ondelete='SET NULL'), index=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id', ondelete='SET NULL'), index=True)
+    field = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
+    change_type = db.Column(db.String(40), nullable=False, default='updated')
+    source = db.Column(db.String(80))
+    changed_by_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), index=True)
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    availability = db.relationship('Availability', lazy=True)
+    staff = db.relationship('Staff', lazy=True)
+    changed_by = db.relationship('User', lazy=True)
+
+
 class EmailSetting(db.Model):
     """Store named email provider/settings for the application.
 

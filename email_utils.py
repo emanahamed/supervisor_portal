@@ -4,7 +4,7 @@ from datetime import datetime
 from datetime import datetime as _dt
 from decimal import Decimal
 from email.message import EmailMessage
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 from models import EmailLog, EmailSetting, db
 
@@ -43,7 +43,7 @@ def _get_active_email_setting(name: Optional[str] = None) -> Optional[EmailSetti
         return None
 
 
-def _populate_msg_headers(msg: EmailMessage, subject: str, to_email: str, setting: Optional[EmailSetting] = None):
+def _populate_msg_headers(msg: EmailMessage, subject: str, to_email: str, setting: Optional[EmailSetting] = None, *, cc: Optional[Sequence[str]] = None):
     if setting and setting.sender_email:
         from_addr = setting.sender_email
         from_name = setting.sender_name or ''
@@ -51,6 +51,10 @@ def _populate_msg_headers(msg: EmailMessage, subject: str, to_email: str, settin
     else:
         msg['From'] = f"{FROM_NAME} <{FROM_EMAIL}>"
     msg['To'] = to_email
+    if cc:
+        cc_values = [c.strip() for c in cc if c and c.strip()]
+        if cc_values:
+            msg['Cc'] = ', '.join(dict.fromkeys(cc_values))
     msg['Subject'] = subject
     if setting and setting.sender_email:
         msg['Reply-To'] = setting.sender_email
@@ -78,14 +82,15 @@ def _load_logo_bytes() -> Optional[bytes]:
         return None
 
 
-def send_email(to_email: str, subject: str, html: str, *, setting_name: Optional[str] = None, attachments: Optional[list] = None) -> None:
+def send_email(to_email: str, subject: str, html: str, *, setting_name: Optional[str] = None, attachments: Optional[list] = None, cc: Optional[Sequence[str]] = None) -> None:
     """Send an HTML email using DB-backed EmailSetting when available.
 
     attachments: list of tuples (bytes, maintype, subtype, filename)
     """
     setting = _get_active_email_setting(name=setting_name)
+    cc_values = [c.strip() for c in (cc or []) if c and c.strip()]
     msg = EmailMessage()
-    _populate_msg_headers(msg, subject, to_email, setting)
+    _populate_msg_headers(msg, subject, to_email, setting, cc=cc_values)
     msg.set_content("This email contains HTML content. Please view in an HTML-capable client.")
     msg.add_alternative(html, subtype='html')
 
@@ -195,23 +200,23 @@ def send_email(to_email: str, subject: str, html: str, *, setting_name: Optional
         raise
 
 
-def send_recruitment_email(to_email: str, subject: str, html: str, *, attachments: Optional[list] = None) -> None:
+def send_recruitment_email(to_email: str, subject: str, html: str, *, attachments: Optional[list] = None, cc: Optional[Sequence[str]] = None) -> None:
     """Shorthand for sending via the 'recruitment' EmailSetting.
 
     Ensures job-related communications use the Recruitment mailbox identity
     (from name/address) configured in Email Settings.
     """
-    send_email(to_email, subject, html, setting_name='recruitment', attachments=attachments)
+    send_email(to_email, subject, html, setting_name='recruitment', attachments=attachments, cc=cc)
 
 
-def send_operations_email(to_email: str, subject: str, html: str, *, attachments: Optional[list] = None) -> None:
+def send_operations_email(to_email: str, subject: str, html: str, *, attachments: Optional[list] = None, cc: Optional[Sequence[str]] = None) -> None:
     """Shorthand for sending via the 'operations' EmailSetting.
 
     Use this for internal operational notifications like book orders, stock,
     or printing tasks. Configure an EmailSetting named 'operations' to control
     the From identity and SMTP credentials.
     """
-    send_email(to_email, subject, html, setting_name='operations', attachments=attachments)
+    send_email(to_email, subject, html, setting_name='operations', attachments=attachments, cc=cc)
 
 
 def build_interview_invitation_email(applicant, slots: list[tuple[str, list[str]]], confirm_url: Optional[str] = None) -> Tuple[str, str]:
@@ -522,7 +527,7 @@ def _render_email_shell(title: str, headline: str, intro: str, body_inner: str, 
 # ---------------- Admission Assessment Emails ---------------- #
 
 def _admissions_public_url() -> str:
-    fallback = 'https://exceltutors.org.uk/admissions'
+    fallback = 'https://admissions.exceltutors.org.uk'
     try:
         from flask import current_app
 

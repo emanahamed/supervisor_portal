@@ -1,5 +1,22 @@
 # Version History
 
+## 2.2.2 - 2026-01-03
+
+Kids Club invoice duplication helper
+
+- Added a Duplicate action to Kids Club invoices that pre-populates billing details while clearing the childcare period and invoice dates for fresh entry.
+
+## 2.2.1 - 2025-12-24
+
+Admission Assessment public URL alias and coverage
+
+- Exposed the public admission assessment enquiry form at a dedicated `/public/admission-assessment` route while keeping the existing `/admission-assessment` path for compatibility. Both serve the same public template without requiring authentication.
+- Added a regression test ensuring the new alias responds with the expected form content, guarding against future routing regressions.
+
+Notes:
+
+- No schema changes.
+
 ## 2.2.0 - 2025-11-07
 
 Attendance Import Reliability, Hours Calculation & Staff Attendance Console Refresh

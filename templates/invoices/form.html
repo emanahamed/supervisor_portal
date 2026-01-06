@@ -1,7 +1,15 @@
 {% extends 'base.html' %} {% block page_title %}{{ 'New Kids Club Invoice' if
-mode=='new' else 'Edit Kids Club Invoice' }}{% endblock %} {% block content %}
+mode=='new' else ('Duplicate Kids Club Invoice' if mode=='duplicate' else 'Edit
+Kids Club Invoice') }}{% endblock %} {% block content %}
 <form method="post" class="space-y-6">
-  {{ form.hidden_tag() }}
+  {{ form.hidden_tag() }} {% if mode == 'duplicate' and source_invoice %}
+  <div
+    class="soft-card border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+  >
+    Duplicating invoice {{ source_invoice.invoice_no }}. Update the childcare
+    period and invoice dates before saving.
+  </div>
+  {% endif %}
   <section class="soft-card p-4 space-y-4">
     <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
       Invoice Basics

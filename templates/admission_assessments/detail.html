@@ -4,6 +4,37 @@
 {% block page_title %}Admission Assessment Detail{% endblock %}
 {% block content %}
 <div class="space-y-6">
+  <div
+    id="assessmentSubmittingOverlay"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-white/80"
+    role="status"
+    aria-hidden="true"
+  >
+    <div class="soft-card flex items-center gap-3 p-4 text-sm text-slate-600">
+      <svg
+        class="h-5 w-5 animate-spin text-indigo-500"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          class="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          stroke-width="4"
+        ></circle>
+        <path
+          class="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+        ></path>
+      </svg>
+      <span>Submitting assessment…</span>
+    </div>
+  </div>
+
   <div class="flex items-center gap-2 text-xs">
     <a class="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500" href="{{ url_for('admission_assessments_index') }}">
       <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
@@ -47,6 +78,12 @@
           <div class="text-xs text-slate-600">{{ submission.parent_phone }}</div>
         </div>
         <div class="text-[11px] text-slate-500">Last updated {{ submission.updated_at|fmt_datetime if submission.updated_at else '—' }}</div>
+        {% if current_user.is_superadmin %}
+        <form method="post" action="{{ url_for('admission_assessment_delete', submission_id=submission.id) }}" onsubmit="return confirm('Delete this submission? This cannot be undone.');" class="mt-3" data-assessment-submit>
+          {{ csrf_field() }}
+          <button type="submit" class="soft-btn w-full bg-rose-600 text-white hover:bg-rose-500">Delete submission</button>
+        </form>
+        {% endif %}
       </div>
     </div>
     {% if subjects %}
@@ -61,7 +98,7 @@
   <div class="grid gap-6 xl:grid-cols-[2fr,1fr]">
     <section class="space-y-6">
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <form method="post" action="{{ url_for('admission_assessment_update_status', submission_id=submission.id) }}" class="space-y-4">
+        <form method="post" action="{{ url_for('admission_assessment_update_status', submission_id=submission.id) }}" class="space-y-4" data-assessment-submit>
           {{ csrf_field() }}
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -92,7 +129,7 @@
           {% endif %}
         </div>
 
-        <form method="post" action="{{ url_for('admission_assessment_save_scores', submission_id=submission.id) }}" class="space-y-4">
+        <form method="post" action="{{ url_for('admission_assessment_save_scores', submission_id=submission.id) }}" class="space-y-4" data-assessment-submit>
           {{ csrf_field() }}
           <div class="space-y-4">
             {% for subj in subjects %}
@@ -136,7 +173,7 @@
           </div>
         </form>
 
-        <form method="post" action="{{ url_for('admission_assessment_send_scores', submission_id=submission.id) }}" class="flex justify-end">
+        <form method="post" action="{{ url_for('admission_assessment_send_scores', submission_id=submission.id) }}" class="flex justify-end" data-assessment-submit>
           {{ csrf_field() }}
           <button type="submit" class="soft-btn bg-indigo-600 text-white hover:bg-indigo-500" {% if not subjects %}disabled{% endif %}>Send scores email</button>
         </form>
@@ -149,7 +186,7 @@
           <h3 class="text-base font-semibold text-slate-800">Internal notes</h3>
           <span class="text-[11px] text-slate-400">Visible to admissions staff only</span>
         </div>
-        <form method="post" action="{{ url_for('admission_assessment_add_note', submission_id=submission.id) }}" class="space-y-2">
+        <form method="post" action="{{ url_for('admission_assessment_add_note', submission_id=submission.id) }}" class="space-y-2" data-assessment-submit>
           {{ csrf_field() }}
           <textarea class="soft-input w-full text-sm" name="note_body" rows="3" placeholder="Add a note for colleagues..."></textarea>
           <button type="submit" class="soft-btn bg-slate-900 text-white hover:bg-slate-700">Add note</button>
@@ -199,6 +236,23 @@
 {% block page_scripts %}
 <script>
 (() => {
+  const overlay = document.getElementById('assessmentSubmittingOverlay');
+  const assessmentForms = document.querySelectorAll('[data-assessment-submit]');
+  assessmentForms.forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (!overlay || overlay.classList.contains('submitted')) {
+        return;
+      }
+      overlay.classList.remove('hidden');
+      overlay.classList.add('submitted');
+      overlay.setAttribute('aria-hidden', 'false');
+      overlay.setAttribute('aria-busy', 'true');
+    });
+  });
+
   const cards = document.querySelectorAll('[data-score-card]');
   cards.forEach((card) => {
     const marks = card.querySelector('[data-score-marks]');

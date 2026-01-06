@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import random
+import re
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -59,15 +60,15 @@ from forms import (RESOURCE_STATUS_CHOICES, RESOURCE_TYPE_CHOICES,
                    StaffInvoiceForm, StudentForm, TodoForm, UserProfileForm)
 from models import (AdmissionAssessmentChange, AdmissionAssessmentNote,
                     AdmissionAssessmentScore, AdmissionAssessmentSubmission,
-                    AppointmentBooking, AppointmentSlot, Availability, Book,
-                    BookOrder, BookOrderItem, Company, EndOfDayChecklist,
-                    ErrorReport, Invoice, Issue, IssueChange, Meeting,
-                    Observation, ObservationCycle, Permission, PermissionAudit,
-                    Resource, ResourceLoan, RolePermission, Staff,
-                    StaffAttendance, StaffAttendanceAudit, StaffInvoice,
-                    StaffInvoiceAttachment, StaffInvoiceItem, Student,
-                    StudentChange, SupervisorShift, Todo, User, UserPermission,
-                    db)
+                    AppointmentBooking, AppointmentSlot, Availability,
+                    AvailabilityChange, Book, BookOrder, BookOrderItem,
+                    Company, EndOfDayChecklist, ErrorReport, Invoice, Issue,
+                    IssueChange, Meeting, Observation, ObservationCycle,
+                    Permission, PermissionAudit, Resource, ResourceLoan,
+                    RolePermission, Staff, StaffAttendance,
+                    StaffAttendanceAudit, StaffInvoice, StaffInvoiceAttachment,
+                    StaffInvoiceItem, Student, StudentChange, SupervisorShift,
+                    Todo, User, UserPermission, db)
 from utils import (BRANCH_CHOICES, allowed_file, ensure_form_branch_choices,
                    get_setting, normalize_staff_dataframe,
                    parse_preferred_contact, parse_schedule_message,
@@ -78,6 +79,551 @@ SUPPORTED_LANGUAGES = {'en': 'English', 'bn': 'বাংলা'}
 
 # Allowed attachment extensions for staff invoice uploads (case-insensitive)
 ATTACH_ALLOWED_EXTS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'}
+
+PUBLIC_FORM_REGISTRY = [
+    {
+        'name': 'Student Concern Report',
+        'endpoints': ['report_student_concern'],
+    },
+    {
+        'name': 'Admission Assessment Submission',
+        'endpoints': ['admission_assessment_public'],
+        'static_paths': ['/public/admission-assessment'],
+    },
+    {
+        'name': 'Resource Loan / Return',
+        'endpoints': ['public_resource_loan'],
+    },
+    {
+        'name': 'Job Application Form',
+        'endpoints': ['jobs_apply'],
+    },
+    {
+        'name': 'Interview Confirmation Portal',
+        'static_paths': ['/jobs/confirm-interview/<token>'],
+        'note': 'Applicants receive a personalised tokenised link.',
+    },
+    {
+        'name': 'User Login',
+        'endpoints': ['login'],
+    },
+    {
+        'name': 'User Registration',
+        'endpoints': ['register'],
+        'note': 'Creates a pending account awaiting superadmin approval.',
+    },
+]
+
+
+def _public_form_rows() -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for entry in PUBLIC_FORM_REGISTRY:
+        urls: list[str] = []
+        for ep in entry.get('endpoints', []):
+            try:
+                urls.append(url_for(ep))
+            except Exception:
+                continue
+        urls.extend(entry.get('static_paths', []))
+        deduped = list(dict.fromkeys([u for u in urls if u]))
+        rows.append({
+            'name': entry['name'],
+            'urls': deduped,
+            'note': entry.get('note', '') or '',
+        })
+    rows.sort(key=lambda item: item['name'].lower())
+    return rows
+
+
+BRANCH_KEYWORDS = {
+    'Whitechapel': ['whitechapel', 'white chapel'],
+    'East Ham': ['east ham', 'eastham'],
+    'Stratford': ['stratford', 'startford'],
+    'Docklands': ['docklands', 'isle of dogs', 'isle-of-dogs'],
+}
+
+
+def _normalize_name(value: str | None) -> str:
+    text_value = (value or '').strip().lower()
+    if not text_value:
+        return ''
+    text_value = re.sub(r'[^a-z0-9]+', ' ', text_value)
+    return ' '.join(text_value.split())
+
+
+def _normalize_text(value) -> str:
+    if value is None:
+        return ''
+    try:
+        import math as _math
+        if isinstance(value, float) and _math.isnan(value):
+            return ''
+    except Exception:
+        pass
+    try:
+        return str(value).strip()
+    except Exception:
+        return ''
+
+
+def _extract_branches(raw: str | None) -> list[str]:
+    text_value = _normalize_text(raw)
+    if not text_value:
+        return []
+    low = text_value.lower()
+    detected: list[str] = []
+    for canonical, keys in BRANCH_KEYWORDS.items():
+        for key in keys:
+            if key in low:
+                detected.append(canonical)
+                break
+    if detected:
+        # Preserve canonical ordering defined by BRANCH_KEYWORDS declaration order
+        seen: list[str] = []
+        for canonical in BRANCH_KEYWORDS.keys():
+            if canonical in detected and canonical not in seen:
+                seen.append(canonical)
+        return seen
+    # Fall back to tokenizing by commas or newlines if no keywords matched
+    tokens = [tok.strip() for tok in re.split(r'[\n,;/]+', text_value) if tok.strip()]
+    cleaned: list[str] = []
+    for token in tokens:
+        low_token = token.lower()
+        for canonical, keys in BRANCH_KEYWORDS.items():
+            if any(key in low_token for key in keys):
+                if canonical not in cleaned:
+                    cleaned.append(canonical)
+                break
+        else:
+            if token not in cleaned:
+                cleaned.append(token)
+    return cleaned
+
+
+def _format_branch_csv(branches: list[str]) -> str | None:
+    filtered = [b.strip() for b in branches if b and b.strip()]
+    if not filtered:
+        return None
+    return ','.join(filtered)
+
+
+def _coerce_text(value) -> str | None:
+    text_value = _normalize_text(value)
+    return text_value or None
+
+
+def _log_availability_change(availability: Availability | None,
+                              staff: Staff | None,
+                              field: str,
+                              old_value: str | None,
+                              new_value: str | None,
+                              change_type: str = 'updated',
+                              source: str | None = None) -> None:
+    try:
+        change = AvailabilityChange(
+            availability_id=getattr(availability, 'id', None),
+            staff_id=getattr(staff, 'id', None) or getattr(availability, 'staff_id', None),
+            field=field,
+            old_value=old_value,
+            new_value=new_value,
+            change_type=change_type,
+            source=source or 'manual',
+            changed_by_id=getattr(current_user, 'id', None),
+        )
+        db.session.add(change)
+    except Exception:
+        # Logging failure should not block core flow; swallow silently.
+        pass
+
+
+def _process_availability_import(df, apply_changes: bool = False, decisions: dict[str, object] | None = None) -> dict[str, object]:
+    decisions = decisions or {}
+    staff_rows = Staff.query.all()
+    staff_lookup: dict[str, list[Staff]] = {}
+    first_token_lookup: dict[str, list[Staff]] = {}
+    for st in staff_rows:
+        variants = {st.name}
+        try:
+            full = st.full_name()
+            if full:
+                variants.add(full)
+        except Exception:
+            pass
+        first_tokens: set[str] = set()
+        try:
+            first_attr = _normalize_name(getattr(st, 'first_name', None))
+            if first_attr:
+                first_tokens.add(first_attr.split(' ')[0])
+        except Exception:
+            pass
+        for variant in variants:
+            key = _normalize_name(variant)
+            if key:
+                staff_lookup.setdefault(key, []).append(st)
+                tokens = [tok for tok in key.split(' ') if tok]
+                if tokens:
+                    first_tokens.add(tokens[0])
+        for token in first_tokens:
+            if not token:
+                continue
+            bucket = first_token_lookup.setdefault(token, [])
+            if st not in bucket:
+                bucket.append(st)
+
+    plan: dict[str, object] = {
+        'processed': 0,
+        'created': 0,
+        'updated': 0,
+        'unchanged': 0,
+        'ambiguous': [],
+        'unmatched': [],
+        'operations': [],
+        'skipped': 0,
+    }
+
+    operations: list[dict[str, object]] = []
+    log_entries = 0
+
+    for idx, row in df.iterrows():
+        raw_name = _normalize_text(row.get('Name'))
+        if not raw_name:
+            continue
+        plan['processed'] = plan.get('processed', 0) + 1
+        entry: dict[str, object] = {
+            'row_number': idx + 2,  # account for header row
+            'raw_name': raw_name,
+            'action': 'skip',
+            'changes': [],
+            'notes': '',
+            'staff_id': None,
+            'staff_name': raw_name,
+            'availability_id': None,
+            'decision_key': str(idx + 2),
+        }
+
+        department_value = _coerce_text(row.get('Department'))
+        staff_key = _normalize_name(raw_name)
+        matches = staff_lookup.get(staff_key, [])
+        match_source = 'exact'
+        if not matches:
+            tokens = [tok for tok in staff_key.split(' ') if tok]
+            first_token = tokens[0] if tokens else ''
+            near_matches: list[Staff] = []
+            if first_token:
+                near_matches = first_token_lookup.get(first_token, []) or []
+            filtered_matches: list[Staff] = []
+            if near_matches:
+                for cand in near_matches:
+                    cand_keys: list[str] = []
+                    try:
+                        cand_keys.append(_normalize_name(cand.name))
+                    except Exception:
+                        pass
+                    try:
+                        cand_full = _normalize_name(cand.full_name())
+                        if cand_full:
+                            cand_keys.append(cand_full)
+                    except Exception:
+                        pass
+                    if any(
+                        cand_key and (cand_key.startswith(staff_key) or staff_key.startswith(cand_key))
+                        for cand_key in cand_keys
+                    ):
+                        filtered_matches.append(cand)
+                if filtered_matches:
+                    near_matches = filtered_matches
+            if near_matches:
+                matches = near_matches
+                match_source = 'partial_first'
+
+        staff_obj: Staff | None = None
+
+        raw_branch_cell = row.get('Which Branch Do You Want to Take a Lesson In?')
+        branches_list = _extract_branches(raw_branch_cell)
+        raw_branches_text = _normalize_text(raw_branch_cell)
+        branches_value = _format_branch_csv(branches_list)
+        if branches_value is None and raw_branches_text:
+            branches_value = raw_branches_text
+
+        if match_source != 'exact':
+            entry['match_source'] = match_source
+
+        if matches and match_source == 'exact':
+            if len(matches) == 1:
+                staff_obj = matches[0]
+            else:
+                strict = [cand for cand in matches if _normalize_name(cand.name) == staff_key]
+                if len(strict) == 1:
+                    staff_obj = strict[0]
+                elif department_value:
+                    dept_key = _normalize_name(department_value)
+                    dept_matches = [cand for cand in matches if _normalize_name(cand.department) == dept_key]
+                    if len(dept_matches) == 1:
+                        staff_obj = dept_matches[0]
+
+        confirmation: dict[str, object] | None = None
+
+        if not matches:
+            confirmation = {
+                'type': 'create_staff',
+                'proposed_staff': {
+                    'name': raw_name,
+                    'department': department_value,
+                    'branches': branches_value,
+                },
+            }
+            entry['requires_confirmation'] = True
+            entry['confirmation'] = confirmation
+            if not apply_changes:
+                plan['unmatched'] = list(set(plan.get('unmatched', []) + [raw_name]))
+                operations.append(entry)
+                continue
+            decision = decisions.get(entry['decision_key'], {}) if isinstance(decisions, dict) else {}
+            if decision.get('skip'):
+                entry['action'] = 'skip'
+                entry['notes'] = 'Skipped during confirmation'
+                entry['skipped'] = True
+                plan['skipped'] = plan.get('skipped', 0) + 1
+                operations.append(entry)
+                continue
+            if not decision or not decision.get('create_staff'):
+                raise ValueError(f'Confirmation required to create staff for {raw_name}')
+            staff_obj = Staff(
+                name=raw_name,
+                department=department_value,
+                branch=None,
+            )
+            try:
+                tokens = [tok for tok in raw_name.split(' ') if tok]
+                if tokens:
+                    staff_obj.first_name = tokens[0]
+                    if len(tokens) > 1:
+                        staff_obj.last_name = ' '.join(tokens[1:])
+            except Exception:
+                pass
+            db.session.add(staff_obj)
+            db.session.flush()
+            entry['staff_created'] = True
+            entry['notes'] = 'Created new staff record from import'
+            entry['staff_id'] = staff_obj.id
+            entry['staff_name'] = staff_obj.name
+            staff_lookup.setdefault(staff_key, []).append(staff_obj)
+            new_tokens = [tok for tok in staff_key.split(' ') if tok]
+            if new_tokens:
+                primary = new_tokens[0]
+                bucket = first_token_lookup.setdefault(primary, [])
+                if staff_obj not in bucket:
+                    bucket.append(staff_obj)
+            try:
+                first_attr = _normalize_name(getattr(staff_obj, 'first_name', None))
+                if first_attr:
+                    token = first_attr.split(' ')[0]
+                    if token:
+                        bucket = first_token_lookup.setdefault(token, [])
+                        if staff_obj not in bucket:
+                            bucket.append(staff_obj)
+            except Exception:
+                pass
+        elif match_source != 'exact' or (matches and len(matches) > 1 and staff_obj is None):
+            confirmation = {
+                'type': 'choose_staff',
+                'match_reason': match_source,
+                'candidates': [
+                    {
+                        'id': cand.id,
+                        'name': cand.name,
+                        'department': cand.department,
+                        'active': cand.active,
+                    }
+                    for cand in matches
+                ],
+            }
+            entry['requires_confirmation'] = True
+            entry['confirmation'] = confirmation
+            if not apply_changes:
+                plan['ambiguous'] = list(set(plan.get('ambiguous', []) + [raw_name]))
+                operations.append(entry)
+                continue
+            decision = decisions.get(entry['decision_key'], {}) if isinstance(decisions, dict) else {}
+            if decision.get('skip'):
+                entry['action'] = 'skip'
+                entry['notes'] = 'Skipped during confirmation'
+                entry['skipped'] = True
+                plan['skipped'] = plan.get('skipped', 0) + 1
+                operations.append(entry)
+                continue
+            selected_staff_id = decision.get('selected_staff_id') if isinstance(decision, dict) else None
+            if not selected_staff_id:
+                raise ValueError(f'Staff selection required for {raw_name}')
+            selected = next((cand for cand in matches if cand.id == selected_staff_id), None)
+            if selected is None:
+                raise ValueError(f'Invalid staff selection for {raw_name}')
+            staff_obj = selected
+            entry['staff_id'] = staff_obj.id
+            entry['staff_name'] = staff_obj.name
+            remove_ids = decision.get('remove_other_ids') if isinstance(decision, dict) else None
+            removed_names: list[str] = []
+            if remove_ids:
+                for rid in remove_ids:
+                    if rid == staff_obj.id:
+                        continue
+                    target = next((cand for cand in matches if cand.id == rid), None)
+                    if target:
+                        target.active = False
+                        removed_names.append(target.name)
+                if removed_names:
+                    entry.setdefault('notes', '')
+                    note_prefix = entry['notes'] + '; ' if entry['notes'] else ''
+                    entry['notes'] = note_prefix + 'Marked duplicates inactive: ' + ', '.join(removed_names)
+                    entry['duplicates_marked_inactive'] = removed_names
+        elif staff_obj is None:
+            # No matches but confirmation not triggered (should not happen)
+            entry['notes'] = 'No matching staff found'
+            operations.append(entry)
+            continue
+
+        entry['staff_id'] = staff_obj.id
+        entry['staff_name'] = staff_obj.name
+        entry['staff_department'] = staff_obj.department
+
+        subjects_value = _coerce_text(row.get('Which Subjects Can You Teach'))
+        days_value = _coerce_text(row.get('Which Days Are You Available'))
+        notes_value = _coerce_text(row.get('NotesMessages?'))
+
+        if staff_obj and getattr(staff_obj, 'branch', None) is None and branches_value and apply_changes:
+            try:
+                staff_obj.branch = branches_value
+            except Exception:
+                pass
+
+        availability = Availability.query.filter(Availability.staff_id == staff_obj.id).order_by(Availability.updated_at.desc()).first()
+        if availability is None:
+            availability = Availability.query.filter(func.lower(Availability.name) == staff_obj.name.lower()).order_by(Availability.updated_at.desc()).first()
+
+        if availability is None:
+            entry['action'] = 'create'
+            new_data = {
+                'name': staff_obj.name,
+                'department': department_value or staff_obj.department,
+                'branches': branches_value,
+                'days': days_value,
+                'subjects': subjects_value,
+                'notes': notes_value,
+            }
+            entry['changes'] = [
+                {'field': field, 'old': None, 'new': value}
+                for field, value in new_data.items()
+                if value
+            ]
+            plan['created'] = plan.get('created', 0) + 1
+            if apply_changes:
+                new_record = Availability(**new_data)
+                new_record.staff_id = staff_obj.id
+                db.session.add(new_record)
+                db.session.flush()
+                _log_availability_change(new_record, staff_obj, 'record', None, 'Created via XLSX import', 'created', 'import_xlsx')
+                log_entries += 1
+            operations.append(entry)
+            continue
+
+        entry['availability_id'] = availability.id
+        desired_values = {
+            'name': staff_obj.name,
+            'department': department_value or availability.department or staff_obj.department,
+            'branches': branches_value,
+            'days': days_value,
+            'subjects': subjects_value,
+            'notes': notes_value,
+        }
+
+        changes: list[dict[str, object]] = []
+        for field, new_val in desired_values.items():
+            old_val = getattr(availability, field)
+            old_cmp = (old_val or '').strip() if isinstance(old_val, str) else (str(old_val) if old_val is not None else '')
+            new_cmp = (new_val or '').strip() if isinstance(new_val, str) else (str(new_val) if new_val is not None else '')
+            if old_cmp != new_cmp:
+                changes.append({'field': field, 'old': old_val if old_val is not None else None, 'new': new_val if new_val else None})
+                if apply_changes:
+                    setattr(availability, field, new_val or None)
+
+        if availability.staff_id != staff_obj.id:
+            changes.append({'field': 'staff_id', 'old': availability.staff_id if availability.staff_id is not None else None, 'new': staff_obj.id})
+            if apply_changes:
+                availability.staff_id = staff_obj.id
+
+        if changes:
+            entry['action'] = 'update'
+            entry['changes'] = changes
+            plan['updated'] = plan.get('updated', 0) + 1
+            if apply_changes:
+                db.session.flush()
+                staff_ref = staff_obj or getattr(availability, 'staff', None)
+            if entry.get('staff_created'):
+                entry['changes'].insert(0, {'field': 'staff', 'old': None, 'new': f"Created staff #{staff_obj.id}"})
+                for change in changes:
+                    old_val = change['old']
+                    new_val = change['new']
+                    if change['field'] == 'staff_id':
+                        old_val = str(old_val) if old_val is not None else None
+                        new_val = str(new_val) if new_val is not None else None
+                    _log_availability_change(availability, staff_ref, change['field'], old_val, new_val, 'updated', 'import_xlsx')
+                    log_entries += 1
+        else:
+            entry['action'] = 'unchanged'
+            plan['unchanged'] = plan.get('unchanged', 0) + 1
+
+        operations.append(entry)
+
+    plan['operations'] = operations
+    plan['log_entries'] = log_entries
+
+    if apply_changes:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+
+    return plan
+
+
+def _availability_import_serializer() -> URLSafeTimedSerializer:
+    secret = app.config.get('SECRET_KEY') or SECRET_KEY
+    return URLSafeTimedSerializer(secret, salt='availability-import-plan')
+
+
+def _summarize_availability_plan(plan: dict[str, object]) -> str:
+    processed = plan.get('processed', 0)
+    created = plan.get('created', 0)
+    updated = plan.get('updated', 0)
+    unchanged = plan.get('unchanged', 0)
+    unmatched = len(plan.get('unmatched', []) or [])
+    ambiguous = len(plan.get('ambiguous', []) or [])
+    skipped = plan.get('skipped', 0)
+    parts = [f"Processed {processed}"]
+    parts.append(f"create {created}")
+    parts.append(f"update {updated}")
+    if unchanged:
+        parts.append(f"unchanged {unchanged}")
+    if unmatched:
+        parts.append(f"unmatched {unmatched}")
+    if ambiguous:
+        parts.append(f"ambiguous {ambiguous}")
+    if skipped:
+        parts.append(f"skipped {skipped}")
+    return ', '.join(parts)
+
+
+def resolve_student_branch(student_id: str | None) -> str:
+    """Return the branch name inferred from the student ID prefix."""
+    prefix_map = {'S': 'Stratford', 'E': 'Eastham', 'D': 'Docklands'}
+    try:
+        prefix = (student_id or '').strip().upper()[:1]
+    except Exception:
+        prefix = ''
+    if not prefix:
+        return 'Whitechapel'
+    return prefix_map.get(prefix, 'Whitechapel')
 
 def _is_allowed_attachment(filename: str) -> bool:
     try:
@@ -1060,7 +1606,8 @@ def inject_version():
         'SUPPORTED_LANGUAGES': SUPPORTED_LANGUAGES,  # expose uppercase name used in some templates
         'user_theme_preference': getattr(current_user, 'theme_preference', 'system') if current_user.is_authenticated else 'system',
         'CSRF_TOKEN': token,
-        'csrf_token': lambda: token  # backward compatibility for {{ csrf_token() }}
+        'csrf_token': lambda: token,  # backward compatibility for {{ csrf_token() }}
+        'now': datetime.utcnow  # expose datetime helper for public templates
     }
 
 # --------- Common Template Filters (dates, money) ---------- #
@@ -5169,8 +5716,7 @@ def cli_restore_observations(file_path: str | None, update: bool, dry_run: bool,
                 next_review_date=_parse_date(d.get('next_review_date')),
             )
             db.session.add(det)
-        inserted += 1
-
+        processed += 1
     try:
         db.session.commit()
         print(f"✓ Restore complete. Inserted: {inserted}, Updated: {updated}, Skipped: {skipped}")
@@ -5183,11 +5729,6 @@ def cli_restore_observations(file_path: str | None, update: bool, dry_run: bool,
 @permission_required('manage_floor_reports')
 def api_floor_report(rid: int):
     from models import PrintReport
-    pr = PrintReport.query.get_or_404(rid)
-    payload = pr.serialize()
-    return jsonify(payload)
-
-
 @app.route('/floor/reports/<int:rid>/print')
 @login_required
 @permission_required('manage_floor_reports')
@@ -8133,6 +8674,7 @@ def resources_index():
 @permission_required('manage_resources')
 def resources_loans_index():
     loans = (ResourceLoan.query
+             .options(joinedload(ResourceLoan.resource), joinedload(ResourceLoan.staff))
              .filter(ResourceLoan.status == 'on_loan')
              .order_by(ResourceLoan.loaned_at.desc())
              .all())
@@ -8149,7 +8691,35 @@ def resources_loans_index():
             'loaned_at': ln.loaned_at,
             'due_at': ln.due_at,
         })
-    return render_template('resources/loans.html', loans=rows)
+    can_force_return = getattr(current_user, 'is_superadmin', False)
+    return render_template('resources/loans.html', loans=rows, can_force_return=can_force_return)
+
+
+@app.route('/resources/loans/<int:loan_id>/force-return', methods=['POST'])
+@login_required
+@permission_required('manage_resources')
+def resources_force_return(loan_id: int):
+    if not getattr(current_user, 'is_superadmin', False):
+        abort(403)
+    loan = (ResourceLoan.query
+            .options(joinedload(ResourceLoan.resource), joinedload(ResourceLoan.staff))
+            .get_or_404(loan_id))
+    if loan.status != 'on_loan':
+        flash('Loan is not currently active.', 'warning')
+        return redirect(url_for('resources_loans_index'))
+    now = datetime.now(timezone.utc)
+    loan.status = 'returned'
+    loan.returned_at = now
+    try:
+        db.session.commit()
+        resource_name = loan.resource.name if loan.resource else 'Resource'
+        flash(f'{resource_name} is now available.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.error('resources_force_return: failed %s', exc, exc_info=True)
+        flash('Failed to force return. Please try again.', 'danger')
+    return redirect(url_for('resources_loans_index'))
+
 
 @app.route('/resources/loans/history')
 @login_required
@@ -9713,7 +10283,8 @@ def book_orders_create():
         # Resolve destination and setting name from dynamic settings
         to_email = get_setting('book_orders_to', 'techsupport@exceltutors.org.uk')
         setting_name = get_setting('book_orders_setting', 'operations')
-        send_email(to_email, subject, html, setting_name=setting_name)
+        cc_recipients = [addr for addr in ('management@exceltutors.org.uk', 'enquiries@exceltutors.org.uk') if addr.lower() != (to_email or '').lower()]
+        send_email(to_email, subject, html, setting_name=setting_name, cc=cc_recipients)
         order.email_sent_at = datetime.utcnow()
     except Exception as exc:
         app.logger.error('book_orders_create: email send failed %s', exc, exc_info=True)
@@ -9774,7 +10345,8 @@ def book_orders_resend(order_id: int):
         subject, html = _build_book_order_email(order)
         to_email = get_setting('book_orders_to', 'techsupport@exceltutors.org.uk')
         setting_name = get_setting('book_orders_setting', 'operations')
-        send_email(to_email, subject, html, setting_name=setting_name)
+        cc_recipients = [addr for addr in ('management@exceltutors.org.uk', 'enquiries@exceltutors.org.uk') if addr.lower() != (to_email or '').lower()]
+        send_email(to_email, subject, html, setting_name=setting_name, cc=cc_recipients)
         order.email_sent_at = datetime.utcnow()
         db.session.commit()
         flash('Order email re-sent','success')
@@ -10690,6 +11262,277 @@ def availability_index():
                            stats_subjects=stats_subjects,
                            stats_days=stats_days)
 
+
+@app.route('/availability/import_xlsx', methods=['POST'])
+@login_required
+def availability_import_xlsx():
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        token = (payload.get('confirm_token') or payload.get('token') or '').strip()
+        if not token:
+            return jsonify({'error': 'Missing confirmation token.'}), 400
+        serializer = _availability_import_serializer()
+        try:
+            token_data = serializer.loads(token, max_age=3600)
+        except SignatureExpired:
+            return jsonify({'error': 'Confirmation token has expired. Please upload again.'}), 400
+        except BadSignature:
+            return jsonify({'error': 'Invalid confirmation token.'}), 400
+
+        rows = token_data.get('rows') or []
+        if not isinstance(rows, list):
+            return jsonify({'error': 'Confirmation payload is malformed.'}), 400
+        df = pd.DataFrame(rows)
+        decisions = payload.get('decisions') if isinstance(payload, dict) else {}
+        try:
+            plan = _process_availability_import(df, apply_changes=True, decisions=decisions if isinstance(decisions, dict) else {})
+        except Exception as exc:
+            return jsonify({'error': f'Import failed: {exc}'}), 500
+
+        summary = _summarize_availability_plan(plan)
+        response = {
+            'status': 'applied',
+            'plan': plan,
+            'summary': summary,
+            'filename': token_data.get('filename'),
+            'row_count': token_data.get('row_count'),
+        }
+        warnings: list[str] = []
+        unmatched = plan.get('unmatched') or []
+        ambiguous = plan.get('ambiguous') or []
+        if unmatched:
+            unique = sorted(set(unmatched))
+            preview = ', '.join(unique[:10])
+            if len(unique) > 10:
+                preview += ', ...'
+            warnings.append(f'No staff match for: {preview}')
+        if ambiguous:
+            unique = sorted(set(ambiguous))
+            preview = ', '.join(unique[:10])
+            if len(unique) > 10:
+                preview += ', ...'
+            warnings.append(f'Multiple staff matches for: {preview}')
+        if warnings:
+            response['warnings'] = warnings
+        return jsonify(response)
+
+    wants_json = 'application/json' in (request.headers.get('Accept') or '').lower()
+    upload = request.files.get('xlsx_file')
+    if upload is None or not getattr(upload, 'filename', ''):
+        if wants_json:
+            return jsonify({'error': 'Select an XLSX file to import.'}), 400
+        flash('Select an XLSX file to import.', 'danger')
+        return redirect(url_for('availability_index'))
+
+    filename_lower = upload.filename.lower()
+    if not filename_lower.endswith(('.xlsx', '.xls')):
+        if wants_json:
+            return jsonify({'error': 'Only Excel files (.xlsx) are supported for availability import.'}), 400
+        flash('Only Excel files (.xlsx) are supported for availability import.', 'danger')
+        return redirect(url_for('availability_index'))
+
+    try:
+        df = pd.read_excel(upload)
+    except Exception as exc:
+        if wants_json:
+            return jsonify({'error': f'Unable to read spreadsheet: {exc}'}), 400
+        flash(f'Unable to read spreadsheet: {exc}', 'danger')
+        return redirect(url_for('availability_index'))
+
+    required_columns = [
+        'Name',
+        'Department',
+        'Which Subjects Can You Teach',
+        'Which Days Are You Available',
+        'Which Branch Do You Want to Take a Lesson In?',
+        'NotesMessages?',
+    ]
+    missing = [col for col in required_columns if col not in df.columns]
+    if missing:
+        message = 'Spreadsheet missing required columns: ' + ', '.join(missing)
+        if wants_json:
+            return jsonify({'error': message}), 400
+        flash(message, 'danger')
+        return redirect(url_for('availability_index'))
+
+    plan = _process_availability_import(df, apply_changes=False)
+    preview_summary = _summarize_availability_plan(plan)
+
+    if wants_json:
+        safe_df = df.where(pd.notnull(df), None)
+        safe_rows: list[dict[str, object]] = []
+        for record in safe_df.to_dict(orient='records'):
+            sanitized: dict[str, object] = {}
+            for key, value in record.items():
+                if isinstance(value, datetime):
+                    sanitized[key] = value.isoformat()
+                elif isinstance(value, pd.Timestamp):
+                    sanitized[key] = value.to_pydatetime().isoformat()
+                else:
+                    sanitized[key] = value
+            safe_rows.append(sanitized)
+        serializer = _availability_import_serializer()
+        token_payload = {
+            'rows': safe_rows,
+            'filename': upload.filename,
+            'row_count': int(getattr(df, 'shape', [0])[0]) if hasattr(df, 'shape') else len(safe_df),
+        }
+        token = serializer.dumps(token_payload)
+        response = {
+            'status': 'preview',
+            'plan': plan,
+            'summary': preview_summary,
+            'token': token,
+            'filename': upload.filename,
+            'row_count': token_payload['row_count'],
+        }
+        warnings: list[str] = []
+        unmatched = plan.get('unmatched') or []
+        ambiguous = plan.get('ambiguous') or []
+        if unmatched:
+            unique = sorted(set(unmatched))
+            preview = ', '.join(unique[:10])
+            if len(unique) > 10:
+                preview += ', ...'
+            warnings.append(f'No staff match for: {preview}')
+        if ambiguous:
+            unique = sorted(set(ambiguous))
+            preview = ', '.join(unique[:10])
+            if len(unique) > 10:
+                preview += ', ...'
+            warnings.append(f'Multiple staff matches for: {preview}')
+        if warnings:
+            response['warnings'] = warnings
+        return jsonify(response)
+
+    try:
+        plan = _process_availability_import(df, apply_changes=True)
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Import failed: {exc}', 'danger')
+        return redirect(url_for('availability_index'))
+
+    summary_text = _summarize_availability_plan(plan) or 'No changes detected'
+    flash('Availability import complete (' + summary_text + ').', 'success')
+
+    unmatched = plan.get('unmatched') or []
+    ambiguous = plan.get('ambiguous') or []
+    if unmatched:
+        sample = sorted(set(unmatched))
+        preview = ', '.join(sample[:10])
+        if len(sample) > 10:
+            preview += ', ...'
+        flash('No staff match for: ' + preview, 'warning')
+    if ambiguous:
+        sample = sorted(set(ambiguous))
+        preview = ', '.join(sample[:10])
+        if len(sample) > 10:
+            preview += ', ...'
+        flash('Multiple staff matches for: ' + preview, 'warning')
+
+    if plan.get('log_entries', 0) == 0 and (plan.get('created') or plan.get('updated')):
+        flash('Import completed but no change log entries were recorded.', 'info')
+
+    return redirect(url_for('availability_index'))
+
+
+@app.route('/availability/changelog')
+@login_required
+def availability_changelog():
+    staff_filter = (request.args.get('staff') or '').strip()
+    field_filter = (request.args.get('field') or '').strip()
+    source_filter = (request.args.get('source') or '').strip()
+    try:
+        limit_value = int(request.args.get('limit', 250))
+    except (TypeError, ValueError):
+        limit_value = 250
+    limit = min(max(limit_value, 1), 1000)
+
+    query = AvailabilityChange.query.options(
+        joinedload(AvailabilityChange.staff),
+        joinedload(AvailabilityChange.availability),
+        joinedload(AvailabilityChange.changed_by),
+    )
+
+    if staff_filter:
+        like = f"%{staff_filter.lower()}%"
+        query = query.outerjoin(Staff, AvailabilityChange.staff_id == Staff.id)
+        query = query.outerjoin(Availability, AvailabilityChange.availability_id == Availability.id)
+        query = query.filter(or_(func.lower(Staff.name).like(like), func.lower(Availability.name).like(like)))
+
+    if field_filter:
+        query = query.filter(AvailabilityChange.field == field_filter)
+
+    if source_filter:
+        like_source = f"%{source_filter.lower()}%"
+        query = query.filter(func.lower(AvailabilityChange.source).like(like_source))
+
+    entries = query.order_by(AvailabilityChange.changed_at.desc()).limit(limit).all()
+
+    fields = [row[0] for row in db.session.query(AvailabilityChange.field).distinct().order_by(AvailabilityChange.field.asc()).all() if row[0]]
+    sources = [row[0] for row in db.session.query(AvailabilityChange.source).distinct().filter(AvailabilityChange.source.isnot(None)).order_by(AvailabilityChange.source.asc()).all() if row[0]]
+
+    return render_template(
+        'availability/changelog.html',
+        entries=entries,
+        staff_filter=staff_filter,
+        field_filter=field_filter,
+        source_filter=source_filter,
+        fields=fields,
+        sources=sources,
+        limit=limit,
+    )
+
+
+@app.route('/availability/bulk', methods=['POST'])
+@login_required
+def availability_bulk():
+    action = (request.form.get('action') or '').strip().lower()
+    raw_ids = request.form.getlist('ids')
+    ids = []
+    for raw in raw_ids:
+        try:
+            val = int(raw)
+            ids.append(val)
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        flash('Select at least one availability record first.', 'warning')
+        return redirect(url_for('availability_index'))
+    records = Availability.query.filter(Availability.id.in_(ids)).all()
+    if not records:
+        flash('No matching availability records found for bulk action.', 'warning')
+        return redirect(url_for('availability_index'))
+
+    if action == 'delete':
+        deleted = 0
+        try:
+            for record in records:
+                staff_ref = None
+                try:
+                    staff_ref = record.staff
+                except Exception:
+                    staff_ref = None
+                _log_availability_change(
+                    record,
+                    staff_ref,
+                    'record',
+                    record.name,
+                    'Deleted via bulk action',
+                    'deleted',
+                    'bulk_delete',
+                )
+                db.session.delete(record)
+                deleted += 1
+            db.session.commit()
+            flash(f'Deleted {deleted} availability record(s).', 'success')
+        except Exception as exc:
+            db.session.rollback()
+            flash(f'Bulk delete failed: {exc}', 'danger')
+    else:
+        flash('Unsupported bulk action.', 'danger')
+    return redirect(url_for('availability_index'))
+
 # Safety: ensure new column exists for legacy databases (after deployment without restart)
 try:
     from sqlalchemy import text as _text_av
@@ -10699,6 +11542,36 @@ try:
             _conn.execute(_text_av("ALTER TABLE availability ADD COLUMN staff_id INTEGER"))
 except Exception:
     # Non-fatal; app will continue and column will be created on next run if needed
+    pass
+
+try:
+    from sqlalchemy import text as _text_avchg
+    with db.engine.begin() as _conn:
+        exists = _conn.execute(_text_avchg("SELECT name FROM sqlite_master WHERE type='table' AND name='availability_change'"))
+        if not exists.fetchone():
+            _conn.execute(_text_avchg(
+                """
+                CREATE TABLE IF NOT EXISTS availability_change (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    availability_id INTEGER,
+                    staff_id INTEGER,
+                    field VARCHAR(120) NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT,
+                    change_type VARCHAR(40) NOT NULL DEFAULT 'updated',
+                    source VARCHAR(80),
+                    changed_by_id INTEGER,
+                    changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(availability_id) REFERENCES availability(id) ON DELETE SET NULL,
+                    FOREIGN KEY(staff_id) REFERENCES staff(id) ON DELETE SET NULL,
+                    FOREIGN KEY(changed_by_id) REFERENCES user(id) ON DELETE SET NULL
+                )
+                """
+            ))
+            _conn.execute(_text_avchg("CREATE INDEX IF NOT EXISTS ix_availability_change_availability_id ON availability_change (availability_id)"))
+            _conn.execute(_text_avchg("CREATE INDEX IF NOT EXISTS ix_availability_change_staff_id ON availability_change (staff_id)"))
+            _conn.execute(_text_avchg("CREATE INDEX IF NOT EXISTS ix_availability_change_changed_at ON availability_change (changed_at)"))
+except Exception:
     pass
 
 @app.route('/availability/new', methods=['GET','POST'])
@@ -10752,6 +11625,16 @@ def availability_new():
                 if st and st.department:
                     a.department = st.department
         db.session.add(a)
+        db.session.flush()
+        staff_ref = None
+        try:
+            if a.staff_id:
+                staff_ref = Staff.query.get(a.staff_id)
+            else:
+                staff_ref = getattr(a, 'staff', None)
+        except Exception:
+            staff_ref = getattr(a, 'staff', None)
+        _log_availability_change(a, staff_ref, 'record', None, 'Created via form', 'created', 'manual_form')
         db.session.commit()
         flash('Availability record created','success')
         return redirect(url_for('availability_index'))
@@ -10779,6 +11662,15 @@ def availability_edit(aid):
         form.notes.data = a.notes
     if form.validate_on_submit():
         selected_branches = [b for b in (form.branches.data or []) if b in allowed_branch_values]
+        before_state = {
+            'name': a.name,
+            'department': a.department,
+            'branches': a.branches,
+            'days': a.days,
+            'subjects': a.subjects,
+            'notes': a.notes,
+            'staff_id': a.staff_id,
+        }
         a.name = form.name.data.strip()
         a.department = (form.department.data or '').strip() or None
         a.branches = ",".join(selected_branches) if selected_branches else None
@@ -10791,6 +11683,29 @@ def availability_edit(aid):
             a.staff_id = None
         elif sid and sid.isdigit():
             a.staff_id = int(sid)
+        changes: list[tuple[str, str | None, str | None]] = []
+        for field, old_val in before_state.items():
+            new_val = getattr(a, field)
+            if field == 'staff_id':
+                if old_val != new_val:
+                    changes.append((field, str(old_val) if old_val is not None else None, str(new_val) if new_val is not None else None))
+                continue
+            old_txt = (old_val or '').strip() if isinstance(old_val, str) else (str(old_val) if old_val is not None else '')
+            new_txt = (new_val or '').strip() if isinstance(new_val, str) else (str(new_val) if new_val is not None else '')
+            if old_txt != new_txt:
+                changes.append((field, old_val if old_val is not None else None, new_val if new_val else None))
+        if changes:
+            db.session.flush()
+            staff_ref = None
+            try:
+                if a.staff_id:
+                    staff_ref = Staff.query.get(a.staff_id)
+                else:
+                    staff_ref = getattr(a, 'staff', None)
+            except Exception:
+                staff_ref = getattr(a, 'staff', None)
+            for field, old_val, new_val in changes:
+                _log_availability_change(a, staff_ref, field, old_val, new_val, 'updated', 'manual_form')
         db.session.commit()
         flash('Availability updated','success')
         return redirect(url_for('availability_index'))
@@ -12421,6 +13336,75 @@ def invoices_import():
 def invoice_detail(invoice_id):
     invoice = Invoice.query.options(joinedload(Invoice.company)).get_or_404(invoice_id)
     return render_template('invoices/detail.html', invoice=invoice)
+
+
+@app.route('/invoices/<int:invoice_id>/duplicate', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_kids_club_invoices')
+def invoice_duplicate(invoice_id):
+    source = Invoice.query.get_or_404(invoice_id)
+    form = InvoiceForm()
+    companies = Company.query.order_by(Company.name.asc()).all()
+    form.company_id.choices = [(c.id, c.name) for c in companies]
+
+    if request.method == 'GET':
+        form.company_id.data = source.company_id
+        form.parent_name.data = source.parent_name
+        form.parent_phone.data = source.parent_phone
+        form.parent_email.data = source.parent_email
+        form.parent_address.data = source.parent_address
+        form.child_name.data = source.child_name
+        form.sub_total.data = source.sub_total
+        form.total.data = source.total
+        form.status.data = source.status or 'PAID'
+        form.payment_method.data = source.payment_method or ''
+        form.notes.data = source.notes
+        form.invoice_date.data = None
+        form.due_date.data = None
+        form.period_start.data = None
+        form.period_end.data = None
+
+    if form.validate_on_submit():
+        company = Company.query.get(form.company_id.data)
+        if not company:
+            flash('Selected company was not found', 'danger')
+            return redirect(url_for('invoice_duplicate', invoice_id=invoice_id))
+        invoice_no = company.generate_invoice_no()
+        duplicate = Invoice(
+            invoice_no=invoice_no,
+            company_id=company.id,
+            created_by_id=current_user.id,
+            invoice_date=form.invoice_date.data,
+            due_date=form.due_date.data,
+            payment_method=form.payment_method.data or None,
+            parent_name=form.parent_name.data,
+            parent_phone=form.parent_phone.data,
+            parent_email=form.parent_email.data,
+            parent_address=form.parent_address.data,
+            child_name=form.child_name.data,
+            period_start=form.period_start.data,
+            period_end=form.period_end.data,
+            sub_total=form.sub_total.data,
+            total=form.total.data,
+            status=form.status.data,
+            notes=form.notes.data,
+        )
+        db.session.add(duplicate)
+        company.next_invoice_seq = (company.next_invoice_seq or 1) + 1
+        db.session.commit()
+        flash(f'Invoice {duplicate.invoice_no} created from {source.invoice_no}', 'success')
+        return redirect(url_for('invoice_detail', invoice_id=duplicate.id))
+
+    if request.method != 'GET' and not form.invoice_date.data:
+        form.invoice_date.data = None
+    if request.method != 'GET' and not form.due_date.data:
+        form.due_date.data = None
+    if request.method != 'GET' and not form.period_start.data:
+        form.period_start.data = None
+    if request.method != 'GET' and not form.period_end.data:
+        form.period_end.data = None
+
+    return render_template('invoices/form.html', form=form, mode='duplicate', source_invoice=source)
 
 @app.route('/invoices/<int:invoice_id>/edit', methods=['GET','POST'])
 @login_required
@@ -14531,6 +15515,17 @@ def error_report_status(rid):
     flash('Status updated','success')
     return redirect(url_for('error_report_detail', rid=rep.id))
 
+
+@app.route('/admin/public-forms')
+@login_required
+@permission_required('manage_users')
+def admin_public_forms():
+    if not getattr(current_user, 'is_superadmin', False):
+        abort(403)
+    forms = _public_form_rows()
+    total_urls = sum(len(row['urls']) for row in forms)
+    return render_template('admin/public_forms.html', forms=forms, total_forms=len(forms), total_urls=total_urls)
+
 # ---------------- Student Concerns (public facing + admin list) ---------------- #
 @csrf.exempt
 @app.route('/report/student-concern', methods=['GET','POST'])
@@ -14581,6 +15576,7 @@ def report_student_concern():
 # ---------------- Admission Assessment (Public) ---------------- #
 @csrf.exempt
 @app.route('/admission-assessment', methods=['GET', 'POST'])
+@app.route('/public/admission-assessment', methods=['GET', 'POST'])
 def admission_assessment_public():
     from utils import BRANCH_CHOICES
 
@@ -14681,8 +15677,7 @@ def admission_assessment_public():
             except Exception as mail_exc:  # pragma: no cover - email failures should not block UX
                 app.logger.warning('Admission assessment confirmation email failed for %s: %s', parent_email, mail_exc)
 
-        flash('Thank you. Your details have been submitted and our admissions team will be in touch shortly.', 'success')
-        return redirect(url_for('admission_assessment_public'))
+        return redirect('https://admissions.exceltutors.org.uk/')
 
     return render_template(
         'public/admission_assessment.html',
@@ -15606,7 +16601,9 @@ def admission_assessments_index():
     heard_filters = [h for h in request.args.getlist('heard') if h]
     subject_filter = (request.args.get('subject') or '').strip()
     sort = (request.args.get('sort') or 'created_at').strip()
-    direction = (request.args.get('direction') or 'asc').strip().lower()
+    direction = (request.args.get('direction') or '').strip().lower()
+    if direction not in {'asc', 'desc'}:
+        direction = 'desc' if sort == 'created_at' else 'asc'
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 25, type=int), 200)
 
@@ -15658,9 +16655,16 @@ def admission_assessments_index():
     except Exception:
         recent_anchor = datetime.now()
     recent_window = recent_anchor - timedelta(days=7)
+    previous_window_start = recent_window - timedelta(days=7)
     recent_total = (
         AdmissionAssessmentSubmission.query
         .filter(AdmissionAssessmentSubmission.created_at >= recent_window)
+        .count()
+    )
+    previous_total = (
+        AdmissionAssessmentSubmission.query
+        .filter(AdmissionAssessmentSubmission.created_at >= previous_window_start)
+        .filter(AdmissionAssessmentSubmission.created_at < recent_window)
         .count()
     )
     status_summary_rows = (
@@ -15672,6 +16676,114 @@ def admission_assessments_index():
     for status_value, count in status_summary_rows:
         label = status_value or 'Application Submitted'
         status_summary[label] = count
+
+    count_expr = func.count().label('total')
+    branch_summary_rows = (
+        db.session.query(AdmissionAssessmentSubmission.branch, count_expr)
+        .group_by(AdmissionAssessmentSubmission.branch)
+        .order_by(count_expr.desc())
+        .all()
+    )
+    branch_summary = []
+    for branch_value, total in branch_summary_rows:
+        label = branch_value or 'Unknown branch'
+        branch_summary.append({'label': label, 'count': total})
+
+    source_summary_rows = (
+        db.session.query(AdmissionAssessmentSubmission.heard_about, count_expr)
+        .group_by(AdmissionAssessmentSubmission.heard_about)
+        .order_by(count_expr.desc())
+        .all()
+    )
+    source_summary = []
+    for source_value, total in source_summary_rows:
+        label = source_value or 'Unknown source'
+        source_summary.append({'label': label, 'count': total})
+
+    trend_horizon_days = 30
+    trend_horizon_weeks = 12
+    trend_start = recent_anchor - timedelta(days=trend_horizon_weeks * 7)
+    analysis_rows = (
+        AdmissionAssessmentSubmission.query
+        .filter(AdmissionAssessmentSubmission.created_at >= trend_start)
+        .all()
+    )
+    from collections import defaultdict
+
+    daily_counts = defaultdict(int)
+    weekly_counts = defaultdict(int)
+    recent_status_counts = defaultdict(int)
+    enrolled_total = status_summary.get('Enrolled', 0)
+    for row in analysis_rows:
+        created_at = getattr(row, 'created_at', None)
+        if not created_at:
+            continue
+        day_key = created_at.date()
+        daily_counts[day_key] += 1
+        week_start = day_key - timedelta(days=day_key.weekday())
+        weekly_counts[week_start] += 1
+        if created_at >= recent_window:
+            label = (row.status or 'Application Submitted')
+            recent_status_counts[label] += 1
+
+    # Fill gaps for the last 30 days and 12 weeks to provide smooth charts.
+    daily_labels = []
+    daily_series = []
+    daily_start = (recent_anchor - timedelta(days=trend_horizon_days - 1)).date()
+    for offset in range(trend_horizon_days):
+        day = daily_start + timedelta(days=offset)
+        daily_labels.append(day.strftime('%d %b'))
+        daily_series.append(daily_counts.get(day, 0))
+
+    weekly_labels = []
+    weekly_series = []
+    week_start_anchor = recent_anchor.date() - timedelta(days=recent_anchor.weekday())
+    first_week = week_start_anchor - timedelta(days=(trend_horizon_weeks - 1) * 7)
+    for offset in range(trend_horizon_weeks):
+        week_day = first_week + timedelta(days=offset * 7)
+        weekly_labels.append(week_day.strftime('W%W %Y'))
+        weekly_series.append(weekly_counts.get(week_day, 0))
+
+    try:
+        change_abs = recent_total - previous_total
+    except Exception:
+        change_abs = recent_total
+    change_pct = 0.0
+    if previous_total:
+        change_pct = (change_abs / previous_total) * 100
+
+    analytics = {
+        'overview': {
+            'overall_total': overall_total,
+            'recent_total': recent_total,
+            'previous_total': previous_total,
+            'recent_change': change_abs,
+            'recent_change_pct': round(change_pct, 1),
+            'enrolment_rate': round((enrolled_total / overall_total) * 100, 1) if overall_total else 0,
+        },
+        'daily': {
+            'labels': daily_labels,
+            'counts': daily_series,
+        },
+        'weekly': {
+            'labels': weekly_labels,
+            'counts': weekly_series,
+        },
+        'status': {
+            'labels': list(status_summary.keys()),
+            'counts': list(status_summary.values()),
+            'recent_labels': list(recent_status_counts.keys()),
+            'recent_counts': [recent_status_counts[label] for label in recent_status_counts.keys()],
+        },
+        'branches': {
+            'labels': [item['label'] for item in branch_summary],
+            'counts': [item['count'] for item in branch_summary],
+        },
+        'sources': {
+            'labels': [item['label'] for item in source_summary],
+            'counts': [item['count'] for item in source_summary],
+        },
+    }
 
     return render_template(
         'admission_assessments/index.html',
@@ -15692,6 +16804,9 @@ def admission_assessments_index():
         overall_total=overall_total,
         recent_total=recent_total,
         status_summary=status_summary,
+        branch_summary=branch_summary,
+        source_summary=source_summary,
+        analytics=analytics,
     )
 
 
@@ -15776,6 +16891,24 @@ def admission_assessment_add_note(submission_id: int):
         db.session.rollback()
         flash(f'Failed to add note: {exc}', 'danger')
     return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
+
+
+@app.route('/admission-assessments/<int:submission_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_admission_assessments')
+def admission_assessment_delete(submission_id: int):
+    if not getattr(current_user, 'is_superadmin', False):
+        abort(403)
+    submission = AdmissionAssessmentSubmission.query.get_or_404(submission_id)
+    try:
+        db.session.delete(submission)
+        db.session.commit()
+        flash('Submission deleted.', 'success')
+        return redirect(url_for('admission_assessments_index'))
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Failed to delete submission: {exc}', 'danger')
+        return redirect(url_for('admission_assessment_detail', submission_id=submission_id))
 
 
 @app.route('/admission-assessments/<int:submission_id>/scores', methods=['POST'])
@@ -15937,6 +17070,8 @@ def student_concerns_index():
     tutors = [t.strip() for t in request.args.getlist('tutor') if t.strip()]
     reasons = [r.strip() for r in request.args.getlist('reason') if r.strip()]
     statuses = [s.strip() for s in request.args.getlist('status') if s.strip()]
+    branches = [b.strip() for b in request.args.getlist('branch') if b.strip()]
+    branches = [b.strip() for b in request.args.getlist('branch') if b.strip()]
     sort = (request.args.get('sort') or 'created_at').strip()
     direction = (request.args.get('direction') or 'desc').strip().lower()
     page = request.args.get('page', 1, type=int)
@@ -15959,6 +17094,25 @@ def student_concerns_index():
     if reasons:
         from sqlalchemy import or_ as _or
         query = query.filter(_or(*[StudentConcern.reasons_json.ilike(f'%"{r}"%') for r in reasons]))
+
+    branch_map = {'Stratford': 'S', 'Eastham': 'E', 'Docklands': 'D'}
+    valid_branches = {'Stratford', 'Eastham', 'Docklands', 'Whitechapel'}
+    selected_branches = [b for b in branches if b in valid_branches]
+    if selected_branches:
+        from sqlalchemy import func
+        from sqlalchemy import or_ as _or
+        prefix_expr = func.substr(func.upper(func.coalesce(StudentConcern.student_id, '')), 1, 1)
+        conditions = []
+        for branch_name in selected_branches:
+            if branch_name in branch_map:
+                conditions.append(prefix_expr == branch_map[branch_name])
+            else:
+                conditions.append(_or(
+                    StudentConcern.student_id.is_(None),
+                    prefix_expr.notin_(list(branch_map.values())),
+                    prefix_expr == ''
+                ))
+        query = query.filter(_or(*conditions))
 
     if sort in {'student_id','student_name','subject','tutor_name','status','created_at'}:
         col = getattr(StudentConcern, sort)
@@ -16071,6 +17225,8 @@ def student_concerns_index():
 
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     records = pagination.items
+    branch_options = ['Stratford', 'Eastham', 'Docklands', 'Whitechapel']
+
     return render_template(
         'concerns/index.html',
         records=records,
@@ -16082,6 +17238,7 @@ def student_concerns_index():
         tutors_selected=tutors,
         reasons_selected=reasons,
         statuses_selected=statuses,
+        branches_selected=selected_branches,
         sort=sort,
         direction=direction,
         subject_options=subject_options,
@@ -16102,6 +17259,8 @@ def student_concerns_index():
         subjects_top_filtered=subjects_top_filtered,
         subjects_least_filtered=subjects_least_filtered,
         meeting_participants=meeting_participants,
+        branch_options=branch_options,
+        resolve_student_branch=resolve_student_branch,
     )
 
 
@@ -16122,6 +17281,7 @@ def student_concerns_export():
     tutors = [t.strip() for t in request.args.getlist('tutor') if t.strip()]
     reasons = [r.strip() for r in request.args.getlist('reason') if r.strip()]
     statuses = [s.strip() for s in request.args.getlist('status') if s.strip()]
+    branches = [b.strip() for b in request.args.getlist('branch') if b.strip()]
     sort = (request.args.get('sort') or 'created_at').strip()
     direction = (request.args.get('direction') or 'desc').strip().lower()
 
@@ -16142,6 +17302,25 @@ def student_concerns_export():
     if reasons:
         from sqlalchemy import or_ as _or
         query = query.filter(_or(*[StudentConcern.reasons_json.ilike(f'%"{r}"%') for r in reasons]))
+
+    branch_map = {'Stratford': 'S', 'Eastham': 'E', 'Docklands': 'D'}
+    valid_branches = {'Stratford', 'Eastham', 'Docklands', 'Whitechapel'}
+    selected_branches = [b for b in branches if b in valid_branches]
+    if selected_branches:
+        from sqlalchemy import func
+        from sqlalchemy import or_ as _or
+        prefix_expr = func.substr(func.upper(func.coalesce(StudentConcern.student_id, '')), 1, 1)
+        conditions = []
+        for branch_name in selected_branches:
+            if branch_name in branch_map:
+                conditions.append(prefix_expr == branch_map[branch_name])
+            else:
+                conditions.append(_or(
+                    StudentConcern.student_id.is_(None),
+                    prefix_expr.notin_(list(branch_map.values())),
+                    prefix_expr == ''
+                ))
+        query = query.filter(_or(*conditions))
 
     if sort in {'student_id','student_name','subject','tutor_name','status','created_at'}:
         col = getattr(StudentConcern, sort)
@@ -16168,6 +17347,7 @@ def student_concerns_export():
             'Created At': created,
             'Student ID': sc.student_id,
             'Student Name': sc.student_name,
+            'Branch': resolve_student_branch(getattr(sc, 'student_id', None)),
             'Year Group': sc.year_group,
             'Subject': sc.subject,
             'Tutor Name': sc.tutor_name,

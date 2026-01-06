@@ -33,6 +33,9 @@ block content %}
           <th class="py-2 px-3 text-left">Staff</th>
           <th class="py-2 px-3 text-left">Loaned At</th>
           <th class="py-2 px-3 text-left">Due At</th>
+          {% if can_force_return %}
+          <th class="py-2 px-3 text-left">Actions</th>
+          {% endif %}
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -49,6 +52,26 @@ block content %}
             {{ ln.due_at|fmt_date }} {{ ln.due_at.strftime('%H:%M') if ln.due_at
             else '' }}
           </td>
+          {% if can_force_return %}
+          <td class="py-2 px-3">
+            <form
+              method="post"
+              action="{{ url_for('resources_force_return', loan_id=ln.id) }}"
+              onsubmit="return confirm('Force return this resource?');"
+            >
+              <input
+                type="hidden"
+                name="csrf_token"
+                value="{{ csrf_token() }}"
+              />
+              <button
+                class="soft-btn soft-btn-primary text-xs bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+              >
+                Force return
+              </button>
+            </form>
+          </td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>

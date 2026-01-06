@@ -1,0 +1,73 @@
+{% extends 'base.html' %} {% block page_title %}Public Forms{% endblock %} {%
+block crumb_current %}Public Forms{% endblock %} {% block content %}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+  <div class="soft-card p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">
+      Public Forms
+    </div>
+    <div class="text-2xl font-semibold text-slate-800 dark:text-slate-100">
+      {{ total_forms }}
+    </div>
+  </div>
+  <div class="soft-card p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">Total URLs</div>
+    <div class="text-2xl font-semibold text-slate-800 dark:text-slate-100">
+      {{ total_urls }}
+    </div>
+  </div>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="publicFormsTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Form</th>
+          <th class="py-2 px-3 text-left">URL(s)</th>
+          <th class="py-2 px-3 text-left">Notes</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for form in forms %}
+        <tr>
+          <td class="py-2 px-3 font-medium text-slate-800 dark:text-slate-100">
+            {{ form.name }}
+          </td>
+          <td class="py-2 px-3">
+            {% for url in form.urls %} {% if '<' in url %}
+            <div class="text-xs font-mono text-slate-500 dark:text-slate-300">
+              {{ url }}
+            </div>
+            {% else %}
+            <div>
+              <a
+                class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200 break-all"
+                href="{{ url }}"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ url }}
+              </a>
+            </div>
+            {% endif %} {% else %}
+            <div class="text-xs text-slate-400">No URL configured.</div>
+            {% endfor %}
+          </td>
+          <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-300">
+            {{ form.note or '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

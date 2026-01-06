@@ -4,7 +4,7 @@
 {% block page_title %}Admission Assessment Management{% endblock %}
 {% block content %}
 <div class="max-w-2xl mx-auto">
-  <form method="post" class="soft-card p-6 shadow-md space-y-6" x-data="assessmentForm()">
+  <form method="post" class="soft-card p-6 shadow-md space-y-6" x-data="assessmentForm()" @submit="handleSubmit">
     {{ csrf_field() }}
     <div class="hidden" aria-hidden="true">
       <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
@@ -102,10 +102,17 @@
           <li>After the assessment, we will share subject-specific scores and recommendations.</li>
         </ul>
       </div>
-      <button type="submit" class="soft-btn soft-btn-primary w-full justify-center text-sm font-semibold py-2">
+      <button type="submit" class="soft-btn soft-btn-primary w-full justify-center text-sm font-semibold py-2" :disabled="isSubmitting" :class="isSubmitting ? 'opacity-60 cursor-not-allowed' : ''">
         Submit admission assessment request
       </button>
     </section>
+    <div x-show="isSubmitting" x-cloak class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50" x-transition.opacity>
+      <div class="bg-white shadow-lg rounded-lg px-6 py-5 flex flex-col items-center gap-3 text-center max-w-sm">
+        <span class="w-10 h-10 border-4 border-slate-200 border-t-emerald-500 rounded-full animate-spin"></span>
+        <p class="text-sm font-medium text-slate-700">Submitting your request...</p>
+        <p class="text-xs text-slate-500">Please wait while we connect you to our admissions portal.</p>
+      </div>
+    </div>
   </form>
 </div>
 {% endblock %}
@@ -114,10 +121,18 @@
   function assessmentForm() {
     return {
       otherSelected: {{ 'true' if request.form.get('subject_other') else 'false' }},
+      isSubmitting: false,
       handleOtherToggle(event) {
         if (!event.target.checked && this.$refs.otherInput) {
           this.$refs.otherInput.value = '';
         }
+      },
+      handleSubmit(event) {
+        if (this.isSubmitting) {
+          event.preventDefault();
+          return;
+        }
+        this.isSubmitting = true;
       },
     };
   }

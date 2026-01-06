@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% block title %}Availability Changelog{% endblock %}
+{% block page_title %}Availability Changelog{% endblock %}
+{% block content %}
+<div class="mb-6 flex items-center justify-between gap-4 flex-wrap">
+  <div class="flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-slate-700">Change Log</h2>
+    <span class="text-xs text-slate-400">{{ entries|length }} shown (limit {{ limit }})</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap text-xs">
+    <a class="soft-btn bg-slate-100" href="{{ url_for('availability_index') }}">Back to Availability</a>
+  </div>
+</div>
+
+<div class="soft-card p-4 mb-6">
+  <form method="get" class="grid gap-3 md:grid-cols-5">
+    <div class="flex flex-col gap-2 md:col-span-2">
+      <label class="text-xs font-medium text-slate-500">Staff or Tutor Name</label>
+      <input
+        class="soft-input"
+        name="staff"
+        value="{{ staff_filter }}"
+        placeholder="Filter by staff name"
+      />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Field</label>
+      <select class="soft-input" name="field">
+        <option value="">All Fields</option>
+        {% for f in fields %}
+        <option value="{{ f }}" {% if field_filter == f %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Source</label>
+      <select class="soft-input" name="source">
+        <option value="">All Sources</option>
+        {% for s in sources %}
+        <option value="{{ s }}" {% if source_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Limit</label>
+      <select class="soft-input" name="limit">
+        {% for size in [50, 100, 250, 500, 1000] %}
+        <option value="{{ size }}" {% if limit == size %}selected{% endif %}>Show {{ size }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end gap-2">
+      <button class="soft-btn soft-btn-primary">Apply</button>
+      <a class="soft-btn bg-slate-100" href="{{ url_for('availability_changelog') }}">Clear</a>
+    </div>
+  </form>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm" data-sortable data-paginate data-page-size="50">
+      <thead class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase">
+        <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left">Changed At</th>
+          <th class="py-2 px-3 text-left">Staff / Availability</th>
+          <th class="py-2 px-3 text-left">Field</th>
+          <th class="py-2 px-3 text-left">Old Value</th>
+          <th class="py-2 px-3 text-left">New Value</th>
+          <th class="py-2 px-3 text-left">Changed By</th>
+          <th class="py-2 px-3 text-left">Source</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for entry in entries %}
+        <tr class="hover:bg-slate-50 align-top">
+          <td class="py-2 px-3 whitespace-nowrap text-xs text-slate-500">
+            {{ entry.changed_at.strftime('%Y-%m-%d %H:%M') if entry.changed_at else '—' }}
+          </td>
+          <td class="py-2 px-3 text-xs">
+            {% if entry.staff %}
+            <a class="text-indigo-600" href="{{ url_for('staff_detail', sid=entry.staff.id) }}">{{ entry.staff.name }}</a>
+            {% elif entry.availability %}
+            <a class="text-indigo-600" href="{{ url_for('availability_edit', aid=entry.availability.id) }}">{{ entry.availability.name }}</a>
+            {% else %}
+            <span class="text-slate-400">—</span>
+            {% endif %}
+            {% if entry.availability %}
+            <div class="text-[11px] text-slate-400">Availability #{{ entry.availability.id }}</div>
+            {% endif %}
+          </td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            <span class="soft-badge gray">{{ entry.field }}</span>
+            <span class="soft-badge indigo ml-1">{{ entry.change_type }}</span>
+          </td>
+          <td class="py-2 px-3 text-xs max-w-xs whitespace-pre-wrap break-words">
+            {{ entry.old_value if entry.old_value is not none and entry.old_value != '' else '—' }}
+          </td>
+          <td class="py-2 px-3 text-xs max-w-xs whitespace-pre-wrap break-words">
+            {{ entry.new_value if entry.new_value is not none and entry.new_value != '' else '—' }}
+          </td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            {% if entry.changed_by %}
+            <span>{{ entry.changed_by.name }}</span>
+            {% else %}
+            <span class="text-slate-400">—</span>
+            {% endif %}
+          </td>
+          <td class="py-2 px-3 text-xs whitespace-nowrap">
+            {% if entry.source %}
+            <span class="soft-badge blue">{{ entry.source }}</span>
+            {% else %}
+            <span class="text-slate-400">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="py-6 px-3 text-center text-xs text-slate-400">No change log entries found for the selected filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

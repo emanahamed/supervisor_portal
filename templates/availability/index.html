@@ -12,6 +12,32 @@ page_title %}Availability{% endblock %} {% block content %}
       href="{{ url_for('availability_new') }}"
       >New</a
     >
+    <form
+      id="availabilityImportForm"
+      action="{{ url_for('availability_import_xlsx') }}"
+      method="post"
+      enctype="multipart/form-data"
+      class="flex items-center"
+    >
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <label
+        class="soft-btn bg-slate-100 cursor-pointer text-xs flex items-center gap-2"
+      >
+        Import XLSX
+        <input
+          id="availabilityImportInput"
+          type="file"
+          name="xlsx_file"
+          accept=".xlsx,.xls"
+          class="hidden"
+        />
+      </label>
+    </form>
+    <a
+      class="soft-btn bg-slate-100 text-xs"
+      href="{{ url_for('availability_changelog') }}"
+      >Changelog</a
+    >
   </div>
 </div>
 
@@ -22,6 +48,193 @@ page_title %}Availability{% endblock %} {% block content %}
   sync_error %}<span class="ml-2">Last error: {{ sync_error }}</span>{% endif %}
   {% if synced_at %}<span class="ml-2">Last sync at {{ synced_at }}</span>{%
   endif %}
+</div>
+
+<div
+  id="availabilityImportLoader"
+  class="hidden fixed inset-0 z-40 flex items-center justify-center bg-white/80"
+>
+  <div class="soft-card flex items-center gap-3 p-4 text-sm text-slate-600">
+    <svg
+      class="w-5 h-5 text-indigo-500 animate-spin"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        class="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        stroke-width="4"
+      ></circle>
+      <path
+        class="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+      ></path>
+    </svg>
+    <span>Processing upload…</span>
+  </div>
+</div>
+
+<div
+  id="availabilityImportPreview"
+  class="hidden fixed inset-0 z-50"
+  role="dialog"
+  aria-modal="true"
+>
+  <div class="absolute inset-0 bg-slate-900/50" data-import-dismiss></div>
+  <div class="relative min-h-full flex items-center justify-center p-4">
+    <div
+      class="soft-card relative w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+    >
+      <div
+        class="flex items-center justify-between border-b border-slate-200 p-4"
+      >
+        <h3 class="text-base font-semibold text-slate-700">
+          Confirm Availability Import
+        </h3>
+        <button
+          type="button"
+          class="text-slate-400 hover:text-slate-600 text-xl leading-none"
+          aria-label="Close"
+          data-import-dismiss
+        >
+          ×
+        </button>
+      </div>
+      <div class="p-4 overflow-y-auto flex-1 text-sm text-slate-600">
+        <p id="availabilityPreviewSummary" class="text-slate-600"></p>
+        <div
+          id="availabilityPreviewStats"
+          class="mt-3 flex flex-wrap gap-2 text-xs"
+        ></div>
+        <div
+          id="availabilityPreviewWarnings"
+          class="mt-3 space-y-2 text-xs"
+        ></div>
+        <div class="mt-4 border border-slate-200 rounded-md overflow-hidden">
+          <table class="min-w-full text-xs">
+            <thead class="bg-slate-100 text-slate-600 uppercase tracking-wide">
+              <tr>
+                <th class="py-2 px-2 text-left w-16">Row</th>
+                <th class="py-2 px-2 text-left">Staff</th>
+                <th class="py-2 px-2 text-left">Action</th>
+                <th class="py-2 px-2 text-left">Details</th>
+                <th class="py-2 px-2 text-left">Notes</th>
+              </tr>
+            </thead>
+            <tbody
+              id="availabilityPreviewOperations"
+              class="divide-y divide-slate-100"
+            ></tbody>
+          </table>
+          <p
+            id="availabilityPreviewOverflow"
+            class="hidden px-3 py-2 text-slate-400 text-xs bg-slate-50"
+          ></p>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-slate-200 p-4">
+        <button type="button" class="soft-btn bg-slate-100" data-import-dismiss>
+          Cancel
+        </button>
+        <button
+          type="button"
+          id="availabilityPreviewConfirm"
+          class="soft-btn soft-btn-primary"
+        >
+          Apply Import
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div
+  id="availabilityDecisionModal"
+  class="hidden fixed inset-0 z-60"
+  role="dialog"
+  aria-modal="true"
+>
+  <div class="absolute inset-0 bg-slate-900/50" data-decision-cancel></div>
+  <div class="relative min-h-full flex items-center justify-center p-4">
+    <div
+      class="soft-card relative w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-xl"
+    >
+      <div
+        class="flex items-center justify-between border-b border-slate-200 p-4"
+      >
+        <h3
+          id="availabilityDecisionTitle"
+          class="text-base font-semibold text-slate-700"
+        >
+          Resolve Import Row
+        </h3>
+        <button
+          type="button"
+          class="text-slate-400 hover:text-slate-600 text-xl leading-none"
+          aria-label="Close"
+          data-decision-cancel
+        >
+          ×
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto px-6 py-5 text-sm text-slate-600">
+        <div class="space-y-5">
+          <div
+            id="availabilityDecisionMessage"
+            class="space-y-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 leading-relaxed text-slate-700"
+          ></div>
+          <div id="availabilityDecisionListWrap" class="space-y-2 hidden">
+            <h4
+              class="text-xs font-semibold uppercase text-slate-500 tracking-wide"
+            >
+              Suggested matches
+            </h4>
+            <div
+              id="availabilityDecisionList"
+              class="space-y-3 max-h-[50vh] overflow-y-auto pr-2"
+            ></div>
+          </div>
+          <div id="availabilityDecisionExtra" class="space-y-3"></div>
+        </div>
+        <p
+          id="availabilityDecisionError"
+          class="hidden mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600"
+        ></p>
+      </div>
+      <div
+        class="flex items-center justify-between gap-2 border-t border-slate-200 p-4"
+      >
+        <button
+          type="button"
+          id="availabilityDecisionCancel"
+          class="soft-btn bg-slate-100"
+        >
+          Cancel Import
+        </button>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            id="availabilityDecisionSkip"
+            class="soft-btn bg-slate-100"
+          >
+            Skip Row
+          </button>
+          <button
+            type="button"
+            id="availabilityDecisionConfirm"
+            class="soft-btn soft-btn-primary"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Summary Cards -->
@@ -300,6 +513,14 @@ page_title %}Availability{% endblock %} {% block content %}
 
 <div class="soft-card p-0">
   <div class="overflow-x-auto">
+    <form
+      id="availabilityBulkForm"
+      action="{{ url_for('availability_bulk') }}"
+      method="post"
+    >
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="action" id="availabilityBulkAction" />
+    </form>
     <table
       id="availabilityTable"
       class="min-w-full text-sm"
@@ -311,6 +532,13 @@ page_title %}Availability{% endblock %} {% block content %}
         class="bg-slate-100/70 text-slate-600 text-[11px] font-semibold tracking-wide uppercase"
       >
         <tr class="border-b border-slate-200">
+          <th class="py-2 px-3 text-left w-10 no-sort">
+            <input
+              type="checkbox"
+              id="selectAllAvailability"
+              class="align-middle"
+            />
+          </th>
           <th class="py-2 px-3 text-left">Name</th>
           <th class="py-2 px-3 text-left">Dept</th>
           <th class="py-2 px-3 text-left">Branches</th>
@@ -323,6 +551,15 @@ page_title %}Availability{% endblock %} {% block content %}
       <tbody class="divide-y divide-slate-100">
         {% for r in records %}
         <tr class="hover:bg-slate-50 align-top">
+          <td class="py-2 px-3">
+            <input
+              type="checkbox"
+              class="availability-select align-middle"
+              name="ids"
+              value="{{ r.id }}"
+              form="availabilityBulkForm"
+            />
+          </td>
           <td class="py-2 px-3 whitespace-nowrap font-medium text-slate-800">
             {{ r.name }}
           </td>
@@ -338,6 +575,12 @@ page_title %}Availability{% endblock %} {% block content %}
           <td class="py-2 px-3 text-xs max-w-xs">{{ r.subjects or '-' }}</td>
           <td class="py-2 px-3 text-xs max-w-xs">{{ r.notes or '-' }}</td>
           <td class="py-2 px-3 text-xs whitespace-nowrap">
+            <a
+              class="text-slate-500"
+              href="{{ url_for('availability_changelog', staff=r.name) }}"
+              >Log</a
+            >
+            <span class="text-slate-400">·</span>
             <a
               class="text-indigo-600"
               href="{{ url_for('availability_edit', aid=r.id) }}"
@@ -358,6 +601,31 @@ page_title %}Availability{% endblock %} {% block content %}
   </div>
 </div>
 
+<div
+  class="mt-4 flex flex-wrap items-center gap-3 text-xs"
+  id="availabilityBulkToolbar"
+>
+  <div
+    id="availabilityBulkActions"
+    class="hidden flex flex-wrap items-center gap-2"
+  >
+    <button
+      type="button"
+      class="soft-btn bg-rose-500 text-white hover:bg-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-300"
+      id="availabilityBulkDelete"
+      data-bulk-action="delete"
+    >
+      Delete selected
+    </button>
+  </div>
+  <span id="availabilityBulkEmpty" class="text-slate-400"
+    >Select rows to enable bulk actions.</span
+  >
+  <span id="availabilityBulkCount" class="ml-auto text-slate-500"
+    >0 selected</span
+  >
+</div>
+
 <script>
   (function () {
     // Dropdown + real-time filtering
@@ -376,7 +644,621 @@ page_title %}Availability{% endblock %} {% block content %}
       dayLabel: document.getElementById("dayLabelA"),
       clearBtn: document.getElementById("clearAvail"),
       search: document.getElementById("availSearch"),
+      selectAll: document.getElementById("selectAllAvailability"),
+      bulkDelete: document.getElementById("availabilityBulkDelete"),
+      bulkCount: document.getElementById("availabilityBulkCount"),
+      bulkForm: document.getElementById("availabilityBulkForm"),
+      bulkAction: document.getElementById("availabilityBulkAction"),
+      bulkToolbar: document.getElementById("availabilityBulkToolbar"),
+      bulkActionsWrap: document.getElementById("availabilityBulkActions"),
+      bulkEmpty: document.getElementById("availabilityBulkEmpty"),
+      importForm: document.getElementById("availabilityImportForm"),
+      importInput: document.getElementById("availabilityImportInput"),
+      importLoader: document.getElementById("availabilityImportLoader"),
+      importPreview: document.getElementById("availabilityImportPreview"),
+      importSummary: document.getElementById("availabilityPreviewSummary"),
+      importStats: document.getElementById("availabilityPreviewStats"),
+      importWarnings: document.getElementById("availabilityPreviewWarnings"),
+      importTableBody: document.getElementById("availabilityPreviewOperations"),
+      importOverflow: document.getElementById("availabilityPreviewOverflow"),
+      importConfirm: document.getElementById("availabilityPreviewConfirm"),
+      decisionModal: document.getElementById("availabilityDecisionModal"),
+      decisionTitle: document.getElementById("availabilityDecisionTitle"),
+      decisionMessage: document.getElementById("availabilityDecisionMessage"),
+      decisionListWrap: document.getElementById("availabilityDecisionListWrap"),
+      decisionList: document.getElementById("availabilityDecisionList"),
+      decisionExtra: document.getElementById("availabilityDecisionExtra"),
+      decisionError: document.getElementById("availabilityDecisionError"),
+      decisionConfirm: document.getElementById("availabilityDecisionConfirm"),
+      decisionSkip: document.getElementById("availabilityDecisionSkip"),
+      decisionCancel: document.getElementById("availabilityDecisionCancel"),
     };
+    const importDismissEls = document.querySelectorAll("[data-import-dismiss]");
+    const decisionCancelEls = document.querySelectorAll(
+      "[data-decision-cancel]"
+    );
+    let importState = null;
+    let importDecisions = {};
+
+    function setImportLoader(active) {
+      if (!els.importLoader) return;
+      els.importLoader.classList.toggle("hidden", !active);
+    }
+
+    function resetImportInput() {
+      if (els.importInput) {
+        els.importInput.value = "";
+      }
+    }
+
+    function describeImportDetails(op) {
+      if (!op) return "";
+      const fields = Array.isArray(op.changes)
+        ? op.changes
+            .map((change) => (change && change.field) || "")
+            .filter((field) => !!field)
+        : [];
+      if (fields.length) {
+        return fields.join(", ");
+      }
+      if (op.confirmation && op.confirmation.type === "create_staff") {
+        const proposed = op.confirmation.proposed_staff || {};
+        const bits = [];
+        if (proposed.department) bits.push(`Dept: ${proposed.department}`);
+        if (proposed.branches) bits.push(`Branches: ${proposed.branches}`);
+        return bits.length
+          ? `Create staff (${bits.join(", ")})`
+          : "Create new staff";
+      }
+      if (op.confirmation && op.confirmation.type === "choose_staff") {
+        const count = Array.isArray(op.confirmation.candidates)
+          ? op.confirmation.candidates.length
+          : 0;
+        if (op.confirmation.match_reason === "partial_first") {
+          return count
+            ? `Possible near duplicate (${count})`
+            : "Possible near duplicate";
+        }
+        return count ? `Resolve duplicates (${count})` : "Resolve duplicates";
+      }
+      if (op.skipped || op.action === "skip") {
+        return op.notes || "No changes applied";
+      }
+      if (op.notes) {
+        return op.notes;
+      }
+      return "";
+    }
+
+    function resetDecisionError() {
+      if (!els.decisionError) return;
+      els.decisionError.classList.add("hidden");
+      els.decisionError.textContent = "";
+    }
+
+    function showDecisionError(message) {
+      if (!els.decisionError) return;
+      els.decisionError.textContent = message;
+      els.decisionError.classList.remove("hidden");
+    }
+
+    function resetDecisionModal() {
+      if (els.decisionMessage) {
+        els.decisionMessage.innerHTML = "";
+      }
+      if (els.decisionList) {
+        els.decisionList.innerHTML = "";
+      }
+      if (els.decisionListWrap) {
+        els.decisionListWrap.classList.add("hidden");
+      }
+      if (els.decisionExtra) {
+        els.decisionExtra.innerHTML = "";
+        els.decisionExtra.classList.add("hidden");
+      }
+      if (els.decisionConfirm) {
+        els.decisionConfirm.textContent = "Confirm";
+      }
+      resetDecisionError();
+    }
+
+    let decisionPreviewHidden = false;
+
+    function closeDecisionModal() {
+      if (els.decisionModal) {
+        els.decisionModal.classList.add("hidden");
+      }
+      if (decisionPreviewHidden && els.importPreview && importState) {
+        els.importPreview.classList.remove("hidden");
+      }
+      decisionPreviewHidden = false;
+      resetDecisionModal();
+    }
+
+    let decisionState = null;
+
+    function openDecisionModal(op) {
+      if (!op || !els.decisionModal) {
+        return;
+      }
+      resetDecisionModal();
+      decisionPreviewHidden = false;
+      if (
+        els.importPreview &&
+        !els.importPreview.classList.contains("hidden")
+      ) {
+        els.importPreview.classList.add("hidden");
+        decisionPreviewHidden = true;
+      }
+      const confirmation = op.confirmation || {};
+      const name = op.staff_name || op.raw_name || "this staff member";
+      const messageParts = [];
+      if (confirmation.type === "create_staff") {
+        if (els.decisionTitle) {
+          els.decisionTitle.textContent = "Create Staff Record";
+        }
+        if (els.decisionConfirm) {
+          els.decisionConfirm.textContent = "Create Staff";
+        }
+        messageParts.push(`No existing staff matched "${name}".`);
+        messageParts.push(
+          "Review the proposed record details below before continuing."
+        );
+        const proposed = confirmation.proposed_staff || {};
+        if (els.decisionExtra) {
+          const detailCard = document.createElement("div");
+          detailCard.className =
+            "rounded border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-inner space-y-2";
+          const headingBlock = document.createElement("div");
+          headingBlock.className =
+            "text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+          headingBlock.textContent = "Proposed record";
+          detailCard.appendChild(headingBlock);
+          const list = document.createElement("ul");
+          list.className = "space-y-1";
+          const nameItem = document.createElement("li");
+          nameItem.textContent = `Name: ${proposed.name || name}`;
+          list.appendChild(nameItem);
+          const deptItem = document.createElement("li");
+          deptItem.textContent = `Department: ${
+            proposed.department || "Not provided"
+          }`;
+          list.appendChild(deptItem);
+          const branchesItem = document.createElement("li");
+          branchesItem.textContent = `Branches: ${
+            proposed.branches || "Not provided"
+          }`;
+          list.appendChild(branchesItem);
+          detailCard.appendChild(list);
+          els.decisionExtra.appendChild(detailCard);
+          els.decisionExtra.classList.remove("hidden");
+        }
+      } else if (confirmation.type === "choose_staff") {
+        if (els.decisionTitle) {
+          els.decisionTitle.textContent = "Select Matching Staff";
+        }
+        if (els.decisionConfirm) {
+          els.decisionConfirm.textContent = "Use Selected Staff";
+        }
+        const reason = confirmation.match_reason;
+        if (reason === "partial_first") {
+          messageParts.push(`Possible near duplicate detected for "${name}".`);
+        } else {
+          messageParts.push(`Multiple staff records matched "${name}".`);
+        }
+        messageParts.push("Select the correct staff record to continue.");
+        const candidates = Array.isArray(confirmation.candidates)
+          ? confirmation.candidates
+          : [];
+        if (els.decisionList && candidates.length) {
+          els.decisionList.innerHTML = "";
+          if (els.decisionListWrap) {
+            els.decisionListWrap.classList.remove("hidden");
+          }
+          candidates.forEach((cand, index) => {
+            const label = document.createElement("label");
+            label.className =
+              "flex items-start gap-3 rounded border border-slate-200 px-3 py-3 bg-white shadow-sm text-left";
+            const input = document.createElement("input");
+            input.type = "radio";
+            input.name = "availabilityDecisionStaff";
+            input.value = String(cand.id);
+            input.className = "mt-1 h-4 w-4 text-indigo-600 shrink-0";
+            if (index === 0) {
+              input.checked = true;
+            }
+            input.addEventListener("change", () => resetDecisionError());
+            label.appendChild(input);
+            const info = document.createElement("div");
+            info.className = "flex-1 min-w-0 space-y-1";
+            const heading = document.createElement("div");
+            heading.className = "font-medium text-slate-700 break-words";
+            heading.textContent = cand.name;
+            info.appendChild(heading);
+            const meta = document.createElement("div");
+            meta.className = "text-xs text-slate-500 break-words";
+            const metaBits = [];
+            if (cand.department) metaBits.push(cand.department);
+            metaBits.push(`ID ${cand.id}`);
+            if (cand.active === false) metaBits.push("inactive");
+            meta.textContent = metaBits.join(" · ");
+            info.appendChild(meta);
+            label.appendChild(info);
+            els.decisionList.appendChild(label);
+          });
+        }
+        if (els.decisionExtra) {
+          els.decisionExtra.innerHTML = "";
+          if (candidates.length > 1) {
+            const toggle = document.createElement("label");
+            toggle.className = "flex items-start gap-2 text-xs text-slate-600";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.name = "availabilityDecisionDeactivate";
+            checkbox.className = "mt-0.5 h-4 w-4 text-indigo-600 shrink-0";
+            toggle.appendChild(checkbox);
+            const span = document.createElement("span");
+            span.className = "leading-snug break-words";
+            span.textContent = "Mark remaining duplicates inactive";
+            toggle.appendChild(span);
+            els.decisionExtra.appendChild(toggle);
+            els.decisionExtra.classList.remove("hidden");
+          }
+        }
+        if (decisionState) {
+          decisionState.candidates = candidates;
+        }
+      }
+      if (els.decisionMessage) {
+        els.decisionMessage.innerHTML = "";
+        messageParts.forEach((part) => {
+          const line = document.createElement("div");
+          line.className = "leading-snug break-words";
+          line.textContent = part;
+          els.decisionMessage.appendChild(line);
+        });
+      }
+      if (els.decisionModal) {
+        els.decisionModal.classList.remove("hidden");
+      }
+    }
+
+    function handleDecisionAction(action) {
+      const state = decisionState;
+      if (!state) {
+        if (action === "cancel") {
+          closeDecisionModal();
+        }
+        return;
+      }
+      const { op, resolve, candidates = [] } = state;
+      const confirmation = (op && op.confirmation) || {};
+      const type = confirmation.type;
+      if (action === "cancel") {
+        closeDecisionModal();
+        decisionState = null;
+        resolve(null);
+        return;
+      }
+      if (action === "skip") {
+        closeDecisionModal();
+        decisionState = null;
+        resolve({ skip: true });
+        return;
+      }
+      if (action === "confirm") {
+        let payload = {};
+        if (type === "create_staff") {
+          payload = { create_staff: true };
+        } else if (type === "choose_staff") {
+          const selected = els.decisionList
+            ? els.decisionList.querySelector(
+                'input[name="availabilityDecisionStaff"]:checked'
+              )
+            : null;
+          if (!selected) {
+            showDecisionError("Select a staff record to continue.");
+            return;
+          }
+          const selectedId = Number.parseInt(selected.value, 10);
+          if (Number.isNaN(selectedId)) {
+            showDecisionError("Select a valid staff record.");
+            return;
+          }
+          const removeCheckbox = els.decisionExtra
+            ? els.decisionExtra.querySelector(
+                'input[name="availabilityDecisionDeactivate"]'
+              )
+            : null;
+          const removeIds = [];
+          if (removeCheckbox && removeCheckbox.checked) {
+            candidates.forEach((cand) => {
+              if (Number(cand.id) !== selectedId) {
+                removeIds.push(cand.id);
+              }
+            });
+          }
+          payload = { selected_staff_id: selectedId };
+          if (removeIds.length) {
+            payload.remove_other_ids = removeIds;
+          }
+        }
+        closeDecisionModal();
+        decisionState = null;
+        resolve(payload);
+      }
+    }
+
+    function promptForDecision(op) {
+      if (!op || !op.requires_confirmation) {
+        return Promise.resolve({});
+      }
+      if (!els.decisionModal) {
+        return Promise.resolve({});
+      }
+      return new Promise((resolve) => {
+        decisionState = { op, resolve, candidates: [] };
+        openDecisionModal(op);
+      });
+    }
+
+    async function collectImportDecisions(plan, existingDecisions) {
+      const decisions = existingDecisions ? { ...existingDecisions } : {};
+      if (!plan || !Array.isArray(plan.operations)) return decisions;
+      for (const op of plan.operations) {
+        if (!op || !op.requires_confirmation) continue;
+        const key = op.decision_key || String(op.row_number || "");
+        if (!key) continue;
+        if (!decisions[key]) {
+          const decision = await promptForDecision(op);
+          if (decision === null) {
+            return null;
+          }
+          decisions[key] = decision;
+        }
+      }
+      return decisions;
+    }
+
+    function renderImportWarnings(warnings) {
+      if (!els.importWarnings) return;
+      els.importWarnings.innerHTML = "";
+      if (!warnings || !warnings.length) return;
+      warnings.forEach((message) => {
+        const div = document.createElement("div");
+        div.className =
+          "border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2 rounded";
+        div.textContent = message;
+        els.importWarnings.appendChild(div);
+      });
+    }
+
+    function renderImportStats(plan) {
+      if (!els.importStats) return;
+      els.importStats.innerHTML = "";
+      if (!plan) return;
+      const stats = [
+        { label: "Processed", value: plan.processed },
+        { label: "Create", value: plan.created },
+        { label: "Update", value: plan.updated },
+        { label: "Unchanged", value: plan.unchanged },
+      ];
+      if (plan.skipped) {
+        stats.push({ label: "Skipped", value: plan.skipped });
+      }
+      stats.forEach(({ label, value }) => {
+        const badge = document.createElement("span");
+        badge.className = "soft-badge gray";
+        badge.textContent = `${label}: ${value || 0}`;
+        els.importStats.appendChild(badge);
+      });
+    }
+
+    function renderImportOperations(plan) {
+      if (!els.importTableBody) return;
+      els.importTableBody.innerHTML = "";
+      const operations =
+        plan && Array.isArray(plan.operations) ? plan.operations : [];
+      const maxRows = 20;
+      operations.slice(0, maxRows).forEach((op) => {
+        const tr = document.createElement("tr");
+        if (op && op.requires_confirmation) {
+          tr.classList.add("bg-amber-50");
+        }
+        const rowCell = document.createElement("td");
+        rowCell.className = "py-2 px-2 text-slate-400";
+        rowCell.textContent =
+          op && op.row_number != null ? String(op.row_number) : "-";
+        const staffCell = document.createElement("td");
+        staffCell.className = "py-2 px-2";
+        staffCell.textContent = (op && (op.staff_name || op.raw_name)) || "-";
+        const actionCell = document.createElement("td");
+        actionCell.className = "py-2 px-2 capitalize";
+        actionCell.textContent = (op && op.action) || "-";
+        const detailsCell = document.createElement("td");
+        detailsCell.className = "py-2 px-2 text-slate-600";
+        detailsCell.textContent = describeImportDetails(op) || "";
+        const notesCell = document.createElement("td");
+        notesCell.className = "py-2 px-2 text-slate-500";
+        notesCell.textContent = (op && op.notes) || "";
+        tr.appendChild(rowCell);
+        tr.appendChild(staffCell);
+        tr.appendChild(actionCell);
+        tr.appendChild(detailsCell);
+        tr.appendChild(notesCell);
+        els.importTableBody.appendChild(tr);
+      });
+      if (els.importOverflow) {
+        if (operations.length > maxRows) {
+          els.importOverflow.textContent = `Showing first ${maxRows} of ${operations.length} operations.`;
+          els.importOverflow.classList.remove("hidden");
+        } else {
+          els.importOverflow.textContent = "";
+          els.importOverflow.classList.add("hidden");
+        }
+      }
+    }
+
+    function openImportPreview(data) {
+      importState = data;
+      importDecisions = {};
+      if (els.importSummary) {
+        els.importSummary.textContent =
+          (data && data.summary) ||
+          "Review the detected changes before applying.";
+      }
+      renderImportStats((data && data.plan) || {});
+      renderImportWarnings((data && data.warnings) || []);
+      renderImportOperations((data && data.plan) || {});
+      if (els.importPreview) {
+        els.importPreview.classList.remove("hidden");
+      }
+    }
+
+    function closeImportPreview() {
+      if (els.importPreview) {
+        els.importPreview.classList.add("hidden");
+      }
+      decisionPreviewHidden = false;
+      if (decisionState && typeof decisionState.resolve === "function") {
+        decisionState.resolve(null);
+      }
+      decisionState = null;
+      closeDecisionModal();
+      importState = null;
+      importDecisions = {};
+      resetImportInput();
+    }
+
+    async function handleImportPreview() {
+      if (!els.importForm || !els.importInput) return;
+      if (!els.importInput.files || !els.importInput.files.length) return;
+      const file = els.importInput.files[0];
+      if (!file) return;
+      if (!window.fetch) {
+        els.importForm.submit();
+        return;
+      }
+      const formData = new FormData(els.importForm);
+      formData.set("xlsx_file", file);
+      setImportLoader(true);
+      try {
+        const response = await fetch(els.importForm.action, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+          },
+          body: formData,
+        });
+        const contentType = response.headers.get("content-type") || "";
+        const isJson = contentType.includes("application/json");
+        const data = isJson ? await response.json() : null;
+        if (!response.ok) {
+          const message = (data && data.error) || "Unable to preview import.";
+          window.alert(message);
+          resetImportInput();
+          return;
+        }
+        if (!data || data.status !== "preview") {
+          window.location.reload();
+          return;
+        }
+        openImportPreview(data);
+      } catch (err) {
+        window.alert("Upload failed. Please try again.");
+        resetImportInput();
+      } finally {
+        setImportLoader(false);
+      }
+    }
+
+    async function handleImportConfirm() {
+      if (!importState || !importState.token || !els.importForm) {
+        closeImportPreview();
+        return;
+      }
+      const decisions = await collectImportDecisions(
+        importState.plan || {},
+        importDecisions
+      );
+      if (decisions === null) {
+        return;
+      }
+      importDecisions = decisions;
+      const csrfField = els.importForm.querySelector(
+        'input[name="csrf_token"]'
+      );
+      const csrfToken = csrfField ? csrfField.value : "";
+      if (els.importPreview) {
+        els.importPreview.classList.add("hidden");
+      }
+      setImportLoader(true);
+      try {
+        const response = await fetch(els.importForm.action, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "X-CSRFToken": csrfToken,
+          },
+          body: JSON.stringify({
+            confirm_token: importState.token,
+            decisions,
+          }),
+        });
+        const contentType = response.headers.get("content-type") || "";
+        const isJson = contentType.includes("application/json");
+        const data = isJson ? await response.json() : null;
+        if (!response.ok || !data) {
+          const message = (data && data.error) || "Import failed.";
+          window.alert(message);
+          setImportLoader(false);
+          resetImportInput();
+          return;
+        }
+        window.alert((data && data.summary) || "Availability import applied.");
+        window.location.reload();
+      } catch (err) {
+        window.alert("Import failed. Please try again.");
+        setImportLoader(false);
+        resetImportInput();
+      }
+    }
+
+    if (els.importInput) {
+      els.importInput.addEventListener("change", handleImportPreview);
+    }
+    if (els.importConfirm) {
+      els.importConfirm.addEventListener("click", handleImportConfirm);
+    }
+    importDismissEls.forEach((node) => {
+      node.addEventListener("click", (event) => {
+        event.preventDefault();
+        closeImportPreview();
+      });
+    });
+    decisionCancelEls.forEach((node) => {
+      node.addEventListener("click", (event) => {
+        event.preventDefault();
+        handleDecisionAction("cancel");
+      });
+    });
+    if (els.decisionConfirm) {
+      els.decisionConfirm.addEventListener("click", () =>
+        handleDecisionAction("confirm")
+      );
+    }
+    if (els.decisionSkip) {
+      els.decisionSkip.addEventListener("click", () =>
+        handleDecisionAction("skip")
+      );
+    }
+    if (els.decisionCancel) {
+      els.decisionCancel.addEventListener("click", () =>
+        handleDecisionAction("cancel")
+      );
+    }
+
     function toggle(m) {
       m.classList.toggle("hidden");
     }
@@ -479,7 +1361,73 @@ page_title %}Availability{% endblock %} {% block content %}
         applyFilters();
       }
     });
+    const bulkCheckboxes = Array.from(
+      document.querySelectorAll(".availability-select")
+    );
+    const bulkActionButtons = Array.from(
+      document.querySelectorAll("[data-bulk-action]")
+    );
+
+    function updateBulkState() {
+      const selected = bulkCheckboxes.filter((cb) => cb.checked);
+      const total = bulkCheckboxes.length;
+      const anySelected = selected.length > 0;
+      if (els.bulkCount) {
+        els.bulkCount.textContent = `${selected.length} selected`;
+      }
+      if (els.bulkActionsWrap) {
+        els.bulkActionsWrap.classList.toggle("hidden", !anySelected);
+      }
+      if (els.bulkEmpty) {
+        els.bulkEmpty.classList.toggle("hidden", anySelected);
+      }
+      if (els.bulkDelete) {
+        els.bulkDelete.disabled = !anySelected;
+      }
+      bulkActionButtons.forEach((btn) => {
+        btn.disabled = !anySelected;
+        btn.classList.toggle("opacity-60", !anySelected);
+        btn.classList.toggle("cursor-not-allowed", !anySelected);
+        btn.setAttribute("aria-disabled", String(!anySelected));
+      });
+      if (els.selectAll) {
+        els.selectAll.checked = anySelected && selected.length === total;
+        els.selectAll.indeterminate = anySelected && selected.length !== total;
+      }
+    }
+
+    if (els.selectAll) {
+      els.selectAll.addEventListener("change", () => {
+        bulkCheckboxes.forEach((cb) => {
+          cb.checked = els.selectAll.checked;
+        });
+        updateBulkState();
+      });
+    }
+
+    bulkCheckboxes.forEach((cb) => {
+      cb.addEventListener("change", updateBulkState);
+    });
+
+    if (bulkActionButtons.length && els.bulkForm && els.bulkAction) {
+      bulkActionButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.disabled) return;
+          const action = btn.getAttribute("data-bulk-action");
+          if (!action) return;
+          if (action === "delete") {
+            if (!confirm("Delete selected availability records?")) {
+              return;
+            }
+          }
+          els.bulkAction.value = action;
+          els.bulkForm.submit();
+        });
+      });
+    }
+
     updateSummaries();
+    updateBulkState();
   })();
 </script>
 

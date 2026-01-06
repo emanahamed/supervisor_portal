@@ -34,6 +34,22 @@ def test_admission_assessment_confirmation_email_uses_configured_link(app_instan
     assert 'https://portal.example/admissions' in html
 
 
+def test_admission_assessment_confirmation_email_uses_fallback_link(app_instance):
+    with app_instance.app_context():
+        for key in (
+            'PUBLIC_ADMISSIONS_URL',
+            'PUBLIC_ADMISSION_URL',
+            'ADMISSIONS_PORTAL_URL',
+            'ADMISSIONS_LANDING_URL',
+        ):
+            app_instance.config.pop(key, None)
+        submission = _make_submission()
+
+        _, html = build_admission_assessment_confirmation_email(submission)
+
+    assert 'https://admissions.exceltutors.org.uk' in html
+
+
 def test_admission_assessment_scores_email_formats_scores(app_instance):
     submission = _make_submission()
     maths = AdmissionAssessmentScore(subject='Maths')
