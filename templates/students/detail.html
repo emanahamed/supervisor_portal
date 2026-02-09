@@ -3,17 +3,25 @@ block content %}
 <div class="flex flex-col gap-6">
   <div class="flex items-center justify-between flex-wrap gap-4">
     <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-slate-700 flex items-center gap-2">
+      <h2
+        class="text-lg font-semibold text-slate-700 dark:text-gray-300 flex items-center gap-2"
+      >
         <span>{{ student.name }}</span>
-        <span class="text-slate-400 text-sm">({{ student.student_id }})</span>
+        <span class="text-slate-400 dark:text-gray-500 text-sm"
+          >({{ student.student_id }})</span
+        >
       </h2>
       {% if student.status %} {% set badge_map = { 'Active':'bg-emerald-100
-      text-emerald-700 ring-1 ring-emerald-200', 'Inactive':'bg-slate-100
-      text-slate-600 ring-1 ring-slate-200', 'Pending':'bg-amber-100
-      text-amber-700 ring-1 ring-amber-200', 'Withdrawn':'bg-rose-100
-      text-rose-700 ring-1 ring-rose-200' } %}
+      dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 ring-1
+      ring-emerald-200 dark:ring-emerald-800', 'Inactive':'bg-slate-100
+      dark:bg-gray-700 text-slate-600 dark:text-gray-400 ring-1 ring-slate-200
+      dark:ring-gray-700', 'Pending':'bg-amber-100 dark:bg-amber-900/30
+      text-amber-700 dark:text-amber-300 ring-1 ring-amber-200
+      dark:ring-amber-800', 'Withdrawn':'bg-rose-100 dark:bg-rose-900/30
+      text-rose-700 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800'
+      } %}
       <span
-        class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium {{ badge_map.get(student.status, 'bg-slate-100 text-slate-600 ring-1 ring-slate-200') }}"
+        class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium {{ badge_map.get(student.status, 'bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 ring-1 ring-slate-200 dark:ring-gray-700') }}"
         >{{ student.status }}</span
       >
       {% endif %}
@@ -21,29 +29,39 @@ block content %}
     <div class="flex items-center gap-2">
       {% set latest = changes|first %} {% if latest %}
       <div
-        class="hidden md:flex items-center gap-1 text-[11px] text-slate-400 pr-3 border-r border-slate-200"
+        class="hidden md:flex items-center gap-1 text-[11px] text-slate-400 dark:text-gray-500 pr-3 border-r border-slate-200 dark:border-gray-700"
         title="Last change: {{ latest.field }} from {{ latest.old_value }} to {{ latest.new_value }} at {{ latest.changed_at }}"
       >
-        <span class="uppercase tracking-wide text-slate-300">Last</span>
-        <span class="text-slate-500">{{ latest.field }}</span>
-        <span class="text-slate-300">→</span>
+        <span class="uppercase tracking-wide text-slate-300 dark:text-gray-600"
+          >Last</span
+        >
+        <span class="text-slate-500 dark:text-gray-400"
+          >{{ latest.field }}</span
+        >
+        <span class="text-slate-300 dark:text-gray-600">→</span>
         <span class="max-w-[100px] truncate" title="{{ latest.new_value }}"
           >{{ latest.new_value }}</span
         >
-        <span class="text-slate-300">·</span>
+        <span class="text-slate-300 dark:text-gray-600">·</span>
         <span class="whitespace-nowrap">{{ latest.changed_at }}</span>
       </div>
       {% endif %}
-      <a href="{{ url_for('students_index') }}" class="soft-btn bg-slate-100"
+      <a
+        href="{{ url_for('students_index') }}"
+        class="soft-btn bg-slate-100 dark:bg-gray-700"
         >Back</a
       >
       <form
         method="post"
         action="{{ url_for('students_delete', sid=student.id) }}"
-        onsubmit="return confirm('Delete this student? This cannot be undone.');"
+        onsubmit="
+          return confirm('Delete this student? This cannot be undone.');
+        "
       >
         {{ form.csrf_token }}
-        <button class="soft-btn bg-rose-100 text-rose-700 hover:bg-rose-200">
+        <button
+          class="soft-btn bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 hover:bg-rose-200 dark:hover:bg-rose-800/50"
+        >
           Delete
         </button>
       </form>
@@ -53,7 +71,9 @@ block content %}
   <div class="grid lg:grid-cols-2 gap-6 items-start">
     <!-- Edit Form Card -->
     <div class="soft-card p-5 flex flex-col gap-4">
-      <h3 class="text-sm font-semibold tracking-wide text-slate-600 uppercase">
+      <h3
+        class="text-sm font-semibold tracking-wide text-slate-600 dark:text-gray-400 uppercase"
+      >
         Edit Student
       </h3>
       <form
@@ -114,7 +134,7 @@ block content %}
           <button class="soft-btn soft-btn-primary">Save Changes</button>
           <a
             href="{{ url_for('students_detail', sid=student.id) }}"
-            class="soft-btn bg-slate-100"
+            class="soft-btn bg-slate-100 dark:bg-gray-700"
             >Reset</a
           >
         </div>
@@ -125,62 +145,67 @@ block content %}
     <div class="flex flex-col gap-6">
       <div class="soft-card p-5">
         <h3
-          class="text-sm font-semibold tracking-wide text-slate-600 uppercase mb-3"
+          class="text-sm font-semibold tracking-wide text-slate-600 dark:text-gray-400 uppercase mb-3"
         >
           Details
         </h3>
         <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-          <dt class="text-slate-500">DB ID</dt>
+          <dt class="text-slate-500 dark:text-gray-400">DB ID</dt>
           <dd>{{ student.id }}</dd>
-          <dt class="text-slate-500">Student ID</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Student ID</dt>
           <dd class="font-mono">{{ student.student_id }}</dd>
-          <dt class="text-slate-500">Name</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Name</dt>
           <dd>{{ student.name }}</dd>
-          <dt class="text-slate-500">Type</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Type</dt>
           <dd>{{ student.type or '' }}</dd>
-          <dt class="text-slate-500">Year</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Year</dt>
           <dd>{{ student.year or '' }}</dd>
-          <dt class="text-slate-500">Email</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Email</dt>
           <dd>{{ student.email or '' }}</dd>
-          <dt class="text-slate-500">Phone</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Phone</dt>
           <dd>{{ student.phone or '' }}</dd>
-          <dt class="text-slate-500">Status</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Status</dt>
           <dd>
             {% if student.status %} {% set badge_map = {
-            'Active':'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
-            'Inactive':'bg-slate-100 text-slate-600 ring-1 ring-slate-200',
-            'Pending':'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
-            'Withdrawn':'bg-rose-100 text-rose-700 ring-1 ring-rose-200' } %}
+            'Active':'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700
+            dark:text-emerald-300 ring-1 ring-emerald-200
+            dark:ring-emerald-800', 'Inactive':'bg-slate-100 dark:bg-gray-700
+            text-slate-600 dark:text-gray-400 ring-1 ring-slate-200
+            dark:ring-gray-700', 'Pending':'bg-amber-100 dark:bg-amber-900/30
+            text-amber-700 dark:text-amber-300 ring-1 ring-amber-200
+            dark:ring-amber-800', 'Withdrawn':'bg-rose-100 dark:bg-rose-900/30
+            text-rose-700 dark:text-rose-300 ring-1 ring-rose-200
+            dark:ring-rose-800' } %}
             <span
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium {{ badge_map.get(student.status, 'bg-slate-100 text-slate-600 ring-1 ring-slate-200') }}"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium {{ badge_map.get(student.status, 'bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 ring-1 ring-slate-200 dark:ring-gray-700') }}"
               >{{ student.status }}</span
             >
             {% endif %}
           </dd>
-          <dt class="text-slate-500">Address</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Address</dt>
           <dd class="truncate" title="{{ student.address }}">
             {{ student.address or '' }}
           </dd>
-          <dt class="text-slate-500">Academic</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Academic</dt>
           <dd class="truncate" title="{{ student.academic }}">
             {{ student.academic or '' }}
           </dd>
-          <dt class="text-slate-500">Created</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Created</dt>
           <dd>{{ student.created_at }}</dd>
-          <dt class="text-slate-500">Updated</dt>
+          <dt class="text-slate-500 dark:text-gray-400">Updated</dt>
           <dd>{{ student.updated_at }}</dd>
         </dl>
       </div>
       <div class="soft-card p-5">
         <h3
-          class="text-sm font-semibold tracking-wide text-slate-600 uppercase mb-3"
+          class="text-sm font-semibold tracking-wide text-slate-600 dark:text-gray-400 uppercase mb-3"
         >
           Recent Changes
         </h3>
         <div class="overflow-auto max-h-72">
           <table class="min-w-full text-[11px]">
             <thead
-              class="bg-slate-100/70 text-slate-600 uppercase tracking-wide"
+              class="bg-slate-100 dark:bg-gray-700/70 dark:bg-gray-800/70 text-slate-600 dark:text-gray-400 uppercase tracking-wide"
             >
               <tr>
                 <th class="px-2 py-1 text-left">When</th>
@@ -189,9 +214,9 @@ block content %}
                 <th class="px-2 py-1 text-left">New</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-slate-100 dark:divide-gray-700/50">
               {% for c in changes %}
-              <tr class="hover:bg-slate-50">
+              <tr class="hover:bg-slate-50 dark:hover:bg-gray-800">
                 <td class="px-2 py-1 whitespace-nowrap">{{ c.changed_at }}</td>
                 <td class="px-2 py-1">{{ c.field }}</td>
                 <td
@@ -209,7 +234,10 @@ block content %}
               </tr>
               {% else %}
               <tr>
-                <td colspan="4" class="px-2 py-4 text-center text-slate-400">
+                <td
+                  colspan="4"
+                  class="px-2 py-4 text-center text-slate-400 dark:text-gray-500"
+                >
                   No changes yet.
                 </td>
               </tr>

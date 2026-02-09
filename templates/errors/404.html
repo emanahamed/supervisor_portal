@@ -3,10 +3,14 @@ content %}
 <div class="soft-card p-8 max-w-xl mx-auto text-center">
   <div class="text-5xl mb-4">🧭</div>
   <h1 class="text-xl font-semibold mb-2">Page Not Found (404)</h1>
-  <p class="text-slate-600 mb-6">
+  <p class="text-slate-600 dark:text-gray-400 mb-6">
     The page you're looking for could not be found. It may have been moved or
     deleted.
   </p>
-  <a href="{{ url_for('index') }}" class="soft-btn bg-slate-100">Return Home</a>
+  <a
+    href="{{ url_for('index') }}"
+    class="soft-btn bg-slate-100 dark:bg-gray-700"
+    >Return Home</a
+  >
 </div>
 {% endblock %}

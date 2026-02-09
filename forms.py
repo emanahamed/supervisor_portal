@@ -375,6 +375,30 @@ class BookForm(FlaskForm):
     submit = SubmitField("Save Book")
 
 
+# ---------------- Course Enrollment: Product & Discount Forms ---------------- #
+class ProductForm(FlaskForm):
+    name = StringField("Course Name", validators=[DataRequired(), Length(max=255)])
+    description = TextAreaField("Description", validators=[Optional()])
+    price = DecimalField("Price (£)", validators=[DataRequired(), NumberRange(min=0)], places=2)
+    thumbnail_url = StringField("Thumbnail URL", validators=[Optional(), Length(max=500)])
+    date = DateField("Course Date", validators=[Optional()])
+    venue = StringField("Venue", validators=[Optional(), Length(max=255)])
+    time = StringField("Time", validators=[Optional(), Length(max=100)])
+    instructor = StringField("Instructor", validators=[Optional(), Length(max=200)])
+    active = BooleanField("Active (visible on enrollment form)", default=True)
+    submit = SubmitField("Save Product")
+
+
+class EnrollmentDiscountForm(FlaskForm):
+    discount_amount = DecimalField(
+        "Discount Amount (£)",
+        validators=[DataRequired(), NumberRange(min=0)],
+        places=2,
+        description="Fixed amount off when cart has even number of products"
+    )
+    submit = SubmitField("Save Discount Settings")
+
+
 # ---------------- Resource Management ---------------- #
 class ResourceForm(FlaskForm):
     type = SelectField("Resource Type", choices=RESOURCE_TYPE_CHOICES, validators=[DataRequired()])

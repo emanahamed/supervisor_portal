@@ -4,14 +4,16 @@ Kids Club Invoice') }}{% endblock %} {% block content %}
 <form method="post" class="space-y-6">
   {{ form.hidden_tag() }} {% if mode == 'duplicate' and source_invoice %}
   <div
-    class="soft-card border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+    class="soft-card border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-900 dark:text-amber-200"
   >
     Duplicating invoice {{ source_invoice.invoice_no }}. Update the childcare
     period and invoice dates before saving.
   </div>
   {% endif %}
   <section class="soft-card p-4 space-y-4">
-    <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <h3
+      class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400"
+    >
       Invoice Basics
     </h3>
     <div class="grid md:grid-cols-4 gap-4 text-sm">
@@ -42,12 +44,16 @@ Kids Club Invoice') }}{% endblock %} {% block content %}
     </div>
   </section>
   <section class="soft-card p-4 space-y-4">
-    <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <h3
+      class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400"
+    >
       Parties & Period
     </h3>
     <div class="grid md:grid-cols-2 gap-6">
       <div class="space-y-2">
-        <h4 class="text-xs font-semibold text-slate-600">Parent / Contact</h4>
+        <h4 class="text-xs font-semibold text-slate-600 dark:text-gray-400">
+          Parent / Contact
+        </h4>
         <label class="text-[10px] font-semibold"
           >{{ form.parent_name.label }}</label
         >
@@ -66,7 +72,9 @@ Kids Club Invoice') }}{% endblock %} {% block content %}
         {{ form.parent_address(class='soft-input w-full', rows=3) }}
       </div>
       <div class="space-y-2">
-        <h4 class="text-xs font-semibold text-slate-600">Child & Period</h4>
+        <h4 class="text-xs font-semibold text-slate-600 dark:text-gray-400">
+          Child & Period
+        </h4>
         <label class="text-[10px] font-semibold"
           >{{ form.child_name.label }}</label
         >
@@ -103,7 +111,9 @@ Kids Club Invoice') }}{% endblock %} {% block content %}
     </div>
   </section>
   <section class="soft-card p-4 space-y-2">
-    <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <h3
+      class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400"
+    >
       Notes
     </h3>
     {{ form.notes(class='soft-input w-full', rows=4, placeholder='Any remarks or

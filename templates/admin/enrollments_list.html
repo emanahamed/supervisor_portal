@@ -1,0 +1,168 @@
+{% extends 'base.html' %} {% block page_title %}Enrollment Orders{% endblock %}
+{% block crumb_current %}Enrollments{% endblock %} {% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+  <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
+    Course Enrollments
+  </h1>
+  <a href="{{ url_for('admin_products_list') }}" class="soft-btn text-center whitespace-nowrap">
+    Manage Products
+  </a>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Total Orders
+    </div>
+    <div class="text-xl sm:text-2xl font-semibold text-slate-800 dark:text-slate-100">
+      {{ orders | length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">Paid</div>
+    <div class="text-xl sm:text-2xl font-semibold text-green-600">
+      {{ orders | selectattr('payment_status', 'equalto', 'paid') | list |
+      length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">Pending</div>
+    <div class="text-xl sm:text-2xl font-semibold text-amber-600">
+      {{ orders | selectattr('payment_status', 'equalto', 'pending') | list |
+      length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Total Revenue
+    </div>
+    <div class="text-xl sm:text-2xl font-semibold text-indigo-600">
+      £{{ "%.2f" | format((orders | selectattr('payment_status', 'equalto',
+      'paid') | map(attribute='total') | map('float') | sum)) }}
+    </div>
+  </div>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="enrollmentsTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr>
+          <th class="px-4 py-3 text-left hidden sm:table-cell">Order ID</th>
+          <th class="px-4 py-3 text-left">Student</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Branch</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Year</th>
+          <th class="px-4 py-3 text-center hidden md:table-cell">Courses</th>
+          <th class="px-4 py-3 text-left hidden xl:table-cell">Subtotal</th>
+          <th class="px-4 py-3 text-left hidden xl:table-cell">Discount</th>
+          <th class="px-4 py-3 text-left">Total</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-left hidden sm:table-cell">Date</th>
+          <th class="px-4 py-3 text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+        {% if orders %} {% for order in orders %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td
+            class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100 hidden sm:table-cell"
+          >
+            #{{ order.id }}
+          </td>
+          <td class="px-4 py-3">
+            <div class="font-semibold text-slate-800 dark:text-slate-100">
+              {{ order.student_name }}
+            </div>
+            <div class="text-xs text-slate-500">
+              ID: {{ order.student_id }}
+              <span class="sm:hidden"> | Order #{{ order.id }}</span>
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5 lg:hidden">
+              {{ order.branch }} | {{ order.year_group | replace('year', 'Y') | upper }}
+            </div>
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell">
+            {{ order.branch }}
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell">
+            {{ order.year_group | replace('year', 'Y') | upper }}
+          </td>
+          <td class="px-4 py-3 text-center hidden md:table-cell">
+            <span
+              class="soft-badge bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300"
+            >
+              {{ order.product_count() }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden xl:table-cell">
+            £{{ "%.2f" | format(order.subtotal | float) }}
+          </td>
+          <td class="px-4 py-3 hidden xl:table-cell">
+            {% if order.discount_amount > 0 %}
+            <span class="text-green-600 dark:text-green-400"
+              >-£{{ "%.2f" | format(order.discount_amount | float) }}</span
+            >
+            {% else %}
+            <span class="text-slate-400">-</span>
+            {% endif %}
+          </td>
+          <td
+            class="px-4 py-3 font-semibold text-indigo-600 dark:text-indigo-400"
+          >
+            £{{ "%.2f" | format(order.total | float) }}
+          </td>
+          <td class="px-4 py-3">
+            {% if order.payment_status == 'paid' %}
+            <span
+              class="soft-badge bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+              >Paid</span
+            >
+            {% elif order.payment_status == 'pending' %}
+            <span
+              class="soft-badge bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+              >Pending</span
+            >
+            {% elif order.payment_status == 'failed' %}
+            <span
+              class="soft-badge bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+              >Failed</span
+            >
+            {% else %}
+            <span class="soft-badge bg-slate-200 text-slate-600"
+              >{{ order.payment_status | title }}</span
+            >
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-slate-500 text-xs hidden sm:table-cell">
+            {{ order.created_at.strftime('%d %b %Y') if order.created_at else
+            '-' }}
+          </td>
+          <td class="px-4 py-3 text-center">
+            <a
+              href="{{ url_for('admin_enrollments_detail', id=order.id) }}"
+              class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 text-xs font-semibold min-h-[44px] inline-flex items-center"
+            >
+              View
+            </a>
+          </td>
+        </tr>
+        {% endfor %} {% else %}
+        <tr>
+          <td colspan="11" class="px-4 py-8 text-center text-slate-500">
+            No enrollment orders found.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

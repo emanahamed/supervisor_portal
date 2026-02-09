@@ -1,67 +1,168 @@
-{% extends 'base.html' %}
-{% from 'components/forms_macros.html' import csrf_field %}
-{% block title %}User Permission Overrides · {{ super() }}{% endblock %}
-{% block content %}
+{% extends 'base.html' %} {% from 'components/forms_macros.html' import
+csrf_field %} {% block title %}User Permission Overrides · {{ super() }}{%
+endblock %} {% block content %}
 <div class="max-w-4xl mx-auto">
   <h1 class="text-xl font-semibold mb-4">User Permission Overrides</h1>
-  <p class="text-sm text-slate-600 mb-4">Overrides replace the default role-based decision for the selected user. "Allow" grants even if the role does not; "Deny" blocks even if the role grants; "Inherit" removes any override and falls back to the role.</p>
+  <p class="text-sm text-slate-600 dark:text-gray-400 mb-4">
+    Overrides replace the default role-based decision for the selected user.
+    "Allow" grants even if the role does not; "Deny" blocks even if the role
+    grants; "Inherit" removes any override and falls back to the role.
+  </p>
   <form method="get" class="mb-6 flex gap-2 items-end">
     <div>
-      <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Select User</label>
+      <label class="block text-xs font-semibold uppercase text-slate-500 dark:text-gray-400 mb-1"
+        >Select User</label
+      >
       <select name="user_id" class="soft-input !w-72">
         <option value="">-- Choose user --</option>
         {% for u in users %}
-        <option value="{{ u.id }}" {% if selected_user and selected_user.id==u.id %}selected{% endif %}>{{ u.name }} ({{ u.email }})</option>
+        <option
+          value="{{ u.id }}"
+          {{ 'selected' if selected_user and selected_user.id is eq(u.id) }}
+        >
+          {{ u.name }} ({{ u.email }})
+        </option>
         {% endfor %}
       </select>
     </div>
     <button class="primary-btn w-auto px-6">Load</button>
   </form>
   {% if selected_user %}
+  <!-- Permission Override Explanation -->
+  <div
+    class="soft-card p-4 mb-6 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500"
+  >
+    <div class="flex items-start gap-3">
+      <svg
+        class="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 16v-4M12 8h.01" />
+      </svg>
+      <div class="text-sm text-blue-900 dark:text-blue-100">
+        <h3 class="font-semibold mb-2">How User Permission Overrides Work</h3>
+        <ul class="space-y-1 list-disc list-inside">
+          <li>
+            <strong>User overrides take precedence</strong> over role
+            permissions
+          </li>
+          <li>
+            <strong>Superadmins bypass all checks</strong> regardless of
+            settings
+          </li>
+          <li>
+            <strong>Allow</strong> (✓) grants permission even if role denies it
+          </li>
+          <li>
+            <strong>Deny</strong> (✗) blocks permission even if role allows it
+          </li>
+          <li>
+            <strong>Inherit</strong> (default) falls back to user's role
+            permissions
+          </li>
+          <li>
+            To remove an override, select "Inherit" and click Update Permissions
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
   <form method="post">
     {{ csrf_field() }}
     <input type="hidden" name="user_id" value="{{ selected_user.id }}" />
-    <table class="min-w-full border border-slate-200 bg-white rounded-lg">
-      <thead class="bg-slate-50">
+    <table class="min-w-full border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg">
+      <thead class="bg-slate-50 dark:bg-gray-800/80">
         <tr>
-          <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Permission</th>
-          <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
-          <th class="px-3 py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Decision</th>
+          <th
+            class="px-3 py-2 text-left text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide"
+          >
+            Permission
+          </th>
+          <th
+            class="px-3 py-2 text-left text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide"
+          >
+            Description
+          </th>
+          <th
+            class="px-3 py-2 text-center text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wide"
+          >
+            Decision
+          </th>
         </tr>
       </thead>
       <tbody>
-        {% set groups = permission_groups if permission_groups is defined and permission_groups else [{'slug': 'all', 'label': 'All Permissions', 'description': '', 'permissions': perms}] %}
-        {% for group in groups %}
-        <tr class="bg-slate-100/70">
-          <td class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600" colspan="3">
+        {% set groups = permission_groups if permission_groups is defined and
+        permission_groups else [{'slug': 'all', 'label': 'All Permissions',
+        'description': '', 'permissions': perms}] %} {% for group in groups %}
+        <tr class="bg-slate-100/70 dark:bg-gray-800/70">
+          <td
+            class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-gray-400"
+            colspan="3"
+          >
             <div class="flex flex-wrap items-baseline justify-between gap-2">
               <span>{{ group.label }}</span>
               {% if group.description %}
-              <span class="text-[11px] font-normal text-slate-500">{{ group.description }}</span>
+              <span class="text-[11px] font-normal text-slate-500 dark:text-gray-400"
+                >{{ group.description }}</span
+              >
               {% endif %}
             </div>
           </td>
         </tr>
-        {% for p in group.permissions %}
-        {% set ov = overrides.get(p.key) %}
-        <tr class="border-t border-slate-200 hover:bg-slate-50/50">
+        {% for p in group.permissions %} {% set ov = overrides.get(p.key) %}
+        <tr class="border-t border-slate-200 dark:border-gray-700 hover:bg-slate-50/50 dark:hover:bg-gray-700/30">
           <td class="px-3 py-2 font-mono text-xs">{{ p.key }}</td>
           <td class="px-3 py-2 text-sm">{{ p.description }}</td>
           <td class="px-3 py-2 text-xs">
             <div class="flex items-center justify-center gap-4">
-              <label class="inline-flex items-center gap-1"><input type="radio" name="perm_{{ p.key }}" value="inherit" {% if ov is none %}checked{% endif %} class="accent-indigo-600"/> <span>Inherit</span></label>
-              <label class="inline-flex items-center gap-1"><input type="radio" name="perm_{{ p.key }}" value="allow" {% if ov is not none and ov %}checked{% endif %} class="accent-indigo-600"/> <span class="text-emerald-600">Allow</span></label>
-              <label class="inline-flex items-center gap-1"><input type="radio" name="perm_{{ p.key }}" value="deny" {% if ov is not none and not ov %}checked{% endif %} class="accent-rose-600"/> <span class="text-rose-600">Deny</span></label>
+              <label class="inline-flex items-center gap-1"
+                ><input
+                  type="radio"
+                  name="perm_{{ p.key }}"
+                  value="inherit"
+                  {{ 'checked' if ov is none }}
+                  class="accent-indigo-600 dark:accent-indigo-400"
+                />
+                <span>Inherit</span></label
+              >
+              <label class="inline-flex items-center gap-1"
+                ><input
+                  type="radio"
+                  name="perm_{{ p.key }}"
+                  value="allow"
+                  {{ 'checked' if ov is not none and ov }}
+                  class="accent-indigo-600 dark:accent-indigo-400"
+                />
+                <span class="text-emerald-600 dark:text-emerald-400">Allow</span></label
+              >
+              <label class="inline-flex items-center gap-1"
+                ><input
+                  type="radio"
+                  name="perm_{{ p.key }}"
+                  value="deny"
+                  {{ 'checked' if ov is not none and not ov }}
+                  class="accent-rose-600 dark:accent-rose-400"
+                />
+                <span class="text-rose-600 dark:text-rose-400">Deny</span></label
+              >
             </div>
           </td>
         </tr>
-        {% endfor %}
-        {% endfor %}
+        {% endfor %} {% endfor %}
       </tbody>
     </table>
     <div class="mt-6 flex items-center gap-3">
       <button class="primary-btn w-auto px-6">Save Overrides</button>
-      <a href="{{ url_for('user_permissions') }}" class="text-sm text-indigo-600 hover:underline">Clear</a>
+      <a
+        href="{{ url_for('user_permissions') }}"
+        class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+        >Clear</a
+      >
     </div>
   </form>
   {% endif %}

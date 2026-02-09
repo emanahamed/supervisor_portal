@@ -1,0 +1,97 @@
+{% extends "public/_public_base.html" %} {% block title %}Payment Cancelled{%
+endblock %} {% block page_title %}Payment Cancelled{% endblock %} {% block
+content %}
+<div
+  class="max-w-2xl mx-auto"
+  x-data="{ shown: false }"
+  x-init="setTimeout(() => shown = true, 50)"
+  x-show="shown"
+  x-transition:enter="transition ease-out duration-700"
+  x-transition:enter-start="opacity-0 scale-95"
+  x-transition:enter-end="opacity-100 scale-100"
+>
+  <div class="soft-card p-8 text-center">
+    <!-- Warning Icon -->
+    <div
+      class="mb-6"
+      x-data="{ iconShown: false }"
+      x-init="setTimeout(() => iconShown = true, 300)"
+    >
+      <div
+        class="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-4"
+        x-show="iconShown"
+        x-transition:enter="transition ease-out duration-500"
+        x-transition:enter-start="opacity-0 scale-0"
+        x-transition:enter-end="opacity-100 scale-100"
+      >
+        <svg
+          class="w-10 h-10 text-amber-600 dark:text-amber-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+          ></path>
+        </svg>
+      </div>
+      <h2 class="text-3xl font-bold text-slate-800 dark:text-gray-200 mb-2">
+        Payment Cancelled
+      </h2>
+      <p class="text-slate-600 dark:text-gray-400">
+        Your enrollment was not completed.
+      </p>
+    </div>
+
+    <!-- Information -->
+    <div class="bg-slate-50 dark:bg-gray-800/50 rounded-lg p-5 mb-6 text-left">
+      <h4
+        class="font-semibold text-slate-800 dark:text-gray-200 mb-2 flex items-center gap-2"
+      >
+        <span>ℹ️</span>
+        <span>What Happened?</span>
+      </h4>
+      <p class="text-sm text-slate-600 dark:text-gray-400 mb-3">
+        Your payment was cancelled before completion. This can happen if:
+      </p>
+      <ul class="text-sm text-slate-600 dark:text-gray-400 space-y-1">
+        <li>• You clicked the "Back" button on the payment page</li>
+        <li>• There was a payment processing issue</li>
+        <li>• You closed the payment window</li>
+      </ul>
+      <p class="text-sm text-slate-600 dark:text-gray-400 mt-3">
+        <strong>Don't worry!</strong> No charges were made to your card. Your
+        selected courses are still available, and you can try again.
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+      <a
+        href="{{ url_for('enroll_checkout') }}"
+        class="soft-btn soft-btn-primary px-8 py-3 font-semibold transition-all duration-200 hover:scale-105 active:scale-95"
+      >
+        Try Payment Again
+      </a>
+      <a
+        href="{{ url_for('enroll_step2') }}"
+        class="soft-btn bg-slate-100 dark:bg-gray-700 text-slate-700 dark:text-gray-300 hover:bg-slate-200 dark:hover:bg-gray-600 px-8 py-3 transition-all duration-200 hover:scale-105 active:scale-95"
+      >
+        Modify Course Selection
+      </a>
+    </div>
+
+    <div class="mt-6 text-sm text-slate-500 dark:text-gray-400">
+      Need help? Contact us at
+      <a
+        href="mailto:management@exceltutors.org.uk"
+        class="text-indigo-600 dark:text-indigo-400 hover:underline"
+        >management@exceltutors.org.uk</a
+      >
+    </div>
+  </div>
+</div>
+{% endblock %}

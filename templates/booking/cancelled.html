@@ -1,6 +1,6 @@
 {% extends 'booking/layout.html' %} {% block content %}
 <section
-  class="max-w-3xl mx-auto glass-light rounded-3xl p-10 text-slate-800 shadow-2xl"
+  class="max-w-3xl mx-auto glass-light rounded-3xl p-10 text-slate-800 dark:text-gray-200 shadow-2xl"
 >
   <div class="flex items-start gap-4 mb-6">
     <div
@@ -9,37 +9,45 @@
       {{ 'ℹ️' if already else '✓' }}
     </div>
     <div>
-      <h1 class="text-3xl font-semibold text-slate-900">
+      <h1 class="text-3xl font-semibold text-slate-900 dark:text-gray-100">
         {{ copy.already_cancelled_title if already else copy.cancelled_title }}
       </h1>
-      <p class="text-slate-600 mt-2 leading-relaxed">
+      <p class="text-slate-600 dark:text-gray-400 mt-2 leading-relaxed">
         {{ copy.already_cancelled_message if already else copy.cancelled_message
         }}
       </p>
     </div>
   </div>
-  <div class="rounded-2xl border border-indigo-100 bg-white p-6 mb-6">
+  <div
+    class="rounded-2xl border border-indigo-100 dark:border-indigo-800 bg-white dark:bg-gray-800 p-6 mb-6"
+  >
     <dl class="grid sm:grid-cols-2 gap-4 text-sm">
       <div>
-        <dt class="font-medium text-slate-500">{{ copy.superadmin_label }}</dt>
-        <dd class="text-slate-800">{{ slot.superadmin.name }}</dd>
+        <dt class="font-medium text-slate-500 dark:text-gray-400">
+          {{ copy.superadmin_label }}
+        </dt>
+        <dd class="text-slate-800 dark:text-gray-200">
+          {{ slot.superadmin.name }}
+        </dd>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">Date</dt>
-        <dd class="text-slate-800">
+        <dt class="font-medium text-slate-500 dark:text-gray-400">Date</dt>
+        <dd class="text-slate-800 dark:text-gray-200">
           {{ slot.start_at.strftime('%A, %d %B %Y') }}
         </dd>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">Time</dt>
-        <dd class="text-slate-800">
+        <dt class="font-medium text-slate-500 dark:text-gray-400">Time</dt>
+        <dd class="text-slate-800 dark:text-gray-200">
           {{ slot.start_at.strftime('%H:%M') }} – {{
           slot.end_at.strftime('%H:%M') }}
         </dd>
       </div>
       <div>
-        <dt class="font-medium text-slate-500">{{ copy.name }}</dt>
-        <dd class="text-slate-800">{{ booking.name }}</dd>
+        <dt class="font-medium text-slate-500 dark:text-gray-400">
+          {{ copy.name }}
+        </dt>
+        <dd class="text-slate-800 dark:text-gray-200">{{ booking.name }}</dd>
       </div>
     </dl>
   </div>

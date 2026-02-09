@@ -101,6 +101,23 @@ def set_setting(key: str, value, *, as_json: bool = False) -> None:
     db.session.commit()
 
 
+def calculate_enrollment_discount(cart_item_count, subtotal):
+    """Calculate discount if even number of products in cart.
+
+    Args:
+        cart_item_count: Number of products in cart
+        subtotal: Total price before discount
+
+    Returns:
+        Decimal: Discount amount (never exceeds subtotal)
+    """
+    from decimal import Decimal
+    discount = Decimal('0')
+    if cart_item_count > 0 and cart_item_count % 2 == 0:
+        discount = Decimal(get_setting('enrollment_discount_amount', '0'))
+    return min(discount, subtotal)  # Never discount more than subtotal
+
+
 def ensure_form_branch_choices(form):
     """Recursively walk a WTForms form/formfield and populate any SelectField
     or SelectMultipleField named 'branch' or 'branches' with choices from the

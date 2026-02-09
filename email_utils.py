@@ -1020,3 +1020,102 @@ def build_task_overdue_email(task, assigned_to) -> Tuple[str, str]:
     ]
     html = _render_email_shell('Task overdue', 'Task overdue', intro, ''.join(body))
     return subject, html
+
+
+# ---------------- Enrollment Confirmation Email ---------------- #
+
+def build_enrollment_confirmation_email(order) -> Tuple[str, str]:
+    """Branded confirmation email for a completed enrollment order."""
+    student_name = order.student_name or 'Student'
+    subject = f"Enrollment Confirmation – Order #{order.id}"
+
+    intro = (
+        f"Thank you for enrolling <strong>{student_name}</strong> with Excel Tutors!<br/><br/>"
+        "Your payment has been received and the enrollment is confirmed. "
+        "Please find the details of your order below."
+    )
+
+    def row(label, value):
+        safe = (str(value) or '').replace('\n', '<br/>')
+        return (
+            f"<tr>"
+            f"<td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td>"
+            f"<td style='padding:6px 0;color:#0f172a;'>{safe}</td>"
+            f"</tr>"
+        )
+
+    # Order summary rows
+    order_date = order.created_at.strftime('%d %B %Y') if order.created_at else '—'
+    body_parts = [
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>",
+        row('Order Number', f"#{order.id}"),
+        row('Student Name', student_name),
+        row('Student ID', order.student_id or '—'),
+        row('Branch', order.branch or '—'),
+        row('Year Group', (order.year_group or '—').replace('year', 'Year ').title()),
+        row('Order Date', order_date),
+        "</table>",
+    ]
+
+    # Course items table
+    items = order.items if order.items else []
+    if items:
+        body_parts.append(
+            "<h3 style='margin:20px 0 8px;font-size:15px;color:#363f99;font-weight:700;'>Enrolled Courses</h3>"
+            "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:13px;'>"
+            "<tr style='background:#f1f5f9;'>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Course</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Date</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Time</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Venue</th>"
+            "<th style='padding:8px 10px;text-align:right;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Price</th>"
+            "</tr>"
+        )
+        for item in items:
+            date_str = item.product_date.strftime('%d %b %Y') if item.product_date else '—'
+            price_str = f"£{float(item.product_price or 0):.2f}"
+            body_parts.append(
+                f"<tr>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#0f172a;'>{item.product_name}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{date_str}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.product_time or '—'}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.product_venue or '—'}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#0f172a;text-align:right;font-weight:600;'>{price_str}</td>"
+                f"</tr>"
+            )
+        body_parts.append("</table>")
+
+    # Totals
+    subtotal_str = f"£{float(order.subtotal or 0):.2f}"
+    discount_str = f"£{float(order.discount_amount or 0):.2f}"
+    total_str = f"£{float(order.total or 0):.2f}"
+    body_parts.append(
+        "<table role='presentation' cellpadding='0' cellspacing='0' style='margin:12px 0 0 auto;border-collapse:collapse;font-size:14px;'>"
+        f"<tr><td style='padding:4px 16px 4px 0;color:#64748b;'>Subtotal:</td><td style='padding:4px 0;text-align:right;color:#0f172a;font-weight:600;'>{subtotal_str}</td></tr>"
+    )
+    if order.discount_amount and float(order.discount_amount) > 0:
+        body_parts.append(
+            f"<tr><td style='padding:4px 16px 4px 0;color:#16a34a;'>Discount:</td><td style='padding:4px 0;text-align:right;color:#16a34a;font-weight:600;'>-{discount_str}</td></tr>"
+        )
+    body_parts.append(
+        f"<tr style='border-top:2px solid #e2e8f0;'><td style='padding:8px 16px 4px 0;color:#0f172a;font-weight:700;font-size:16px;'>Total Paid:</td>"
+        f"<td style='padding:8px 0 4px;text-align:right;color:#363f99;font-weight:700;font-size:16px;'>{total_str}</td></tr>"
+        "</table>"
+    )
+
+    # Footer note
+    body_parts.append(
+        "<p style='margin:20px 0 0;font-size:13px;color:#475569;'>"
+        "A PDF invoice is attached to this email for your records. "
+        "If you have any questions about your enrollment, please contact us at "
+        "<a href='mailto:management@exceltutors.org.uk' style='color:#363f99;'>management@exceltutors.org.uk</a>."
+        "</p>"
+    )
+
+    html = _render_email_shell(
+        'Enrollment Confirmation',
+        'Enrollment Confirmed',
+        intro,
+        ''.join(body_parts),
+    )
+    return subject, html

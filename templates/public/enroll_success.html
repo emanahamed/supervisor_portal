@@ -1,0 +1,218 @@
+{% extends "public/_public_base.html" %} {% block title %}Enrollment
+Successful!{% endblock %} {% block page_title %}Enrollment Successful{% endblock
+%} {% block content %}
+<div
+  class="max-w-2xl mx-auto"
+  x-data="{ shown: false }"
+  x-init="setTimeout(() => shown = true, 50)"
+  x-show="shown"
+  x-transition:enter="transition ease-out duration-700"
+  x-transition:enter-start="opacity-0 scale-95"
+  x-transition:enter-end="opacity-100 scale-100"
+>
+  <div class="soft-card p-8 text-center">
+    <!-- Success Icon -->
+    <div
+      class="mb-6"
+      x-data="{ iconShown: false }"
+      x-init="setTimeout(() => iconShown = true, 300)"
+    >
+      <div
+        class="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4"
+        x-show="iconShown"
+        x-transition:enter="transition ease-out duration-500"
+        x-transition:enter-start="opacity-0 scale-0 rotate-180"
+        x-transition:enter-end="opacity-100 scale-100 rotate-0"
+      >
+        <svg
+          class="w-10 h-10 text-green-600 dark:text-green-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M5 13l4 4L19 7"
+          ></path>
+        </svg>
+      </div>
+      <h2 class="text-3xl font-bold text-slate-800 dark:text-gray-200 mb-2">
+        Payment Successful!
+      </h2>
+      <p class="text-slate-600 dark:text-gray-400">
+        Your enrollment has been confirmed.
+      </p>
+    </div>
+
+    {% if order %}
+    <!-- Order Details -->
+    <div class="bg-slate-50 dark:bg-gray-800/50 rounded-lg p-6 mb-6 text-left">
+      <h3
+        class="font-semibold text-slate-800 dark:text-gray-200 mb-4 text-center"
+      >
+        Order Summary
+      </h3>
+
+      <div class="space-y-3 text-sm">
+        <div class="flex justify-between">
+          <span class="text-slate-600 dark:text-gray-400">Order ID:</span>
+          <span class="font-semibold text-slate-800 dark:text-gray-200"
+            >#{{ order.id }}</span
+          >
+        </div>
+
+        <div class="flex justify-between">
+          <span class="text-slate-600 dark:text-gray-400">Student:</span>
+          <span class="font-semibold text-slate-800 dark:text-gray-200"
+            >{{ order.student_name }}</span
+          >
+        </div>
+
+        <div class="flex justify-between">
+          <span class="text-slate-600 dark:text-gray-400">Student ID:</span>
+          <span class="font-semibold text-slate-800 dark:text-gray-200"
+            >{{ order.student_id }}</span
+          >
+        </div>
+
+        <div class="flex justify-between">
+          <span class="text-slate-600 dark:text-gray-400">Branch:</span>
+          <span class="font-semibold text-slate-800 dark:text-gray-200"
+            >{{ order.branch }}</span
+          >
+        </div>
+
+        <div class="flex justify-between">
+          <span class="text-slate-600 dark:text-gray-400"
+            >Courses Enrolled:</span
+          >
+          <span class="font-semibold text-slate-800 dark:text-gray-200"
+            >{{ order.items | length }}</span
+          >
+        </div>
+
+        <div class="border-t border-slate-200 dark:border-gray-700 pt-3 mt-3">
+          <div class="flex justify-between text-base">
+            <span class="font-bold text-slate-800 dark:text-gray-200"
+              >Total Paid:</span
+            >
+            <span class="font-bold text-green-600 dark:text-green-400"
+              >£{{ "%.2f" | format(order.total | float) }}</span
+            >
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Enrolled Courses -->
+    <div class="text-left mb-6">
+      <h4 class="font-semibold text-slate-800 dark:text-gray-200 mb-3">
+        Enrolled Courses:
+      </h4>
+      <div class="space-y-2">
+        {% for item in order.items %}
+        <div
+          class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded"
+          x-data="{ courseShown: false }"
+          x-init="setTimeout(() => courseShown = true, {{ 600 + loop.index0 * 100 }})"
+          x-show="courseShown"
+          x-transition:enter="transition ease-out duration-400"
+          x-transition:enter-start="opacity-0 translate-x-8"
+          x-transition:enter-end="opacity-100 translate-x-0"
+        >
+          <div class="text-2xl">📚</div>
+          <div class="flex-1">
+            <div
+              class="font-semibold text-slate-800 dark:text-gray-200 text-sm"
+            >
+              {{ item.product_name }}
+            </div>
+            {% if item.product_date %}
+            <div class="text-xs text-slate-600 dark:text-gray-400">
+              {{ item.product_date.strftime('%d %b %Y') if item.product_date
+              else '' }}
+            </div>
+            {% endif %}
+          </div>
+          <div
+            class="font-semibold text-indigo-600 dark:text-indigo-400 text-sm"
+          >
+            £{{ "%.2f" | format(item.product_price | float) }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Next Steps -->
+    <div
+      class="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-5 mb-6 text-left"
+    >
+      <h4
+        class="font-semibold text-indigo-900 dark:text-indigo-200 mb-2 flex items-center gap-2"
+      >
+        <span>ℹ️</span>
+        <span>What's Next?</span>
+      </h4>
+      <ul class="text-sm text-indigo-800 dark:text-indigo-300 space-y-2">
+        <li>• A confirmation email will be sent to you shortly</li>
+        <li>
+          • Please note your Order ID: <strong>#{{ order.id }}</strong> for
+          reference
+        </li>
+        <li>
+          • Course details and joining instructions will follow closer to the
+          course date
+        </li>
+        <li>• If you have any questions, please contact us</li>
+      </ul>
+    </div>
+    {% else %}
+    <!-- Order still processing (webhook not yet received) -->
+    <div class="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-6 mb-6 text-left">
+      <h3
+        class="font-semibold text-amber-800 dark:text-amber-200 mb-2 flex items-center gap-2"
+      >
+        <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          ></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          ></path>
+        </svg>
+        <span>Processing Your Order</span>
+      </h3>
+      <p class="text-sm text-amber-700 dark:text-amber-300">
+        Your payment was successful! We are finishing processing your order. A
+        confirmation email with your order details and invoice will be sent
+        shortly.
+      </p>
+      <p class="text-sm text-amber-700 dark:text-amber-300 mt-2">
+        You can safely close this page. If you have any questions, please
+        contact us.
+      </p>
+    </div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="flex gap-3 justify-center">
+      <a
+        href="{{ url_for('enroll_step1') }}"
+        class="soft-btn bg-slate-100 dark:bg-gray-700 text-slate-700 dark:text-gray-300 hover:bg-slate-200 dark:hover:bg-gray-600 px-6 py-3 transition-all duration-200 hover:scale-105 active:scale-95"
+      >
+        Enroll in More Courses
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

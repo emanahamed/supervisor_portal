@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ inline_css | safe }}
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="logo-block">
+        <div class="brand">
+          <span class="brand-1">EXCEL</span>
+          <span class="brand-2">TUTORS</span>
+        </div>
+        <div class="tagline">Inspiring Excellence in Education</div>
+        <div class="small mt-1">
+          <strong>EXCEL TUTORS LTD</strong>
+        </div>
+        <div class="small">management@exceltutors.org.uk</div>
+      </div>
+      <div class="invoice-block">
+        <div class="invoice-title">INVOICE</div>
+        <div class="meta">
+          <table>
+            <tr>
+              <td>Order No:</td>
+              <td>#{{ order.id }}</td>
+            </tr>
+            <tr>
+              <td>Date:</td>
+              <td>
+                {{ order.created_at.strftime('%d %B %Y') if order.created_at
+                else '—' }}
+              </td>
+            </tr>
+            <tr>
+              <td>Payment:</td>
+              <td>{{ order.payment_status | title }}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col section">
+      <div class="col">
+        <h3>BILLED TO:</h3>
+        <div class="box">
+          <div class="u">{{ order.student_name }}</div>
+          <div>Student ID: {{ order.student_id }}</div>
+          <div>Branch: {{ order.branch }}</div>
+          <div>
+            Year Group: {{ order.year_group | replace('year', 'Year ') | title
+            }}
+          </div>
+          {% if order.parent_email %}
+          <div>Email: {{ order.parent_email }}</div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col">
+        <h3>PROVIDER</h3>
+        <div class="box">
+          <div>Excel Tutors Ltd</div>
+          <div>Email: management@exceltutors.org.uk</div>
+          <div>Website: exceltutors.org.uk</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>ENROLLED COURSES:</h3>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>COURSE</th>
+            <th>DATE</th>
+            <th>TIME</th>
+            <th>VENUE</th>
+            <th style="width: 100px; text-align: right">PRICE</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in order.items %}
+          <tr>
+            <td>{{ item.product_name }}</td>
+            <td>
+              {{ item.product_date.strftime('%d %b %Y') if item.product_date
+              else '—' }}
+            </td>
+            <td>{{ item.product_time or '—' }}</td>
+            <td>{{ item.product_venue or '—' }}</td>
+            <td class="money">
+              &pound;{{ "%.2f" | format(item.product_price | float) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <table class="totals">
+        <tr>
+          <td class="label">Subtotal:</td>
+          <td class="value">
+            &pound;{{ "%.2f" | format(order.subtotal | float) }}
+          </td>
+        </tr>
+        {% if order.discount_amount and order.discount_amount > 0 %}
+        <tr>
+          <td class="label">Discount:</td>
+          <td class="value">
+            -&pound;{{ "%.2f" | format(order.discount_amount | float) }}
+          </td>
+        </tr>
+        {% endif %}
+        <tr>
+          <td class="label" style="font-size: 14px">Total:</td>
+          <td class="value" style="font-size: 14px; font-weight: 800">
+            &pound;{{ "%.2f" | format(order.total | float) }}
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="footer">
+      <div class="thanks">PAYMENT HAS BEEN RECEIVED IN FULL.</div>
+      <div class="thanks">THANK YOU FOR YOUR ENROLLMENT</div>
+      <div class="contacts">
+        management@exceltutors.org.uk&nbsp;&bull;&nbsp;exceltutors.org.uk
+      </div>
+      <div class="small mt-1">
+        THIS INVOICE HAS BEEN PRODUCED ELECTRONICALLY
+      </div>
+    </div>
+  </body>
+</html>

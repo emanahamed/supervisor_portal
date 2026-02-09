@@ -112,6 +112,23 @@ PUBLIC_FORM_REGISTRY = [
         'endpoints': ['register'],
         'note': 'Creates a pending account awaiting superadmin approval.',
     },
+    {
+        'name': 'Course Enrollment (Step 1 - Student Info)',
+        'endpoints': ['enroll_step1'],
+        'static_paths': ['/enroll'],
+    },
+    {
+        'name': 'Course Enrollment (Step 2 - Browse Courses)',
+        'endpoints': ['enroll_step2'],
+        'static_paths': ['/enroll/products'],
+        'note': 'Student must complete Step 1 first.',
+    },
+    {
+        'name': 'Course Enrollment (Step 3 - Checkout)',
+        'endpoints': ['enroll_checkout'],
+        'static_paths': ['/enroll/checkout'],
+        'note': 'Redirects to Stripe for payment.',
+    },
 ]
 
 
@@ -1545,9 +1562,10 @@ with app.app_context():  # pragma: no cover - simple safety patch
 
 # --------------- Permission Helpers (server-side) --------------- #
 def user_can(perm_key: str) -> bool:
-    """Server-side permission check aligned with template helper.
+    """Server-side permission check with request-level caching for performance.
 
     Order: superadmin bypass > explicit user override > role permission.
+    Caches all permissions on first check, subsequent checks are O(1) lookups.
     Fail-safe: return False on unexpected error.
     """
     try:
@@ -1555,11 +1573,36 @@ def user_can(perm_key: str) -> bool:
             return True
         if not current_user.is_authenticated:
             return False
-        up = UserPermission.query.filter_by(user_id=current_user.id, permission_key=perm_key).first()
-        if up:
-            return bool(up.allow)
-        role = (current_user.role or 'staff')
-        return bool(RolePermission.query.filter_by(role=role, permission_key=perm_key).first())
+
+        # Check request-level cache first
+        cache_key = f'_perm_cache_{current_user.id}'
+        if not hasattr(g, cache_key):
+            # Build cache: load all user overrides and role permissions in 2 queries
+            user_overrides = {
+                up.permission_key: up.allow
+                for up in UserPermission.query.filter_by(user_id=current_user.id).all()
+            }
+
+            role = (current_user.role or 'staff')
+            role_perms = {
+                rp.permission_key
+                for rp in RolePermission.query.filter_by(role=role).all()
+            }
+
+            # Store in request context
+            setattr(g, cache_key, {
+                'user_overrides': user_overrides,
+                'role_perms': role_perms
+            })
+
+        cache = getattr(g, cache_key)
+
+        # Check user override first (explicit allow/deny)
+        if perm_key in cache['user_overrides']:
+            return cache['user_overrides'][perm_key]
+
+        # Fall back to role permission
+        return perm_key in cache['role_perms']
     except Exception:
         return False
 
@@ -2226,6 +2269,9 @@ def create_tables_and_superadmin():
             # Recruitment / Applications
             ('manage_recruitment','Manage recruitment applications and communications'),
             ('manage_admission_assessments','Manage admission assessment submissions'),
+            # Course Enrollment
+            ('manage_products','Create, edit, and delete course products'),
+            ('view_enrollments','View enrollment orders and student purchases'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, description in base_permissions:
@@ -6656,6 +6702,14 @@ PERMISSION_GROUP_DEFINITIONS: OrderedDict[str, dict[str, object]] = OrderedDict(
         },
     ),
     (
+        'enrollment',
+        {
+            'label': 'Course Enrollment',
+            'description': 'Manage course products, view enrollment orders, and configure discount settings for the public enrollment form.',
+            'keys': ['manage_products', 'view_enrollments', 'manage_pricing'],
+        },
+    ),
+    (
         'floor_ops',
         {
             'label': 'Floor & Centre Operations',
@@ -6742,6 +6796,7 @@ def role_permissions():
         # For each role/perm pair, expect checkbox name rp_<role>__<perm>
         existing = {(rp.role, rp.permission_key): rp for rp in RolePermission.query.all()}
         seen_keys = set()
+        changes = {'added': [], 'removed': []}
         for role in roles:
             for p in perms:
                 field = f"rp_{role}__{p.key}"
@@ -6749,6 +6804,7 @@ def role_permissions():
                 key = (role, p.key)
                 if want and key not in existing:
                     db.session.add(RolePermission(role=role, permission_key=p.key))
+                    changes['added'].append(f"{role}:{p.key}")
                     try:
                         db.session.flush()
                         db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='added'))
@@ -6756,6 +6812,7 @@ def role_permissions():
                         pass
                 if not want and key in existing:
                     db.session.delete(existing[key])
+                    changes['removed'].append(f"{role}:{p.key}")
                     try:
                         db.session.flush()
                         db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='removed'))
@@ -6763,7 +6820,17 @@ def role_permissions():
                         pass
                 seen_keys.add(key)
         db.session.commit()
-        flash('Role permissions updated','success')
+
+        # Show detailed feedback
+        if not changes['added'] and not changes['removed']:
+            flash('No changes made to permissions', 'info')
+        else:
+            msg_parts = []
+            if changes['added']:
+                msg_parts.append(f"Added {len(changes['added'])} permission(s)")
+            if changes['removed']:
+                msg_parts.append(f"Removed {len(changes['removed'])} permission(s)")
+            flash(f"Role permissions updated. {' | '.join(msg_parts)}", 'success')
         return redirect(url_for('role_permissions'))
     role_map = {r.role: set() for r in RolePermission.query.with_entities(RolePermission.role).distinct()}
     for rp in RolePermission.query.all():
@@ -6835,11 +6902,16 @@ def user_permissions():
     if request.method == 'POST' and selected_user:
         # For each permission, radio: inherit / allow / deny -> name=perm_<key> value=inherit|allow|deny
         existing = {up.permission_key: up for up in UserPermission.query.filter_by(user_id=selected_user.id).all()}
+
+        # Track changes for better UX feedback
+        changes_detail = {'added_allow': [], 'added_deny': [], 'removed': [], 'modified': []}
+
         for p in perms:
             val = request.form.get(f'perm_{p.key}')
             if val == 'inherit':
                 if p.key in existing:
                     db.session.delete(existing[p.key])
+                    changes_detail['removed'].append(p.key)
                     try:
                         db.session.flush()
                         db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='inherit'))
@@ -6851,6 +6923,7 @@ def user_permissions():
                     old_allow = existing[p.key].allow
                     existing[p.key].allow = allow_flag
                     if old_allow != allow_flag:
+                        changes_detail['modified'].append(f"{p.key} → {'allow' if allow_flag else 'deny'}")
                         try:
                             db.session.flush()
                             db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
@@ -6858,13 +6931,34 @@ def user_permissions():
                             pass
                 else:
                     db.session.add(UserPermission(user_id=selected_user.id, permission_key=p.key, allow=allow_flag))
+                    if allow_flag:
+                        changes_detail['added_allow'].append(p.key)
+                    else:
+                        changes_detail['added_deny'].append(p.key)
                     try:
                         db.session.flush()
                         db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
                     except Exception:
                         pass
+
         db.session.commit()
-        flash('User permission overrides saved','success')
+
+        # Show detailed feedback based on what actually changed
+        if not any(changes_detail.values()):
+            flash('No changes made to user permissions', 'info')
+        else:
+            msg_parts = []
+            if changes_detail['added_allow']:
+                msg_parts.append(f"Allowed: {', '.join(changes_detail['added_allow'])}")
+            if changes_detail['added_deny']:
+                msg_parts.append(f"Denied: {', '.join(changes_detail['added_deny'])}")
+            if changes_detail['removed']:
+                msg_parts.append(f"Removed: {', '.join(changes_detail['removed'])}")
+            if changes_detail['modified']:
+                msg_parts.append(f"Modified: {', '.join(changes_detail['modified'])}")
+
+            flash(f"User permissions updated. {' | '.join(msg_parts)}", 'success')
+
         return redirect(url_for('user_permissions', user_id=selected_user.id))
     overrides = {}
     if selected_user:
@@ -7219,6 +7313,136 @@ def admin_appointments_booking_action():
     else:
         flash('Unsupported action.', 'danger')
     return redirect(url_for('admin_appointments'))
+
+
+# ---------------- Admin: Product Management ---------------- #
+@app.route('/admin/products')
+@login_required
+@permission_required('manage_products')
+def admin_products_list():
+    """List all products for course enrollment"""
+    from models import Product
+    products = Product.query.order_by(Product.created_at.desc()).all()
+    return render_template('admin/products_list.html', products=products)
+
+
+@app.route('/admin/products/new', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_products')
+def admin_products_new():
+    """Create new product"""
+    from forms import ProductForm
+    from models import Product
+    form = ProductForm()
+    if form.validate_on_submit():
+        product = Product(
+            name=form.name.data,
+            description=form.description.data,
+            price=form.price.data,
+            thumbnail_url=form.thumbnail_url.data,
+            date=form.date.data,
+            venue=form.venue.data,
+            time=form.time.data,
+            instructor=form.instructor.data,
+            active=form.active.data
+        )
+        db.session.add(product)
+        db.session.commit()
+        flash('Product created successfully', 'success')
+        return redirect(url_for('admin_products_list'))
+    return render_template('admin/products_form.html', form=form, title='New Product')
+
+
+@app.route('/admin/products/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_products')
+def admin_products_edit(id):
+    """Edit existing product"""
+    from forms import ProductForm
+    from models import Product
+    product = Product.query.get_or_404(id)
+    form = ProductForm(obj=product)
+    if form.validate_on_submit():
+        product.name = form.name.data
+        product.description = form.description.data
+        product.price = form.price.data
+        product.thumbnail_url = form.thumbnail_url.data
+        product.date = form.date.data
+        product.venue = form.venue.data
+        product.time = form.time.data
+        product.instructor = form.instructor.data
+        product.active = form.active.data
+        product.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash('Product updated successfully', 'success')
+        return redirect(url_for('admin_products_list'))
+    return render_template('admin/products_form.html', form=form, title='Edit Product', product=product)
+
+
+@app.route('/admin/products/<int:id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_products')
+def admin_products_delete(id):
+    """Delete product"""
+    from models import Product
+    product = Product.query.get_or_404(id)
+    db.session.delete(product)
+    db.session.commit()
+    flash('Product deleted successfully', 'success')
+    return redirect(url_for('admin_products_list'))
+
+
+@app.route('/admin/products/<int:id>/toggle', methods=['POST'])
+@login_required
+@permission_required('manage_products')
+def admin_products_toggle(id):
+    """Toggle product active status"""
+    from models import Product
+    product = Product.query.get_or_404(id)
+    product.active = not product.active
+    db.session.commit()
+    return jsonify({'success': True, 'active': product.active})
+
+
+# ---------------- Admin: Enrollment/Order Tracking ---------------- #
+@app.route('/admin/enrollments')
+@login_required
+@permission_required('view_enrollments')
+def admin_enrollments_list():
+    """List all course enrollment orders"""
+    from models import Order
+    orders = Order.query.order_by(Order.created_at.desc()).all()
+    return render_template('admin/enrollments_list.html', orders=orders)
+
+
+@app.route('/admin/enrollments/<int:id>')
+@login_required
+@permission_required('view_enrollments')
+def admin_enrollments_detail(id):
+    """View enrollment order detail"""
+    from models import Order
+    order = Order.query.get_or_404(id)
+    return render_template('admin/enrollments_detail.html', order=order)
+
+
+# ---------------- Admin: Discount Configuration ---------------- #
+@app.route('/admin/settings/enrollment-discount', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_settings')
+def admin_enrollment_discount():
+    """Configure enrollment discount amount"""
+    from forms import EnrollmentDiscountForm
+    from utils import get_setting, set_setting
+    form = EnrollmentDiscountForm()
+    if form.validate_on_submit():
+        set_setting('enrollment_discount_amount', str(form.discount_amount.data))
+        flash('Discount settings saved', 'success')
+        return redirect(url_for('admin_enrollment_discount'))
+
+    # Load current value
+    current = get_setting('enrollment_discount_amount', '10.00')
+    form.discount_amount.data = float(current)
+    return render_template('admin/enrollment_discount.html', form=form)
 
 
 # ---------------- Public Booking ---------------- #
@@ -17464,6 +17688,390 @@ def student_concern_meeting(cid: int):
     db.session.commit()
     flash('Meeting arranged and linked to concern','success')
     return redirect(url_for('student_concerns_index'))
+
+
+# ---------------- Course Enrollment (Public Multi-Step Form) ---------------- #
+@csrf.exempt
+@app.route('/enroll', methods=['GET', 'POST'])
+def enroll_step1():
+    """Step 1: Student information form"""
+    from utils import BRANCH_CHOICES
+    branches = BRANCH_CHOICES()
+    year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
+                   'year9', 'year10', 'year11', 'year12', 'year13']
+
+    if request.method == 'POST':
+        # Honeypot check
+        if (request.form.get('website') or '').strip():
+            return redirect(url_for('enroll_step1'))
+
+        student_id = (request.form.get('student_id') or '').strip()
+        student_name = (request.form.get('student_name') or '').strip()
+        branch = (request.form.get('branch') or '').strip()
+        year_group = (request.form.get('year_group') or '').strip()
+        parent_email = (request.form.get('parent_email') or '').strip()
+
+        errors = []
+        if not student_id:
+            errors.append("Student ID is required")
+        if not student_name:
+            errors.append("Full Name is required")
+        if not branch or branch not in branches:
+            errors.append("Valid branch is required")
+        if not year_group or year_group not in year_groups:
+            errors.append("Valid year group is required")
+        if not parent_email:
+            errors.append("Parent/Guardian Email is required")
+
+        if errors:
+            for err in errors:
+                flash(err, 'warning')
+            return render_template('public/enroll_step1.html',
+                                 branches=branches, year_groups=year_groups,
+                                 student_id=student_id, student_name=student_name,
+                                 branch=branch, year_group=year_group, parent_email=parent_email)
+
+        # Store in session
+        session['enrollment_step1'] = {
+            'student_id': student_id,
+            'student_name': student_name,
+            'branch': branch,
+            'year_group': year_group,
+            'parent_email': parent_email
+        }
+        return redirect(url_for('enroll_step2'))
+
+    return render_template('public/enroll_step1.html',
+                         branches=branches, year_groups=year_groups)
+
+
+@csrf.exempt
+@app.route('/enroll/products', methods=['GET', 'POST'])
+def enroll_step2():
+    """Step 2: Browse products and add to cart"""
+    from models import Product
+
+    # Check step 1 completed
+    if 'enrollment_step1' not in session:
+        flash('Please complete student information first', 'warning')
+        return redirect(url_for('enroll_step1'))
+
+    if request.method == 'POST':
+        # Handle cart updates via AJAX (add/remove products)
+        action = request.form.get('action')
+        product_id = request.form.get('product_id')
+
+        if 'enrollment_cart' not in session:
+            session['enrollment_cart'] = []
+
+        if action == 'add' and product_id:
+            if int(product_id) not in session['enrollment_cart']:
+                session['enrollment_cart'].append(int(product_id))
+                session.modified = True
+                return jsonify({'success': True, 'cart_count': len(session['enrollment_cart'])})
+
+        elif action == 'remove' and product_id:
+            try:
+                session['enrollment_cart'].remove(int(product_id))
+                session.modified = True
+                return jsonify({'success': True, 'cart_count': len(session['enrollment_cart'])})
+            except ValueError:
+                pass
+
+        elif action == 'checkout':
+            if not session.get('enrollment_cart'):
+                flash('Please add at least one course to your cart', 'warning')
+                return redirect(url_for('enroll_step2'))
+            return redirect(url_for('enroll_checkout'))
+
+    # GET: Show products
+    products = Product.query.filter_by(active=True).order_by(Product.date).all()
+    cart_ids = session.get('enrollment_cart', [])
+
+    return render_template('public/enroll_step2.html',
+                         products=[p.serialize() for p in products], cart_ids=cart_ids)
+
+
+@csrf.exempt
+@app.route('/enroll/checkout', methods=['GET', 'POST'])
+def enroll_checkout():
+    """Step 3: Review order and create Stripe checkout"""
+    from decimal import Decimal
+
+    from models import Order, OrderItem, Product
+    from utils import calculate_enrollment_discount
+
+    # Validate session
+    if 'enrollment_step1' not in session or not session.get('enrollment_cart'):
+        flash('Please complete all steps', 'warning')
+        return redirect(url_for('enroll_step1'))
+
+    student_info = session['enrollment_step1']
+    cart_ids = session['enrollment_cart']
+    products = Product.query.filter(Product.id.in_(cart_ids)).all()
+
+    if not products:
+        flash('No valid products in cart', 'warning')
+        return redirect(url_for('enroll_step2'))
+
+    # Calculate totals
+    subtotal = sum(Decimal(str(p.price)) for p in products)
+    discount = calculate_enrollment_discount(len(products), subtotal)
+    total = subtotal - discount
+
+    if request.method == 'POST':
+        # Build product snapshots for Stripe metadata (no Order creation yet!)
+        product_snapshots = []
+        for p in products:
+            product_snapshots.append({
+                'id': p.id,
+                'name': p.name,
+                'price': float(p.price),
+                'date': p.date.isoformat() if p.date else None,
+                'venue': p.venue,
+                'time': p.time,
+                'instructor': p.instructor
+            })
+
+        # Create Stripe checkout session WITH metadata (no Order creation)
+        import json
+
+        import stripe
+        stripe.api_key = 'sk_test_51PqxGYF6JI1mbIACOnMWei5LU5cZU3Hm0sBvjkH9pgNmip9W4UyX1hDDL1FznSZtLP5WGhssqdiwVEOGNd4R3aeZ00WEzo7RkO'
+
+        line_items = [{
+            'price_data': {
+                'currency': 'gbp',
+                'product_data': {'name': p['name']},
+                'unit_amount': int(p['price'] * 100),
+            },
+            'quantity': 1,
+        } for p in product_snapshots]
+
+        # Build discount list for Stripe (coupon-based, not negative line items)
+        discounts = []
+        if discount > 0:
+            coupon = stripe.Coupon.create(
+                amount_off=int(discount * 100),
+                currency='gbp',
+                name='Enrollment Discount',
+                max_redemptions=1,
+            )
+            discounts.append({'coupon': coupon.id})
+
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=line_items,
+                discounts=discounts if discounts else [],
+                mode='payment',
+                success_url=url_for('enroll_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
+                cancel_url=url_for('enroll_cancelled', _external=True),
+                metadata={
+                    'student_id': student_info['student_id'],
+                    'student_name': student_info['student_name'],
+                    'branch': student_info['branch'],
+                    'year_group': student_info['year_group'],
+                    'parent_email': student_info['parent_email'],
+                    'subtotal': str(subtotal),
+                    'discount': str(discount),
+                    'total': str(total),
+                    'products': json.dumps(product_snapshots)
+                },
+            )
+
+            return jsonify({'checkout_url': checkout_session.url})
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+
+    return render_template('public/enroll_step3.html',
+                         student_info=student_info,
+                         products=products,
+                         subtotal=subtotal,
+                         discount=discount,
+                         total=total,
+                         stripe_public_key='pk_live_51PqxGYF6JI1mbIACG0n80Hqk3G8FepZfOrN6V9C0KlC8LAns8Au7pAMCXYgENgEKoPxnCEjDH0RyKXi0qLs4xaeh00G5MMBRbJ')
+
+
+@csrf.exempt
+@app.route('/enroll/success')
+def enroll_success():
+    """Payment success page – looks up order by Stripe session ID."""
+    from models import Order
+    session_id = request.args.get('session_id')
+    if not session_id:
+        flash('Missing session information.', 'danger')
+        return redirect(url_for('enroll_step1'))
+    order = Order.query.filter_by(stripe_checkout_session_id=session_id).first()
+    # Clear session
+    session.pop('enrollment_step1', None)
+    session.pop('enrollment_cart', None)
+    return render_template('public/enroll_success.html', order=order)
+
+
+@csrf.exempt
+@app.route('/enroll/cancelled')
+def enroll_cancelled():
+    """Payment cancelled page"""
+    return render_template('public/enroll_cancelled.html')
+
+
+@csrf.exempt
+@app.route('/webhooks/stripe', methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe checkout.session.completed events.
+
+    Creates Order + OrderItems after payment authorization,
+    then sends confirmation email with PDF invoice.
+    """
+    import json
+    from datetime import datetime
+    from decimal import Decimal
+
+    from models import Order, OrderItem
+
+    payload = request.data
+    try:
+        event = json.loads(payload)
+    except Exception:
+        return jsonify({'error': 'Invalid payload'}), 400
+
+    if event['type'] == 'checkout.session.completed':
+        session_obj = event['data']['object']
+        metadata = session_obj.get('metadata', {})
+
+        # Check if order already exists (idempotent webhook handling)
+        existing_order = Order.query.filter_by(
+            stripe_checkout_session_id=session_obj['id']
+        ).first()
+        if existing_order:
+            return jsonify({'status': 'already_processed'}), 200
+
+        # Parse metadata
+        try:
+            student_id = metadata['student_id']
+            student_name = metadata['student_name']
+            branch = metadata['branch']
+            year_group = metadata['year_group']
+            parent_email = metadata.get('parent_email')
+            subtotal = Decimal(metadata['subtotal'])
+            discount = Decimal(metadata['discount'])
+            total = Decimal(metadata['total'])
+            products = json.loads(metadata['products'])
+        except (KeyError, json.JSONDecodeError, ValueError) as e:
+            # Log error but don't fail webhook
+            print(f"Webhook metadata parse error: {e}")
+            return jsonify({'error': 'Invalid metadata'}), 400
+
+        # Create Order (with payment_status='paid')
+        order = Order(
+            student_id=student_id,
+            student_name=student_name,
+            branch=branch,
+            year_group=year_group,
+            parent_email=parent_email,
+            subtotal=subtotal,
+            discount_amount=discount,
+            total=total,
+            payment_status='paid',  # IMPORTANT: Set to paid immediately
+            stripe_checkout_session_id=session_obj['id'],
+            stripe_payment_intent_id=session_obj.get('payment_intent')
+        )
+        db.session.add(order)
+        db.session.flush()  # Get order.id
+
+        # Create OrderItems
+        for prod in products:
+            item = OrderItem(
+                order_id=order.id,
+                product_id=prod['id'],
+                product_name=prod['name'],
+                product_price=Decimal(str(prod['price'])),
+                product_date=datetime.fromisoformat(prod['date']) if prod.get('date') else None,
+                product_venue=prod.get('venue'),
+                product_time=prod.get('time'),
+                product_instructor=prod.get('instructor')
+            )
+            db.session.add(item)
+
+        db.session.commit()
+
+        # Generate PDF invoice
+        try:
+            pdf_bytes = generate_enrollment_invoice_pdf(order)
+        except Exception as e:
+            print(f"PDF generation failed: {e}")
+            pdf_bytes = None  # Continue without PDF if generation fails
+
+        # Send confirmation email (with or without PDF attachment)
+        try:
+            if parent_email:
+                send_enrollment_confirmation_email(order, pdf_bytes)
+        except Exception as e:
+            print(f"Email send failed: {e}")
+            # Don't fail webhook if email fails
+
+    return jsonify({'status': 'success'}), 200
+
+
+def generate_enrollment_invoice_pdf(order) -> bytes:
+    """Generate binary PDF invoice for enrollment order using xhtml2pdf."""
+    from io import BytesIO
+
+    from xhtml2pdf import pisa
+
+    # Load invoice CSS
+    css_path = os.path.join(app.root_path, 'static', 'css', 'invoice.css')
+    inline_css = ''
+    try:
+        with open(css_path, 'r', encoding='utf-8') as f:
+            inline_css = f.read()
+    except Exception:
+        pass
+
+    # Render HTML template
+    html = render_template(
+        'public/enrollment_invoice.html',
+        order=order,
+        inline_css=inline_css
+    )
+
+    # Convert to PDF
+    pdf_file = BytesIO()
+    pisa_status = pisa.CreatePDF(html, dest=pdf_file)
+
+    if pisa_status.err:
+        raise RuntimeError(f"PDF generation failed: {pisa_status.err}")
+
+    pdf_file.seek(0)
+    return pdf_file.read()
+
+
+def send_enrollment_confirmation_email(order, pdf_bytes=None):
+    """Send enrollment confirmation email with optional PDF invoice attachment."""
+    from email_utils import build_enrollment_confirmation_email, send_email
+
+    # Build email content
+    subject, html = build_enrollment_confirmation_email(order)
+
+    # Prepare PDF attachment only if available
+    attachments = []
+    if pdf_bytes:
+        attachments.append((pdf_bytes, 'application', 'pdf', f'invoice_order_{order.id}.pdf'))
+
+    # Send email
+    recipient_email = order.parent_email
+    if not recipient_email:
+        raise ValueError("Order missing parent_email - cannot send confirmation")
+
+    send_email(
+        to_email=recipient_email,
+        subject=subject,
+        html=html,
+        attachments=attachments if attachments else None
+    )
+
 
 if __name__ == "__main__":
     # Centralised static configuration (edit config.py to change)

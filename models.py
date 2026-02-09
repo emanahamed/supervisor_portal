@@ -1185,6 +1185,94 @@ class BookOrderItem(db.Model):
         }
 
 
+# ---------------- Course Enrollment: Products & Orders ---------------- #
+class Product(db.Model):
+    """Course/program offering (active products shown on public enrollment form)."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    description = db.Column(db.Text)
+    price = db.Column(db.Numeric(10, 2), nullable=False)
+    thumbnail_url = db.Column(db.String(500))  # path to /static/uploads or external URL
+    date = db.Column(db.Date, index=True)
+    venue = db.Column(db.String(255))
+    time = db.Column(db.String(100))
+    instructor = db.Column(db.String(200))
+    active = db.Column(db.Boolean, default=True, index=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'price': float(self.price or 0),
+            'thumbnail_url': self.thumbnail_url,
+            'date': self.date.isoformat() if self.date else None,
+            'venue': self.venue,
+            'time': self.time,
+            'instructor': self.instructor,
+            'active': self.active,
+        }
+
+
+class Order(db.Model):
+    """Enrollment order with Stripe payment tracking."""
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.String(64), nullable=False, index=True)
+    student_name = db.Column(db.String(255), nullable=False, index=True)
+    branch = db.Column(db.String(120), nullable=False, index=True)
+    year_group = db.Column(db.String(20), nullable=False, index=True)
+    parent_email = db.Column(db.String(255), nullable=True, index=True)
+
+    stripe_checkout_session_id = db.Column(db.String(255), unique=True, index=True)
+    stripe_payment_intent_id = db.Column(db.String(255), index=True)
+    payment_status = db.Column(db.String(40), default='pending', index=True)
+    # Values: pending | paid | failed | refunded
+
+    subtotal = db.Column(db.Numeric(10, 2), nullable=False)
+    discount_amount = db.Column(db.Numeric(10, 2), default=0)
+    total = db.Column(db.Numeric(10, 2), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    items = db.relationship('OrderItem', backref='order', cascade='all, delete-orphan', lazy=True)
+
+    def product_count(self):
+        return len(self.items)
+
+
+class OrderItem(db.Model):
+    """Product line item in order (snapshot for historical integrity)."""
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('order.id', ondelete='CASCADE'),
+                        nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=True, index=True)
+
+    # Snapshot fields (preserved even if product changes/deleted)
+    product_name = db.Column(db.String(255), nullable=False)
+    product_price = db.Column(db.Numeric(10, 2), nullable=False)
+    product_date = db.Column(db.Date)
+    product_venue = db.Column(db.String(255))
+    product_time = db.Column(db.String(100))
+    product_instructor = db.Column(db.String(200))
+
+    product = db.relationship('Product', lazy=True)
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'product_id': self.product_id,
+            'product_name': self.product_name,
+            'product_price': float(self.product_price or 0),
+            'product_date': self.product_date.isoformat() if self.product_date else None,
+            'product_venue': self.product_venue,
+            'product_time': self.product_time,
+            'product_instructor': self.product_instructor,
+        }
+
+
 # ---------------- Floor Management: Print Reports ---------------- #
 class PrintReport(db.Model):
     id = db.Column(db.Integer, primary_key=True)

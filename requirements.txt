@@ -19,6 +19,7 @@ tzlocal==5.2               # Explicit tz provider for APScheduler (UTC/local tim
 qrcode==7.4.2              # QR code generation (legacy; not used for resources anymore)
 Pillow==10.4.0             # Imaging library used to compose barcode PNGs
 python-barcode==0.15.1     # 1D barcode generation (Code128/EAN) for resources
+stripe==7.0.0              # Payment processing for course enrollment
 
 ########################################
 # Development / Testing

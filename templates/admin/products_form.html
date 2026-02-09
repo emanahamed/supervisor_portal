@@ -1,0 +1,168 @@
+{% extends 'base.html' %} {% block page_title %}{{ title }}{% endblock %} {%
+block crumb_current %}{{ title }}{% endblock %} {% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="flex items-center mb-6">
+    <a href="{{ url_for('admin_products_list') }}" class="soft-btn mr-4"
+      >← Back to Products</a
+    >
+    <h1 class="text-2xl font-bold text-slate-800 dark:text-slate-100">
+      {{ title }}
+    </h1>
+  </div>
+
+  <div class="soft-card p-6">
+    <form method="post" class="space-y-5">
+      {{ form.hidden_tag() }}
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.name.label }} <span class="text-red-500">*</span>
+        </label>
+        {{ form.name(class="soft-input w-full") }} {% if form.name.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.name.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.description.label }}
+        </label>
+        {{ form.description(class="soft-input w-full", rows="4") }} {% if
+        form.description.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.description.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-5">
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.price.label }} <span class="text-red-500">*</span>
+          </label>
+          {{ form.price(class="soft-input w-full") }} {% if form.price.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.price.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.date.label }}
+          </label>
+          {{ form.date(class="soft-input w-full", type="date") }} {% if
+          form.date.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.date.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.thumbnail_url.label }}
+        </label>
+        {{ form.thumbnail_url(class="soft-input w-full",
+        placeholder="https://example.com/image.jpg or
+        /static/uploads/course.jpg") }} {% if form.thumbnail_url.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.thumbnail_url.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+        <p class="text-xs text-slate-500 mt-1">
+          Image URL for the course thumbnail
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-5">
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.venue.label }}
+          </label>
+          {{ form.venue(class="soft-input w-full") }} {% if form.venue.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.venue.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.time.label }}
+          </label>
+          {{ form.time(class="soft-input w-full", placeholder="e.g., 10:00 AM -
+          2:00 PM") }} {% if form.time.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.time.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.instructor.label }}
+        </label>
+        {{ form.instructor(class="soft-input w-full") }} {% if
+        form.instructor.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.instructor.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label class="flex items-center gap-2 cursor-pointer">
+          {{ form.active(class="rounded") }}
+          <span
+            class="text-sm font-semibold text-slate-700 dark:text-slate-300"
+          >
+            {{ form.active.label.text }}
+          </span>
+        </label>
+        <p class="text-xs text-slate-500 mt-1 ml-6">
+          Only active products will be shown on the public enrollment form
+        </p>
+      </div>
+
+      <div class="flex gap-3 pt-4">
+        {{ form.submit(class="soft-btn soft-btn-primary px-8 py-2") }}
+        <a
+          href="{{ url_for('admin_products_list') }}"
+          class="soft-btn px-8 py-2"
+          >Cancel</a
+        >
+      </div>
+    </form>
+  </div>
+
+  {% if product %}
+  <div class="mt-4 text-xs text-slate-500">
+    Created: {{ product.created_at.strftime('%d %b %Y %H:%M') if
+    product.created_at else '-' }} | Last Updated: {{
+    product.updated_at.strftime('%d %b %Y %H:%M') if product.updated_at else '-'
+    }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

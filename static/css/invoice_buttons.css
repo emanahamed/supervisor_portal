@@ -1,123 +1,187 @@
-/* Shared invoice button styles (moved from templates) */
+/* ═══════════════════════════════════════════════════════════
+   Invoice & Shared Button Styles — Framer Design System
+   Brand: Green #2e9b47 | Orange #f47421 | Indigo #363f99
+          Yellow #fad50a | Purple #6a2672 | Blue #507cb9
+   ═══════════════════════════════════════════════════════════ */
+
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  border-radius: 8px;
-  padding: 10px 14px;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.875rem;
   text-decoration: none;
-  font-size: 0.95rem;
-  font-weight: 600;
-  line-height: 1;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
   border: 1px solid transparent;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
 }
 .icon-btn .btn-label {
   display: inline-block;
 }
 .icon-btn-xs {
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
 }
 .icon-btn:hover {
   transform: translateY(-1px);
-  filter: brightness(1.03);
-  box-shadow: 0 8px 14px -10px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+.icon-btn:active {
+  transform: translateY(0);
 }
 .icon-btn:focus-visible {
-  outline: 3px solid rgba(59, 130, 246, 0.45);
+  outline: 2px solid #363f99;
   outline-offset: 2px;
 }
 .icon-btn.primary {
-  background-color: #0ea5a4;
+  background-color: #363f99;
   color: #fff;
+  box-shadow: 0 1px 3px rgba(54, 63, 153, 0.3);
+}
+.icon-btn.primary:hover {
+  background-color: #2d357f;
+  box-shadow: 0 4px 12px rgba(54, 63, 153, 0.25);
 }
 .icon-btn.secondary {
-  background-color: #64748b;
+  background-color: #507cb9;
   color: #fff;
+  box-shadow: 0 1px 3px rgba(80, 124, 185, 0.3);
 }
 .icon-btn.secondary:hover {
-  filter: brightness(1.08);
+  background-color: #3b62a5;
+  box-shadow: 0 4px 12px rgba(80, 124, 185, 0.25);
 }
 .icon-btn.warn {
-  background-color: #f59e0b;
+  background-color: #f47421;
   color: #fff;
+  box-shadow: 0 1px 3px rgba(244, 116, 33, 0.3);
+}
+.icon-btn.warn:hover {
+  background-color: #e34809;
+  box-shadow: 0 4px 12px rgba(244, 116, 33, 0.25);
 }
 .icon-btn.danger {
   background-color: #ef4444;
   color: #fff;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.3);
+}
+.icon-btn.danger:hover {
+  background-color: #dc2626;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
 }
 .icon-btn.neutral {
   background-color: #94a3b8;
   color: #fff;
 }
-.icon-svg {
-  width: 18px;
-  height: 18px;
+.icon-btn.neutral:hover {
+  background-color: #64748b;
 }
-/* small variant for form buttons */
+.icon-svg {
+  width: 16px;
+  height: 16px;
+}
 .icon-btn.form {
-  padding: 6px 10px;
+  padding: 0.375rem 0.625rem;
 }
 
 /* Generic button utilities */
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-weight: 600;
+  gap: 0.375rem;
+  padding: 0.4375rem 0.875rem;
+  border-radius: 0.5rem;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-weight: 500;
+  font-size: 0.8125rem;
   text-decoration: none;
   border: none;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .btn-sm {
-  padding: 6px 10px;
-  font-size: 0.85rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
 }
-
 .btn-primary {
-  background: #0ea5a4;
+  background: #363f99;
   color: #fff;
+  box-shadow: 0 1px 3px rgba(54, 63, 153, 0.3);
+}
+.btn-primary:hover {
+  background: #2d357f;
+  box-shadow: 0 4px 12px rgba(54, 63, 153, 0.25);
 }
 .btn-secondary {
-  background: #64748b;
+  background: #507cb9;
   color: #fff;
+  box-shadow: 0 1px 3px rgba(80, 124, 185, 0.3);
+}
+.btn-secondary:hover {
+  background: #3b62a5;
+  box-shadow: 0 4px 12px rgba(80, 124, 185, 0.25);
 }
 .btn-ghost {
   background: transparent;
   color: #0f172a;
   border: 1px solid #e2e8f0;
 }
+.btn-ghost:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
 .btn-danger {
   background: #ef4444;
   color: #fff;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.3);
+}
+.btn-danger:hover {
+  background: #dc2626;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
 }
 .btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 14px -10px rgba(15, 23, 42, 0.3);
+}
+.btn:active {
+  transform: translateY(0);
 }
 .btn:focus-visible {
-  outline: 3px solid rgba(59, 130, 246, 0.45);
+  outline: 2px solid #363f99;
   outline-offset: 2px;
 }
 
+/* Table styling */
 .table-auto th,
 .table-auto td {
-  padding: 10px 12px;
+  padding: 0.625rem 0.75rem;
   text-align: left;
 }
 .table-auto thead th {
   background: #f8fafc;
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  border-bottom: 1px solid #e2e8f0;
 }
 .divide-y tbody tr + tr {
-  border-top: 1px solid #eef2f7;
+  border-top: 1px solid #f1f5f9;
 }
 .max-h-96 {
   max-height: 24rem;

@@ -1,0 +1,282 @@
+{% extends "public/_public_base.html" %} {% block title %}Course Enrollment -
+Select Courses{% endblock %} {% block page_title %}Select Courses{% endblock %}
+{% block content %}
+<div
+  x-data="cartManager({{ cart_ids | tojson }})"
+  class="max-w-7xl mx-auto"
+  x-init="setTimeout(() => $el.classList.add('opacity-100', 'translate-y-0'), 50)"
+  class="max-w-7xl mx-auto opacity-0 translate-y-4 transition-all duration-500 ease-out"
+>
+  <div class="mb-6">
+    <div
+      class="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-slate-500 dark:text-gray-400 mb-3"
+    >
+      <a
+        href="{{ url_for('enroll_step1') }}"
+        class="soft-badge bg-slate-200 dark:bg-gray-700 text-slate-600 dark:text-gray-400 dark:text-gray-400 hover:bg-slate-300"
+        >← Back to Step 1</a
+      >
+      <span class="hidden sm:inline">|</span>
+      <span
+        class="soft-badge bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
+        >Step 2 of 3</span
+      >
+      <span class="hidden sm:inline">→</span>
+      <span class="text-slate-400 dark:text-gray-500 hidden sm:inline"
+        >Payment</span
+      >
+    </div>
+    <h2 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-gray-200">
+      Available Courses
+    </h2>
+    <p class="text-xs sm:text-sm text-slate-600 dark:text-gray-400 mt-1">
+      Select the courses you'd like to enroll in. You can add multiple courses
+      to your cart.
+    </p>
+  </div>
+
+  <div class="grid lg:grid-cols-3 gap-4 sm:gap-6">
+    <!-- Products grid -->
+    <div class="lg:col-span-2 grid md:grid-cols-2 gap-3 sm:gap-4">
+      {% if products %} {% for product in products %}
+      <div
+        class="soft-card p-4 hover:shadow-md transition-all duration-300 hover:scale-[1.02]"
+        x-data="{ shown: false }"
+        x-init="setTimeout(() => shown = true, {{ loop.index0 * 50 }})"
+        x-show="shown"
+        x-transition:enter="transition ease-out duration-400"
+        x-transition:enter-start="opacity-0 scale-95"
+        x-transition:enter-end="opacity-100 scale-100"
+      >
+        {% if product.thumbnail_url %}
+        <img
+          src="{{ product.thumbnail_url }}"
+          class="w-full h-32 object-cover rounded mb-3"
+          alt="{{ product.name }}"
+        />
+        {% else %}
+        <div
+          class="w-full h-32 bg-gradient-to-br from-indigo-100 to-violet-100 rounded mb-3 flex items-center justify-center"
+        >
+          <span class="text-indigo-400 text-3xl">📚</span>
+        </div>
+        {% endif %}
+
+        <h3
+          class="font-semibold text-slate-800 dark:text-gray-200 text-base mb-2"
+        >
+          {{ product.name }}
+        </h3>
+
+        {% if product.description %}
+        <p class="text-xs text-slate-600 dark:text-gray-400 mb-3 line-clamp-2">
+          {{ product.description }}
+        </p>
+        {% endif %}
+
+        <div class="space-y-1 text-xs text-slate-600 dark:text-gray-400 mb-3">
+          {% if product.date %}
+          <div class="flex items-center gap-1">
+            <span class="font-semibold">📅</span>
+            <span>{{ product.date }}</span>
+          </div>
+          {% endif %} {% if product.time %}
+          <div class="flex items-center gap-1">
+            <span class="font-semibold">🕐</span>
+            <span>{{ product.time }}</span>
+          </div>
+          {% endif %} {% if product.venue %}
+          <div class="flex items-center gap-1">
+            <span class="font-semibold">📍</span>
+            <span>{{ product.venue }}</span>
+          </div>
+          {% endif %} {% if product.instructor %}
+          <div class="flex items-center gap-1">
+            <span class="font-semibold">👤</span>
+            <span>{{ product.instructor }}</span>
+          </div>
+          {% endif %}
+        </div>
+
+        <div
+          class="flex items-center justify-between mt-4 pt-3 border-t border-slate-200 dark:border-gray-700"
+        >
+          <span class="text-lg font-bold text-indigo-600 dark:text-indigo-400"
+            >£{{ "%.2f" | format(product.price | float) }}</span
+          >
+          <button
+            @click="toggleCart({{ product.id }})"
+            type="button"
+            class="soft-btn text-sm px-3 py-2 transition-all duration-200 hover:scale-105 active:scale-95"
+            :class="inCart({{ product.id }}) ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'soft-btn-primary'"
+            x-text="inCart({{ product.id }}) ? 'Remove' : 'Add to Cart'"
+          ></button>
+        </div>
+      </div>
+      {% endfor %} {% else %}
+      <div class="col-span-2 soft-card p-8 text-center">
+        <div class="text-slate-400 dark:text-gray-500 text-5xl mb-3">📚</div>
+        <p class="text-slate-600 dark:text-gray-400 font-medium">
+          No courses available at the moment
+        </p>
+        <p class="text-sm text-slate-500 dark:text-gray-400 mt-1">
+          Please check back later or contact us for more information.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Cart sidebar -->
+    <div class="lg:col-span-1">
+      <div
+        class="soft-card p-4 lg:sticky lg:top-4"
+        x-data="{ cartShown: false }"
+        x-init="setTimeout(() => cartShown = true, 300)"
+        x-show="cartShown"
+        x-transition:enter="transition ease-out duration-500"
+        x-transition:enter-start="opacity-0 translate-x-8"
+        x-transition:enter-end="opacity-100 translate-x-0"
+      >
+        <h3 class="font-semibold text-slate-800 dark:text-gray-200 mb-3">
+          Your Cart
+        </h3>
+
+        <template x-if="cartCount === 0">
+          <div class="text-center py-8 text-slate-400 dark:text-gray-500">
+            <div class="text-3xl mb-2">🛒</div>
+            <p class="text-sm">Your cart is empty</p>
+          </div>
+        </template>
+
+        <template x-if="cartCount > 0">
+          <div>
+            <div class="space-y-2 mb-4">
+              <template x-for="product in cartProducts" :key="product.id">
+                <div
+                  class="flex items-center justify-between text-sm p-2 bg-slate-50 dark:bg-gray-800/50 rounded"
+                  x-show="true"
+                  x-transition:enter="transition ease-out duration-300"
+                  x-transition:enter-start="opacity-0 -translate-x-4"
+                  x-transition:enter-end="opacity-100 translate-x-0"
+                  x-transition:leave="transition ease-in duration-200"
+                  x-transition:leave-start="opacity-100 translate-x-0"
+                  x-transition:leave-end="opacity-0 translate-x-4"
+                >
+                  <span
+                    class="text-slate-700 dark:text-gray-300 flex-1"
+                    x-text="product.name"
+                  ></span>
+                  <span
+                    class="text-indigo-600 dark:text-indigo-400 font-semibold mr-2"
+                    x-text="'£' + parseFloat(product.price).toFixed(2)"
+                  ></span>
+                  <button
+                    @click="toggleCart(product.id)"
+                    class="text-red-500 hover:text-red-700 text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </template>
+            </div>
+
+            <div
+              class="border-t border-slate-200 dark:border-gray-700 pt-3 mb-3"
+            >
+              <div class="flex justify-between text-sm mb-1">
+                <span class="text-slate-600 dark:text-gray-400">Items:</span>
+                <span class="font-semibold" x-text="cartCount"></span>
+              </div>
+              <div class="flex justify-between text-sm mb-1">
+                <span class="text-slate-600 dark:text-gray-400">Subtotal:</span>
+                <span
+                  class="font-semibold"
+                  x-text="'£' + subtotal.toFixed(2)"
+                ></span>
+              </div>
+              <template x-if="hasDiscount">
+                <div class="flex justify-between text-sm text-green-600">
+                  <span>Discount (even items):</span>
+                  <span class="font-semibold">-£10.00</span>
+                </div>
+              </template>
+            </div>
+
+            <form method="post" @submit.prevent="checkout">
+              <input type="hidden" name="action" value="checkout" />
+              <button
+                type="submit"
+                class="soft-btn soft-btn-primary w-full py-3 font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Proceed to Checkout →
+              </button>
+            </form>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function cartManager(initialCart) {
+    return {
+      cart: initialCart || [],
+      products: {{ products | tojson }},
+
+      get cartCount() {
+        return this.cart.length;
+      },
+
+      get cartProducts() {
+        return this.products.filter(p => this.cart.includes(p.id));
+      },
+
+      get subtotal() {
+        return this.cartProducts.reduce((sum, p) => sum + parseFloat(p.price), 0);
+      },
+
+      get hasDiscount() {
+        return this.cartCount > 0 && this.cartCount % 2 === 0;
+      },
+
+      inCart(productId) {
+        return this.cart.includes(productId);
+      },
+
+      async toggleCart(productId) {
+        const action = this.inCart(productId) ? 'remove' : 'add';
+        const formData = new FormData();
+        formData.append('action', action);
+        formData.append('product_id', productId);
+
+        try {
+          const response = await fetch('{{ url_for('enroll_step2') }}', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await response.json();
+
+          if (data.success) {
+            if (action === 'add') {
+              this.cart.push(productId);
+            } else {
+              this.cart = this.cart.filter(id => id !== productId);
+            }
+          }
+        } catch (error) {
+          console.error('Cart update failed:', error);
+        }
+      },
+
+      checkout() {
+        if (this.cartCount === 0) {
+          alert('Please add at least one course to your cart');
+          return;
+        }
+        window.location.href = '{{ url_for('enroll_checkout') }}';
+      }
+    };
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,182 @@
+{% extends 'base.html' %} {% block page_title %}Product Management{% endblock %}
+{% block crumb_current %}Products{% endblock %} {% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+  <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
+    Course Products
+  </h1>
+  <a
+    href="{{ url_for('admin_products_new') }}"
+    class="soft-btn soft-btn-primary text-center whitespace-nowrap"
+  >
+    + Add New Product
+  </a>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Total Products
+    </div>
+    <div class="text-xl sm:text-2xl font-semibold text-slate-800 dark:text-slate-100">
+      {{ products | length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">Active</div>
+    <div class="text-xl sm:text-2xl font-semibold text-green-600">
+      {{ products | selectattr('active', 'equalto', True) | list | length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">Inactive</div>
+    <div class="text-xl sm:text-2xl font-semibold text-slate-400">
+      {{ products | selectattr('active', 'equalto', False) | list | length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <a
+      href="{{ url_for('admin_enrollment_discount') }}"
+      class="block hover:opacity-80"
+    >
+      <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+        Configure Discount
+      </div>
+      <div class="text-xs sm:text-sm font-semibold text-indigo-600 mt-1">⚙️ Settings</div>
+    </a>
+  </div>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="productsTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr>
+          <th class="px-4 py-3 text-left">ID</th>
+          <th class="px-4 py-3 text-left">Course Name</th>
+          <th class="px-4 py-3 text-left hidden md:table-cell">Date</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Venue</th>
+          <th class="px-4 py-3 text-left">Price</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-left hidden sm:table-cell">Created</th>
+          <th class="px-4 py-3 text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+        {% if products %} {% for product in products %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+            #{{ product.id }}
+          </td>
+          <td class="px-4 py-3">
+            <div class="font-semibold text-slate-800 dark:text-slate-100">
+              {{ product.name }}
+            </div>
+            {% if product.instructor %}
+            <div class="text-xs text-slate-500 mt-0.5">
+              Instructor: {{ product.instructor }}
+            </div>
+            {% endif %}
+            {%if product.date %}
+            <div class="text-xs text-slate-500 mt-0.5 md:hidden">
+              📅 {{ product.date.strftime('%d %b %Y') }}
+            </div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell">
+            {{ product.date.strftime('%d %b %Y') if product.date else '-' }}
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell">
+            {{ product.venue or '-' }}
+          </td>
+          <td
+            class="px-4 py-3 font-semibold text-indigo-600 dark:text-indigo-400"
+          >
+            £{{ "%.2f" | format(product.price | float) }}
+          </td>
+          <td class="px-4 py-3">
+            <button
+              onclick="toggleProductStatus({{ product.id }}, {{ 'true' if product.active else 'false' }})"
+              class="soft-badge {{ 'bg-green-100 text-green-700' if product.active else 'bg-slate-200 text-slate-600' }} cursor-pointer hover:opacity-80"
+            >
+              {{ 'Active' if product.active else 'Inactive' }}
+            </button>
+          </td>
+          <td class="px-4 py-3 text-slate-500 text-xs hidden sm:table-cell">
+            {{ product.created_at.strftime('%d %b %Y') if product.created_at
+            else '-' }}
+          </td>
+          <td class="px-4 py-3 text-center">
+            <div class="flex items-center justify-center gap-2 flex-wrap">
+              <a
+                href="{{ url_for('admin_products_edit', id=product.id) }}"
+                class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 text-xs font-semibold min-h-[44px] flex items-center"
+              >
+                Edit
+              </a>
+              <form
+                method="post"
+                action="{{ url_for('admin_products_delete', id=product.id) }}"
+                onsubmit="
+                  return confirm(
+                    'Are you sure you want to delete this product?',
+                  );
+                "
+                class="inline"
+              >
+                <button
+                  type="submit"
+                  class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-xs font-semibold min-h-[44px] flex items-center"
+                >
+                  Delete
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %} {% else %}
+        <tr>
+          <td colspan="8" class="px-4 py-8 text-center text-slate-500">
+            No products found.
+            <a
+              href="{{ url_for('admin_products_new') }}"
+              class="text-indigo-600 hover:underline"
+              >Add your first product</a
+            >
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  async function toggleProductStatus(productId, currentActive) {
+    try {
+      const response = await fetch(`/admin/products/${productId}/toggle`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        location.reload();
+      } else {
+        alert("Failed to toggle product status");
+      }
+    } catch (error) {
+      console.error("Error toggling product status:", error);
+      alert("An error occurred");
+    }
+  }
+</script>
+{% endblock %}
