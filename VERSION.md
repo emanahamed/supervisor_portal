@@ -1,5 +1,25 @@
 # Version History
 
+## 2.3.0 - 2026-02-09
+
+Enrollment Payment Flow, Confirmation Emails, PDF Invoices & Dark Mode
+
+- Enrollment checkout: fixed Stripe integration to use coupon-based discounts instead of invalid negative line items; success/cancel routes now use query-based session ID instead of path-based order ID (resolves order-not-yet-created timing issue).
+- Confirmation email: added `build_enrollment_confirmation_email(order)` to email_utils.py using the branded email shell with order summary, itemized course table, and totals breakdown; sent automatically via Stripe webhook on successful payment.
+- PDF invoice: created `templates/public/enrollment_invoice.html` for xhtml2pdf rendering with company header, student billing details, itemized courses, subtotal/discount/total, and payment confirmation footer; reuses existing `invoice.css`.
+- Email resilience: confirmation email now sends even if PDF generation fails (without attachment); `send_enrollment_confirmation_email` accepts optional `pdf_bytes`.
+- Dark mode: added `dark:` class variants across all remaining pages — Resources, User Permissions, Attendance Fix, Student Detail, Observations, Booking (index/cancel/cancelled), Enrollment Steps 1-3, Email Settings, Email Management, Auth Pending, 404 Error, Invoice Form.
+- UI/UX: improved Profile and Approve pages with modern card layouts and dark mode support.
+- Jinja2 fixes: resolved linter-mangled `==` operators in User Permissions template using `is eq()` test pattern; fixed broken radio button checked states.
+- Combobox: replaced native select dropdowns with searchable combobox component.
+- CSS redesign: Framer-style soft UI components with 6 brand colours (green, orange, indigo, yellow, purple, blue).
+
+Notes:
+
+- No schema changes; all updates are application-layer (routes, templates, email utilities).
+- Stripe webhook handles order creation, PDF generation, and email sending with graceful error handling at each step.
+- Existing enrollment public flow unchanged; payment processing now fully functional end-to-end.
+
 ## 2.2.2 - 2026-01-03
 
 Kids Club invoice duplication helper

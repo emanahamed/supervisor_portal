@@ -1282,6 +1282,11 @@ SECURITY_SALT = "excel-tutors-reset-salt"
 _is_pytest = bool(os.environ.get('PYTEST_CURRENT_TEST'))
 DATABASE_URI = os.environ.get('APP_DATABASE_URI') or ("sqlite:///test.db" if _is_pytest else "sqlite:///observations.db")
 
+# ── Stripe Configuration ──
+STRIPE_SECRET_KEY = 'sk_live_REPLACE_ME'                # Replace with your sk_live_... key
+STRIPE_PUBLIC_KEY = 'pk_live_51PqxGYF6JI1mbIACG0n80Hqk3G8FepZfOrN6V9C0KlC8LAns8Au7pAMCXYgENgEKoPxnCEjDH0RyKXi0qLs4xaeh00G5MMBRbJ'
+STRIPE_WEBHOOK_SECRET = 'whsec_FciOeAVhQaJ7yMPGgP4nQN6psWRPuVGI'
+
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=SECRET_KEY,
@@ -1290,6 +1295,7 @@ app.config.update(
     UPLOAD_EXTENSIONS=[".xlsx", ".xls", ".csv"],
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,
     TEMPLATES_AUTO_RELOAD=True,
+    PREFERRED_URL_SCHEME='https',
 )
 
 # Ensure Jinja picks up template edits during development even if debug is off
@@ -17837,7 +17843,7 @@ def enroll_checkout():
         import json
 
         import stripe
-        stripe.api_key = 'sk_test_51PqxGYF6JI1mbIACOnMWei5LU5cZU3Hm0sBvjkH9pgNmip9W4UyX1hDDL1FznSZtLP5WGhssqdiwVEOGNd4R3aeZ00WEzo7RkO'
+        stripe.api_key = STRIPE_SECRET_KEY
 
         line_items = [{
             'price_data': {
@@ -17891,7 +17897,7 @@ def enroll_checkout():
                          subtotal=subtotal,
                          discount=discount,
                          total=total,
-                         stripe_public_key='pk_live_51PqxGYF6JI1mbIACG0n80Hqk3G8FepZfOrN6V9C0KlC8LAns8Au7pAMCXYgENgEKoPxnCEjDH0RyKXi0qLs4xaeh00G5MMBRbJ')
+                         stripe_public_key=STRIPE_PUBLIC_KEY)
 
 
 @csrf.exempt
@@ -17929,13 +17935,29 @@ def stripe_webhook():
     from datetime import datetime
     from decimal import Decimal
 
+    import stripe
     from models import Order, OrderItem
 
     payload = request.data
-    try:
-        event = json.loads(payload)
-    except Exception:
-        return jsonify({'error': 'Invalid payload'}), 400
+    sig_header = request.headers.get('Stripe-Signature')
+
+    # Verify webhook signature if secret is configured
+    if STRIPE_WEBHOOK_SECRET:
+        try:
+            stripe.api_key = STRIPE_SECRET_KEY
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError:
+            return jsonify({'error': 'Invalid payload'}), 400
+        except stripe.error.SignatureVerificationError:
+            return jsonify({'error': 'Invalid signature'}), 400
+    else:
+        # Fallback for development (no signature verification)
+        try:
+            event = json.loads(payload)
+        except Exception:
+            return jsonify({'error': 'Invalid payload'}), 400
 
     if event['type'] == 'checkout.session.completed':
         session_obj = event['data']['object']

@@ -39,6 +39,7 @@ pytest==8.2.2
 #   * Observations extended report (PDF/email rendering)
 #   * Appointment reminder scheduling (APScheduler init; tzlocal installed)
 #   * Invoice print & email flow (xhtml2pdf / HTML generation)
+#   * Enrollment checkout → Stripe payment → webhook → PDF invoice + confirmation email
 #   * Student Concerns XLSX export (pandas + openpyxl)
 # - When updating SQLAlchemy / Flask-SQLAlchemy ensure no deprecation warnings for Session/Query patterns.
 ########################################
