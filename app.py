@@ -62,10 +62,10 @@ from models import (AdmissionAssessmentChange, AdmissionAssessmentNote,
                     AdmissionAssessmentScore, AdmissionAssessmentSubmission,
                     AppointmentBooking, AppointmentSlot, Availability,
                     AvailabilityChange, Book, BookOrder, BookOrderItem,
-                    Company, EndOfDayChecklist, ErrorReport, Invoice, Issue,
-                    IssueChange, Meeting, Observation, ObservationCycle,
-                    Permission, PermissionAudit, Resource, ResourceLoan,
-                    RolePermission, Staff, StaffAttendance,
+                    Company, DBSApplication, EndOfDayChecklist, ErrorReport,
+                    Invoice, Issue, IssueChange, Meeting, Observation,
+                    ObservationCycle, Permission, PermissionAudit, Resource,
+                    ResourceLoan, RolePermission, Staff, StaffAttendance,
                     StaffAttendanceAudit, StaffInvoice, StaffInvoiceAttachment,
                     StaffInvoiceItem, Student, StudentChange, SupervisorShift,
                     Todo, User, UserPermission, db)
@@ -128,6 +128,21 @@ PUBLIC_FORM_REGISTRY = [
         'endpoints': ['enroll_checkout'],
         'static_paths': ['/enroll/checkout'],
         'note': 'Redirects to Stripe for payment.',
+    },
+    {
+        'name': 'Award Ceremony Registration',
+        'endpoints': ['award_ceremony_register'],
+        'static_paths': ['/award-ceremony/register'],
+    },
+    {
+        'name': 'Enhanced DBS Application',
+        'endpoints': ['dbs.dbs_apply'],
+        'static_paths': ['/dbs/apply'],
+    },
+    {
+        'name': 'Appointment Booking',
+        'endpoints': ['booking_index'],
+        'static_paths': ['/booking'],
     },
 ]
 
@@ -1332,6 +1347,12 @@ except Exception as _e:  # non-fatal
     print(f"[WARN] Failed to register checklist helpers: {_e}")
 
 db.init_app(app)
+
+# Register DBS application blueprint
+from dbs_routes import dbs_bp
+
+app.register_blueprint(dbs_bp)
+
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
@@ -1384,6 +1405,7 @@ with app.app_context():  # pragma: no cover - simple safety patch
             ('manage_student_concerns','Manage student concerns reports'),
             ('manage_resources','Manage resource inventory'),
             ('manage_supervisor_shifts','Manage supervisor shifts'),
+            ('manage_dbs','Manage DBS applications'),
         ]
         created = False
         for k, description in needed_perms:
@@ -1852,6 +1874,10 @@ def create_tables_and_superadmin():
     if not Permission.query.filter_by(key='manage_resources').first():
         db.session.add(Permission(key='manage_resources', description='Manage resource inventory'))
         db.session.commit()
+    # Seed manage_dbs permission (idempotent)
+    if not Permission.query.filter_by(key='manage_dbs').first():
+        db.session.add(Permission(key='manage_dbs', description='Manage DBS applications'))
+        db.session.commit()
     # Ensure newly added Book columns exist even if earlier import-time patch
     # ran before the book table was first created (older DBs or test DB reset).
     try:  # pragma: no cover - defensive migration logic
@@ -2278,6 +2304,8 @@ def create_tables_and_superadmin():
             # Course Enrollment
             ('manage_products','Create, edit, and delete course products'),
             ('view_enrollments','View enrollment orders and student purchases'),
+            # Award Ceremonies
+            ('manage_award_ceremonies','Manage award ceremony events and registrations'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, description in base_permissions:
@@ -2301,6 +2329,8 @@ def create_tables_and_superadmin():
         # Admin should also manage students (append if not present for backward runs)
         role_defaults['admin'].add('manage_students')
         role_defaults['centre_manager'].add('manage_students')
+        role_defaults['centre_manager'].add('manage_award_ceremonies')
+        role_defaults['admin'].add('manage_award_ceremonies')
         role_defaults['supervisor'].add('manage_students')  # allow view/manage if desired
         for role, perms in role_defaults.items():
             has_any = RolePermission.query.filter_by(role=role).first()
@@ -7429,6 +7459,225 @@ def admin_enrollments_detail(id):
     from models import Order
     order = Order.query.get_or_404(id)
     return render_template('admin/enrollments_detail.html', order=order)
+
+
+# ---------------- Admin: Award Ceremonies ---------------- #
+@app.route('/admin/award-ceremonies')
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_ceremonies():
+    """List all award ceremony events"""
+    from models import AwardCeremony
+    ceremonies = AwardCeremony.query.order_by(AwardCeremony.date.desc()).all()
+    return render_template('admin/award_ceremonies_list.html', ceremonies=ceremonies)
+
+
+@app.route('/admin/award-ceremonies/new', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_ceremony_new():
+    """Create a new award ceremony event"""
+    from forms import AwardCeremonyForm
+    from models import AwardCeremony
+    form = AwardCeremonyForm()
+    if form.validate_on_submit():
+        ceremony = AwardCeremony(
+            name=form.name.data,
+            date=form.date.data,
+            venue=form.venue.data,
+            address=form.address.data,
+            time=form.time.data,
+            active=form.active.data,
+        )
+        db.session.add(ceremony)
+        db.session.commit()
+        flash('Award ceremony created successfully', 'success')
+        return redirect(url_for('admin_award_ceremonies'))
+    return render_template('admin/award_ceremony_form.html', form=form, title='New Award Ceremony')
+
+
+@app.route('/admin/award-ceremonies/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_ceremony_edit(id):
+    """Edit an existing award ceremony event"""
+    from forms import AwardCeremonyForm
+    from models import AwardCeremony
+    ceremony = AwardCeremony.query.get_or_404(id)
+    form = AwardCeremonyForm(obj=ceremony)
+    if form.validate_on_submit():
+        ceremony.name = form.name.data
+        ceremony.date = form.date.data
+        ceremony.venue = form.venue.data
+        ceremony.address = form.address.data
+        ceremony.time = form.time.data
+        ceremony.active = form.active.data
+        ceremony.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash('Award ceremony updated successfully', 'success')
+        return redirect(url_for('admin_award_ceremonies'))
+    return render_template('admin/award_ceremony_form.html', form=form, title='Edit Award Ceremony', ceremony=ceremony)
+
+
+@app.route('/admin/award-ceremonies/<int:id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_ceremony_delete(id):
+    """Delete an award ceremony event and all its registrations"""
+    from models import AwardCeremony
+    ceremony = AwardCeremony.query.get_or_404(id)
+    db.session.delete(ceremony)
+    db.session.commit()
+    flash('Award ceremony deleted successfully', 'success')
+    return redirect(url_for('admin_award_ceremonies'))
+
+
+@app.route('/admin/award-ceremonies/<int:id>/toggle', methods=['POST'])
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_ceremony_toggle(id):
+    """Toggle active/inactive status of an award ceremony"""
+    from models import AwardCeremony
+    ceremony = AwardCeremony.query.get_or_404(id)
+    ceremony.active = not ceremony.active
+    db.session.commit()
+    flash(f"Award ceremony {'activated' if ceremony.active else 'deactivated'}", 'success')
+    return jsonify({'success': True, 'active': ceremony.active})
+
+
+@app.route('/admin/award-ceremonies/<int:id>/registrations')
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_ceremony_registrations(id):
+    """View all registrations for a specific award ceremony"""
+    from models import AwardCeremony, AwardCeremonyRegistration
+    ceremony = AwardCeremony.query.get_or_404(id)
+    registrations = AwardCeremonyRegistration.query.filter_by(ceremony_id=id)\
+        .order_by(AwardCeremonyRegistration.created_at.desc()).all()
+    return render_template('admin/award_ceremony_registrations.html',
+                           ceremony=ceremony, registrations=registrations)
+
+
+@app.route('/admin/award-ceremonies/<int:id>/export')
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_ceremony_export(id):
+    """Export registrations for an award ceremony as XLSX"""
+    import io
+
+    import pandas as pd
+
+    from models import AwardCeremony, AwardCeremonyRegistration
+    ceremony = AwardCeremony.query.get_or_404(id)
+    registrations = AwardCeremonyRegistration.query.filter_by(ceremony_id=id)\
+        .order_by(AwardCeremonyRegistration.created_at.desc()).all()
+    data = []
+    for r in registrations:
+        data.append({
+            'Child Name': r.child_name,
+            'Student ID': r.student_id,
+            'Year Group': r.year_group or '',
+            'Email': r.email,
+            'Phone': r.phone,
+            'Registered At': r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '',
+        })
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Registrations')
+    out.seek(0)
+    fname = f"award_ceremony_{ceremony.id}_registrations.xlsx"
+    return send_file(out, as_attachment=True, download_name=fname,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@csrf.exempt
+@app.route('/award-ceremony/register', methods=['GET', 'POST'])
+@app.route('/public/award-ceremony/register', methods=['GET', 'POST'])
+def award_ceremony_register():
+    """Public form for parents to register children for an award ceremony"""
+    from models import AwardCeremony, AwardCeremonyRegistration
+    year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
+                   'year9', 'year10', 'year11', 'year12', 'year13']
+    ceremonies = AwardCeremony.query.filter_by(active=True).order_by(AwardCeremony.date.asc()).all()
+
+    if request.method == 'POST':
+        # Honeypot check
+        if (request.form.get('website') or '').strip():
+            flash('Thank you for your registration.', 'success')
+            return redirect(url_for('award_ceremony_register'))
+
+        ceremony_id = request.form.get('ceremony_id', '').strip()
+        child_name = request.form.get('child_name', '').strip()
+        student_id = request.form.get('student_id', '').strip()
+        year_group = request.form.get('year_group', '').strip()
+        email = request.form.get('email', '').strip()
+        phone = request.form.get('phone', '').strip()
+        confirmation = request.form.get('confirmation')
+
+        errors = []
+        if not ceremony_id:
+            errors.append('Please select an award ceremony event.')
+        if not child_name:
+            errors.append("Child's full name is required.")
+        if not student_id:
+            errors.append('Student ID is required.')
+        if not year_group:
+            errors.append('Year group is required.')
+        if not email or '@' not in email:
+            errors.append('A valid email address is required.')
+        if not phone:
+            errors.append('Phone number is required.')
+        if not confirmation:
+            errors.append('You must confirm the declaration before submitting.')
+
+        # Validate ceremony exists and is active
+        ceremony = None
+        if ceremony_id:
+            try:
+                ceremony = AwardCeremony.query.get(int(ceremony_id))
+            except (ValueError, TypeError):
+                pass
+            if not ceremony or not ceremony.active:
+                errors.append('The selected event is not available for registration.')
+
+        if errors:
+            for err in errors:
+                flash(err, 'warning')
+            return render_template('public/award_ceremony_register.html',
+                                   ceremonies=ceremonies, year_groups=year_groups,
+                                   ceremony_id=ceremony_id, child_name=child_name,
+                                   student_id=student_id, year_group=year_group,
+                                   email=email, phone=phone)
+
+        registration = AwardCeremonyRegistration(
+            ceremony_id=ceremony.id,
+            child_name=child_name,
+            student_id=student_id,
+            year_group=year_group,
+            email=email,
+            phone=phone,
+            confirmed=True,
+        )
+        db.session.add(registration)
+        db.session.commit()
+
+        # Send confirmation email
+        try:
+            from email_utils import (build_award_ceremony_confirmation_email,
+                                     send_email)
+            subject_line, html = build_award_ceremony_confirmation_email(registration, ceremony)
+            send_email(email, subject_line, html)
+        except Exception:
+            pass  # Email failure should not block registration
+
+        flash('Registration submitted successfully. A confirmation email has been sent to your email address.', 'success')
+        return redirect(url_for('award_ceremony_register'))
+
+    return render_template('public/award_ceremony_register.html',
+                           ceremonies=ceremonies, year_groups=year_groups,
+                           ceremony_id='', child_name='', student_id='',
+                           year_group='', email='', phone='')
 
 
 # ---------------- Admin: Discount Configuration ---------------- #
@@ -17936,6 +18185,7 @@ def stripe_webhook():
     from decimal import Decimal
 
     import stripe
+
     from models import Order, OrderItem
 
     payload = request.data

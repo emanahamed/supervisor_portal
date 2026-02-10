@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+{% block title %}Enhanced DBS Application{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8 px-4">
+  <div class="mb-8 text-center">
+    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Enhanced DBS Application</h1>
+    <p class="mt-2 text-gray-600 dark:text-gray-400">Complete the form below to apply for an Enhanced DBS check. Fee: <strong>£{{ "%.2f"|format(fee) }}</strong></p>
+  </div>
+
+  {% if errors %}
+  <div class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 dark:bg-red-900/30 dark:border-red-800">
+    <h3 class="text-red-800 dark:text-red-300 font-semibold mb-2">Please fix the following errors:</h3>
+    <ul class="list-disc list-inside text-red-700 dark:text-red-400 text-sm space-y-1">
+      {% for err in errors %}
+      <li>{{ err }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="POST" enctype="multipart/form-data" x-data="dbsForm()" class="space-y-8">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    {# ── Section 1: Personal Details ── #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M6 21v-2a6 6 0 0112 0v2"/></svg>
+        Personal Details
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title <span class="text-red-500">*</span></label>
+          <select name="title" required class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+            <option value="">Select</option>
+            {% for t in ['Mr', 'Mrs', 'Miss', 'Ms', 'Dr', 'Other'] %}
+            <option value="{{ t }}" {{ 'selected' if form_data.get('title')==t }}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First Name <span class="text-red-500">*</span></label>
+          <input type="text" name="first_name" required value="{{ form_data.get('first_name','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last Name <span class="text-red-500">*</span></label>
+          <input type="text" name="last_name" required value="{{ form_data.get('last_name','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+      </div>
+
+      {# Other names #}
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Have you ever been known by any other name?</label>
+        <div class="flex gap-4">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="other_names" value="yes" @click="otherNames=true" :checked="otherNames" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">Yes</span>
+          </label>
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="other_names" value="no" @click="otherNames=false" :checked="!otherNames" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">No</span>
+          </label>
+        </div>
+      </div>
+
+      <template x-if="otherNames">
+        <div class="mt-4 border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
+          <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Previous Names</h3>
+          <template x-for="(name, idx) in otherNamesList" :key="idx">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3 pb-3 border-b border-gray-200 dark:border-gray-600 last:border-0">
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Title</label>
+                <select :name="'on_title_'+idx" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+                  <option value="">Select</option>
+                  <option value="Mr">Mr</option><option value="Mrs">Mrs</option><option value="Miss">Miss</option><option value="Ms">Ms</option><option value="Dr">Dr</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">First Name</label>
+                <input type="text" :name="'on_first_name_'+idx" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+              </div>
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Last Name</label>
+                <input type="text" :name="'on_last_name_'+idx" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+              </div>
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Date From</label>
+                <input type="date" :name="'on_date_from_'+idx" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+              </div>
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Date To</label>
+                <input type="date" :name="'on_date_to_'+idx" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+              </div>
+            </div>
+          </template>
+          <button type="button" @click="otherNamesList.push({})" class="mt-2 text-sm text-brand-indigo hover:underline">+ Add another name</button>
+        </div>
+      </template>
+    </div>
+
+    {# ── Section 2: Birth & Identity ── #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h4M7 12h10M7 16h6"/></svg>
+        Birth & Identity Information
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date of Birth <span class="text-red-500">*</span></label>
+          <input type="date" name="date_of_birth" required value="{{ form_data.get('date_of_birth','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gender <span class="text-red-500">*</span></label>
+          <select name="gender" required class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+            <option value="">Select</option>
+            {% for g in ['Male','Female','Other','Prefer not to say'] %}
+            <option value="{{ g }}" {{ 'selected' if form_data.get('gender')==g }}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Place of Birth (Town) <span class="text-red-500">*</span></label>
+          <input type="text" name="place_of_birth_town" required value="{{ form_data.get('place_of_birth_town','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Place of Birth (Country) <span class="text-red-500">*</span></label>
+          <input type="text" name="place_of_birth_country" required value="{{ form_data.get('place_of_birth_country','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nationality <span class="text-red-500">*</span></label>
+          <input type="text" name="nationality" required value="{{ form_data.get('nationality','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+      </div>
+    </div>
+
+    {# ── Section 3: Contact Details ── #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        Contact Details
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email <span class="text-red-500">*</span></label>
+          <input type="email" name="email" required value="{{ form_data.get('email','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Contact Telephone Number <span class="text-red-500">*</span></label>
+          <input type="tel" name="phone" required value="{{ form_data.get('phone','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+      </div>
+    </div>
+
+    {# ── Section 4: NI, Driving Licence, Passport ── #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Identity Documents
+      </h2>
+
+      {# National Insurance #}
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Do you have a National Insurance Number?</label>
+        <div class="flex gap-4 mb-3">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="has_ni" value="yes" @click="hasNI=true" :checked="hasNI" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">Yes</span>
+          </label>
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="has_ni" value="no" @click="hasNI=false" :checked="!hasNI" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">No</span>
+          </label>
+        </div>
+        <div x-show="hasNI" x-transition class="max-w-sm">
+          <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">National Insurance Number</label>
+          <input type="text" name="ni_number" value="{{ form_data.get('ni_number','') }}" placeholder="e.g. AB 12 34 56 C" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm text-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+      </div>
+
+      {# Driving Licence #}
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Do you hold a valid UK photocard driving licence?</label>
+        <div class="flex gap-4 mb-3">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="has_driving_licence" value="yes" @click="hasDL=true" :checked="hasDL" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">Yes</span>
+          </label>
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="has_driving_licence" value="no" @click="hasDL=false" :checked="!hasDL" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">No</span>
+          </label>
+        </div>
+        <div x-show="hasDL" x-transition class="max-w-sm">
+          <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Driving Licence Number</label>
+          <input type="text" name="driving_licence_number" value="{{ form_data.get('driving_licence_number','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm text-sm focus:ring-brand-indigo focus:border-brand-indigo">
+        </div>
+      </div>
+
+      {# Passport #}
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Do you have a valid passport?</label>
+        <div class="flex gap-4 mb-3">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="has_passport" value="yes" @click="hasPassport=true" :checked="hasPassport" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">Yes</span>
+          </label>
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="has_passport" value="no" @click="hasPassport=false" :checked="!hasPassport" class="text-brand-indigo focus:ring-brand-indigo"> <span class="text-sm text-gray-700 dark:text-gray-300">No</span>
+          </label>
+        </div>
+        <div x-show="hasPassport" x-transition class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Passport Number</label>
+            <input type="text" name="passport_number" value="{{ form_data.get('passport_number','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm text-sm focus:ring-brand-indigo focus:border-brand-indigo">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Date of Issue</label>
+            <input type="date" name="passport_issue_date" value="{{ form_data.get('passport_issue_date','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm text-sm focus:ring-brand-indigo focus:border-brand-indigo">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Expiry Date</label>
+            <input type="date" name="passport_expiry_date" value="{{ form_data.get('passport_expiry_date','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm text-sm focus:ring-brand-indigo focus:border-brand-indigo">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Country of Issue</label>
+            <input type="text" name="passport_country_of_issue" value="{{ form_data.get('passport_country_of_issue','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm text-sm focus:ring-brand-indigo focus:border-brand-indigo">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Section 5: Address History (5 years) ── #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+        <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+        Address History
+      </h2>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">You must provide addresses covering the <strong>last 5 years</strong>. The form will check coverage and ask you to add more if needed.</p>
+
+      {# Address coverage indicator #}
+      <div class="mb-4 p-3 rounded-lg border" :class="coversFiveYears ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'">
+        <p class="text-sm" :class="coversFiveYears ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
+          <span x-show="coversFiveYears">&#10003; Your addresses cover the required 5-year period.</span>
+          <span x-show="!coversFiveYears">&#9888; Your addresses do not yet cover 5 years. Please add more addresses below.</span>
+        </p>
+      </div>
+
+      <template x-for="(addr, idx) in addresses" :key="idx">
+        <div class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 mb-4 bg-gray-50 dark:bg-gray-700/30">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300" x-text="'Address '+(idx+1)"></h3>
+            <button type="button" x-show="idx > 0" @click="removeAddress(idx)" class="text-xs text-red-500 hover:text-red-700">Remove</button>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="md:col-span-2">
+              <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">First Line of Address <span class="text-red-500">*</span></label>
+              <input type="text" :name="'addr_line1_'+idx" x-model="addr.line1" @input="checkCoverage()" required class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Second Line of Address</label>
+              <input type="text" :name="'addr_line2_'+idx" x-model="addr.line2" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Postcode <span class="text-red-500">*</span></label>
+              <input type="text" :name="'addr_postcode_'+idx" x-model="addr.postcode" required class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">At this address since <span class="text-red-500">*</span></label>
+              <input type="date" :name="'addr_since_'+idx" x-model="addr.since" @input="checkCoverage()" required class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+            </div>
+            <div>
+              <label class="inline-flex items-center gap-2 cursor-pointer mt-6">
+                <input type="checkbox" :name="'addr_current_'+idx" x-model="addr.current" @change="checkCoverage()" class="rounded text-brand-indigo focus:ring-brand-indigo">
+                <span class="text-sm text-gray-700 dark:text-gray-300">I am currently living at this address</span>
+              </label>
+            </div>
+            <div x-show="!addr.current">
+              <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Lived here until</label>
+              <input type="date" :name="'addr_until_'+idx" x-model="addr.until" @input="checkCoverage()" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+            </div>
+          </div>
+        </div>
+      </template>
+      <button type="button" @click="addAddress()" class="inline-flex items-center gap-1 text-sm text-brand-indigo hover:underline font-medium">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Add another address
+      </button>
+    </div>
+
+    {# ── Section 6: Document Uploads ── #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        Document Uploads
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Proof of Address (from last 3 months) <span class="text-red-500">*</span></label>
+          <input type="file" name="proof_of_address" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-indigo-50 file:text-brand-indigo hover:file:bg-brand-indigo-100 dark:file:bg-brand-blue-900 dark:file:text-brand-blue-300">
+          <p class="text-xs text-gray-500 mt-1">Accepted: PDF, PNG, JPG (max 16MB)</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Proof of ID <span class="text-red-500">*</span></label>
+          <input type="file" name="proof_of_id" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-indigo-50 file:text-brand-indigo hover:file:bg-brand-indigo-100 dark:file:bg-brand-blue-900 dark:file:text-brand-blue-300">
+          <p class="text-xs text-gray-500 mt-1">Accepted: PDF, PNG, JPG (max 16MB)</p>
+        </div>
+      </div>
+    </div>
+
+    {# ── Section 7: Declaration & Signature ── #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Declaration & Signature
+      </h2>
+      <div class="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4 mb-4 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+        <p class="mb-2">I declare that the information I have provided on this form is complete and true to the best of my knowledge. I understand that:</p>
+        <ul class="list-disc list-inside space-y-1 ml-2">
+          <li>This information will be used to process an Enhanced DBS check.</li>
+          <li>Providing false information may constitute a criminal offence.</li>
+          <li>The DBS check will be carried out through an umbrella body registered with the DBS.</li>
+          <li>I consent to the processing of my personal data for this purpose in accordance with data protection legislation.</li>
+          <li>The fee of <strong>£{{ "%.2f"|format(fee) }}</strong> is non-refundable once the application has been submitted to the DBS.</li>
+        </ul>
+      </div>
+      <div class="flex items-start gap-2 mb-4">
+        <input type="checkbox" name="declaration_agreed" id="declaration_agreed" required class="rounded text-brand-indigo focus:ring-brand-indigo mt-1">
+        <label for="declaration_agreed" class="text-sm text-gray-700 dark:text-gray-300">I agree to the above declaration <span class="text-red-500">*</span></label>
+      </div>
+      <div class="max-w-md">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Signature (type your full name)</label>
+        <input type="text" name="signature" required placeholder="Type your full name as signature" value="{{ form_data.get('signature','') }}" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:ring-brand-indigo focus:border-brand-indigo italic text-lg">
+      </div>
+    </div>
+
+    {# ── Submit ── #}
+    <div class="flex justify-center">
+      <button type="submit" class="inline-flex items-center gap-2 px-8 py-3 bg-brand-indigo text-white font-semibold rounded-xl shadow-lg hover:bg-brand-indigo-800 focus:ring-4 focus:ring-brand-indigo-300 transition-all text-lg">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        Continue to Payment (£{{ "%.2f"|format(fee) }})
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+function dbsForm() {
+  return {
+    otherNames: {{ 'true' if form_data.get('other_names')=='yes' else 'false' }},
+    otherNamesList: [{}],
+    hasNI: {{ 'true' if form_data.get('has_ni')=='yes' else 'false' }},
+    hasDL: {{ 'true' if form_data.get('has_driving_licence')=='yes' else 'false' }},
+    hasPassport: {{ 'true' if form_data.get('has_passport')=='yes' else 'false' }},
+    addresses: [{line1:'', line2:'', postcode:'', since:'', until:'', current:false}],
+    coversFiveYears: false,
+
+    addAddress() {
+      this.addresses.push({line1:'', line2:'', postcode:'', since:'', until:'', current:false});
+    },
+    removeAddress(idx) {
+      this.addresses.splice(idx, 1);
+      this.checkCoverage();
+    },
+    checkCoverage() {
+      const today = new Date();
+      const fiveYearsAgo = new Date(today.getFullYear()-5, today.getMonth(), today.getDate());
+      let earliest = today;
+      for (const addr of this.addresses) {
+        if (addr.since) {
+          const d = new Date(addr.since);
+          if (d < earliest) earliest = d;
+        }
+      }
+      this.coversFiveYears = earliest <= fiveYearsAgo;
+    }
+  }
+}
+</script>
+{% endblock %}

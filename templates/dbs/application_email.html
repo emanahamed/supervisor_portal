@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #333; background: #f9f9f9; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background: #2e9b47; color: #fff; padding: 24px; text-align: center; }
+    .header h1 { margin: 0; font-size: 22px; }
+    .header p { margin: 8px 0 0; opacity: 0.9; font-size: 14px; }
+    .body { padding: 24px; }
+    .footer { background: #f5f5f5; padding: 16px 24px; text-align: center; font-size: 12px; color: #999; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>DBS Application Submitted</h1>
+      <p>Your completed application form is attached</p>
+    </div>
+    <div class="body">
+      <p>Dear {{ app.first_name }},</p>
+      <p>Your Enhanced DBS application (<strong>{{ app.application_id }}</strong>) has been successfully submitted.</p>
+      <p>Please find your completed application form attached to this email as a PDF document for your records.</p>
+
+      <table style="width:100%; margin: 16px 0; font-size: 13px; border-top: 1px solid #eee; border-bottom: 1px solid #eee; padding: 8px 0;">
+        <tr><td style="padding:6px 0; color:#666;">Application ID:</td><td style="padding:6px 0; font-weight:bold; text-align:right;">{{ app.application_id }}</td></tr>
+        <tr><td style="padding:6px 0; color:#666;">Applicant:</td><td style="padding:6px 0; text-align:right;">{{ app.full_name() }}</td></tr>
+        <tr><td style="padding:6px 0; color:#666;">Submitted:</td><td style="padding:6px 0; text-align:right;">{{ app.created_at.strftime('%d/%m/%Y %H:%M') if app.created_at else '' }}</td></tr>
+      </table>
+
+      <p style="font-size:13px; color:#666;">We will process your application and keep you informed of any updates. If you have any questions, please don't hesitate to contact us.</p>
+    </div>
+    <div class="footer">
+      <p>&copy; {{ app.created_at.strftime('%Y') if app.created_at else '2026' }} Excel Tutors. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1513,3 +1513,147 @@ class AdmissionAssessmentScore(db.Model):
         }
 
 
+# ---------------- Award Ceremonies ---------------- #
+
+class AwardCeremony(db.Model):
+    """Award ceremony event created by admin."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    date = db.Column(db.Date, index=True)
+    venue = db.Column(db.String(255))
+    address = db.Column(db.String(500))
+    time = db.Column(db.String(100))
+    active = db.Column(db.Boolean, default=True, index=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    registrations = db.relationship('AwardCeremonyRegistration', backref='ceremony',
+                                    cascade='all, delete-orphan', lazy=True)
+
+    def registration_count(self):
+        return len(self.registrations)
+
+
+class AwardCeremonyRegistration(db.Model):
+    """Public registration for an award ceremony event."""
+    id = db.Column(db.Integer, primary_key=True)
+    ceremony_id = db.Column(db.Integer, db.ForeignKey('award_ceremony.id', ondelete='CASCADE'),
+                            nullable=False, index=True)
+    child_name = db.Column(db.String(255), nullable=False, index=True)
+    student_id = db.Column(db.String(64), nullable=False, index=True)
+    year_group = db.Column(db.String(40), index=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    phone = db.Column(db.String(50), nullable=False)
+    confirmed = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+# ---------------- DBS Applications (Feb 2026) ---------------- #
+
+class DBSApplication(db.Model):
+    """Public Enhanced DBS application with Stripe payment and document uploads."""
+    __tablename__ = 'dbs_application'
+    id = db.Column(db.Integer, primary_key=True)
+    application_id = db.Column(db.String(20), unique=True, nullable=False, index=True)
+
+    # Personal details
+    title = db.Column(db.String(20), nullable=False)
+    first_name = db.Column(db.String(120), nullable=False, index=True)
+    last_name = db.Column(db.String(120), nullable=False, index=True)
+    other_names = db.Column(db.Boolean, default=False)            # ever known by another name?
+    other_names_json = db.Column(db.Text)                         # JSON array of {title,first_name,last_name,date_from,date_to}
+    date_of_birth = db.Column(db.Date, nullable=False)
+    gender = db.Column(db.String(20), nullable=False)
+    place_of_birth_town = db.Column(db.String(120), nullable=False)
+    place_of_birth_country = db.Column(db.String(120), nullable=False)
+    nationality = db.Column(db.String(120), nullable=False)
+
+    # Contact
+    email = db.Column(db.String(255), nullable=False, index=True)
+    phone = db.Column(db.String(50), nullable=False)
+
+    # National Insurance
+    has_ni = db.Column(db.Boolean, default=False)
+    ni_number = db.Column(db.String(20))
+
+    # Driving licence
+    has_driving_licence = db.Column(db.Boolean, default=False)
+    driving_licence_number = db.Column(db.String(40))
+
+    # Passport
+    has_passport = db.Column(db.Boolean, default=False)
+    passport_number = db.Column(db.String(40))
+    passport_issue_date = db.Column(db.Date)
+    passport_expiry_date = db.Column(db.Date)
+    passport_country_of_issue = db.Column(db.String(120))
+
+    # Addresses (JSON array for 5-year history)
+    addresses_json = db.Column(db.Text, nullable=False)           # [{line1,line2,postcode,since,until,current}]
+
+    # Declaration / Signature
+    signature_data = db.Column(db.Text)                           # base64 or text signature
+    declaration_agreed = db.Column(db.Boolean, default=False)
+
+    # Document uploads (relative paths under static/uploads/dbs/)
+    proof_of_address_path = db.Column(db.String(500))
+    proof_of_id_path = db.Column(db.String(500))
+
+    # Payment (Stripe)
+    stripe_checkout_session_id = db.Column(db.String(255), unique=True, index=True)
+    stripe_payment_intent_id = db.Column(db.String(255), index=True)
+    payment_status = db.Column(db.String(40), default='pending', index=True)  # pending|paid|failed
+
+    # Workflow
+    application_status = db.Column(db.String(60), default='Application Submitted', index=True)
+    # Values: Application Submitted | Sent to UCheck | DBS Issued
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def full_name(self):
+        return f"{self.title} {self.first_name} {self.last_name}".strip()
+
+    def other_names_list(self):
+        try:
+            return json.loads(self.other_names_json or '[]')
+        except Exception:
+            return []
+
+    def addresses_list(self):
+        try:
+            return json.loads(self.addresses_json or '[]')
+        except Exception:
+            return []
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'application_id': self.application_id,
+            'title': self.title,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'full_name': self.full_name(),
+            'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
+            'gender': self.gender,
+            'email': self.email,
+            'phone': self.phone,
+            'nationality': self.nationality,
+            'place_of_birth_town': self.place_of_birth_town,
+            'place_of_birth_country': self.place_of_birth_country,
+            'has_ni': self.has_ni,
+            'ni_number': self.ni_number,
+            'has_driving_licence': self.has_driving_licence,
+            'driving_licence_number': self.driving_licence_number,
+            'has_passport': self.has_passport,
+            'passport_number': self.passport_number,
+            'passport_issue_date': self.passport_issue_date.isoformat() if self.passport_issue_date else None,
+            'passport_expiry_date': self.passport_expiry_date.isoformat() if self.passport_expiry_date else None,
+            'passport_country_of_issue': self.passport_country_of_issue,
+            'addresses': self.addresses_list(),
+            'other_names': self.other_names_list(),
+            'payment_status': self.payment_status,
+            'application_status': self.application_status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+

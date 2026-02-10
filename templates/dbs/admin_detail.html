@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}DBS Application - {{ app.application_id }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-6 px-4">
+  {# Header #}
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <a href="{{ url_for('dbs.admin_dbs_list') }}" class="text-sm text-gray-500 dark:text-gray-400 hover:text-brand-indigo inline-flex items-center gap-1 mb-1">
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back to list
+      </a>
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ app.application_id }}</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">{{ app.full_name() }} &middot; Submitted {{ app.created_at.strftime('%d/%m/%Y %H:%M') if app.created_at else 'N/A' }}</p>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <a href="{{ url_for('dbs.admin_dbs_download_pdf', app_id=app.id) }}" class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/></svg>
+        Download PDF
+      </a>
+      {% if app.proof_of_id_path %}
+      <a href="{{ url_for('dbs.admin_dbs_download_id', app_id=app.id) }}" class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+        Download ID
+      </a>
+      {% endif %}
+      {% if app.proof_of_address_path %}
+      <a href="{{ url_for('dbs.admin_dbs_download_address', app_id=app.id) }}" class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+        Download Address Proof
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    {# Main details #}
+    <div class="lg:col-span-2 space-y-6">
+      {# Personal Details #}
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Personal Details</h2>
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+          <div><dt class="text-gray-500 dark:text-gray-400">Title</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.title }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Full Name</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.full_name() }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Date of Birth</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.date_of_birth.strftime('%d/%m/%Y') if app.date_of_birth else '' }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Gender</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.gender }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Place of Birth</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.place_of_birth_town }}, {{ app.place_of_birth_country }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Nationality</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.nationality }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Email</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.email }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Phone</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.phone }}</dd></div>
+        </dl>
+
+        {% if app.other_names %}
+        <div class="mt-4 pt-4 border-t dark:border-gray-600">
+          <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Previous Names</h3>
+          {% for n in app.other_names_list() %}
+          <div class="text-sm text-gray-700 dark:text-gray-300 mb-1">
+            {{ n.get('title','') }} {{ n.get('first_name','') }} {{ n.get('last_name','') }}
+            <span class="text-gray-500 text-xs">({{ n.get('date_from','') }} — {{ n.get('date_to','') }})</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      {# Identity Documents #}
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Identity Documents</h2>
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+          <div>
+            <dt class="text-gray-500 dark:text-gray-400">National Insurance</dt>
+            <dd class="font-medium text-gray-900 dark:text-white">{{ app.ni_number if app.has_ni else 'N/A' }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-500 dark:text-gray-400">Driving Licence</dt>
+            <dd class="font-medium text-gray-900 dark:text-white">{{ app.driving_licence_number if app.has_driving_licence else 'N/A' }}</dd>
+          </div>
+          {% if app.has_passport %}
+          <div><dt class="text-gray-500 dark:text-gray-400">Passport Number</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.passport_number or '' }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Passport Issue Date</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.passport_issue_date.strftime('%d/%m/%Y') if app.passport_issue_date else '' }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Passport Expiry Date</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.passport_expiry_date.strftime('%d/%m/%Y') if app.passport_expiry_date else '' }}</dd></div>
+          <div><dt class="text-gray-500 dark:text-gray-400">Passport Country</dt><dd class="font-medium text-gray-900 dark:text-white">{{ app.passport_country_of_issue or '' }}</dd></div>
+          {% else %}
+          <div><dt class="text-gray-500 dark:text-gray-400">Passport</dt><dd class="font-medium text-gray-900 dark:text-white">N/A</dd></div>
+          {% endif %}
+        </dl>
+      </div>
+
+      {# Addresses #}
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Address History</h2>
+        {% for addr in app.addresses_list() %}
+        <div class="border border-gray-200 dark:border-gray-600 rounded-lg p-3 mb-3 last:mb-0 text-sm">
+          <div class="font-medium text-gray-900 dark:text-white">{{ addr.get('line1','') }}</div>
+          {% if addr.get('line2') %}<div class="text-gray-600 dark:text-gray-400">{{ addr.line2 }}</div>{% endif %}
+          <div class="text-gray-600 dark:text-gray-400">{{ addr.get('postcode','') }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            From: {{ addr.get('since','') }}
+            {% if addr.get('current') %}— <span class="text-green-600 dark:text-green-400 font-medium">Current address</span>
+            {% elif addr.get('until') %}— Until: {{ addr.until }}{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {# Declaration #}
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Declaration</h2>
+        <div class="text-sm text-gray-700 dark:text-gray-300 space-y-2">
+          <p>Declaration agreed: <span class="font-medium">{{ 'Yes' if app.declaration_agreed else 'No' }}</span></p>
+          {% if app.signature_data %}
+          <p>Signature: <span class="italic text-lg">{{ app.signature_data }}</span></p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Sidebar #}
+    <div class="space-y-6">
+      {# Status Card #}
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Status</h2>
+        <div class="space-y-3">
+          <div>
+            <dt class="text-xs text-gray-500 dark:text-gray-400 mb-1">Payment Status</dt>
+            <dd>
+              {% if app.payment_status == 'paid' %}
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Paid</span>
+              {% elif app.payment_status == 'failed' %}
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">Failed</span>
+              {% else %}
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">Pending</span>
+              {% endif %}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs text-gray-500 dark:text-gray-400 mb-1">Application Status</dt>
+            <dd class="font-medium text-gray-900 dark:text-white text-sm">{{ app.application_status }}</dd>
+          </div>
+          {% if app.stripe_checkout_session_id %}
+          <div>
+            <dt class="text-xs text-gray-500 dark:text-gray-400 mb-1">Stripe Session</dt>
+            <dd class="font-mono text-xs text-gray-600 dark:text-gray-400 break-all">{{ app.stripe_checkout_session_id }}</dd>
+          </div>
+          {% endif %}
+        </div>
+
+        {# Update Status Form #}
+        <form method="POST" action="{{ url_for('dbs.admin_dbs_update_status', app_id=app.id) }}" class="mt-4 pt-4 border-t dark:border-gray-600">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Update Status</label>
+          <select name="application_status" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm focus:ring-brand-indigo focus:border-brand-indigo mb-2">
+            {% for s in status_choices %}
+            <option value="{{ s }}" {{ 'selected' if app.application_status==s }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="w-full px-4 py-2 bg-brand-indigo text-white text-sm font-medium rounded-lg hover:bg-brand-indigo-800 transition-colors">Update Status</button>
+        </form>
+      </div>
+
+      {# Documents Card #}
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Documents</h2>
+        <div class="space-y-2">
+          <a href="{{ url_for('dbs.admin_dbs_download_pdf', app_id=app.id) }}" class="flex items-center gap-2 text-sm text-brand-indigo hover:underline">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+            Application PDF
+          </a>
+          {% if app.proof_of_id_path %}
+          <a href="{{ url_for('dbs.admin_dbs_download_id', app_id=app.id) }}" class="flex items-center gap-2 text-sm text-brand-indigo hover:underline">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h4M7 12h10"/></svg>
+            Proof of ID
+          </a>
+          {% endif %}
+          {% if app.proof_of_address_path %}
+          <a href="{{ url_for('dbs.admin_dbs_download_address', app_id=app.id) }}" class="flex items-center gap-2 text-sm text-brand-indigo hover:underline">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+            Proof of Address
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

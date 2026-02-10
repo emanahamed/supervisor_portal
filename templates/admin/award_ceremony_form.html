@@ -1,0 +1,120 @@
+{% extends 'base.html' %} {% block page_title %}{{ title }}{% endblock %} {%
+block content %}
+
+<div class="max-w-3xl mx-auto">
+  <!-- Back link -->
+  <a
+    href="{{ url_for('admin_award_ceremonies') }}"
+    class="inline-flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 mb-4"
+  >
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+      <path
+        fill-rule="evenodd"
+        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+        clip-rule="evenodd"
+      />
+    </svg>
+    Back to Award Ceremonies
+  </a>
+
+  <h1
+    class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100 mb-5"
+  >
+    {{ title }}
+  </h1>
+
+  <form method="post" class="space-y-5">
+    {{ form.hidden_tag() }}
+
+    <!-- Event Name -->
+    <div>
+      <label
+        class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+      >
+        {{ form.name.label }} <span class="text-red-500">*</span>
+      </label>
+      {{ form.name(class="soft-input w-full", placeholder="e.g. Annual Award
+      Ceremony 2026") }} {% if form.name.errors %}
+      <div class="text-red-600 text-xs mt-1">
+        {% for error in form.name.errors %}{{ error }}{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Date & Time -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.date.label }} <span class="text-red-500">*</span>
+        </label>
+        {{ form.date(class="soft-input w-full", type="date") }} {% if
+        form.date.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.date.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.time.label }}
+        </label>
+        {{ form.time(class="soft-input w-full", placeholder="e.g. 2:00 PM - 5:00
+        PM") }}
+      </div>
+    </div>
+
+    <!-- Venue & Address -->
+    <div>
+      <label
+        class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+      >
+        {{ form.venue.label }}
+      </label>
+      {{ form.venue(class="soft-input w-full", placeholder="e.g. Excel Tutors
+      Hall") }}
+    </div>
+    <div>
+      <label
+        class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+      >
+        {{ form.address.label }}
+      </label>
+      {{ form.address(class="soft-input w-full", rows="3", placeholder="Full
+      address of the venue") }}
+    </div>
+
+    <!-- Active toggle -->
+    <div>
+      <label class="flex items-center gap-2 cursor-pointer">
+        {{ form.active(class="rounded") }}
+        <span class="text-sm font-semibold text-slate-700 dark:text-slate-300"
+          >{{ form.active.label.text }}</span
+        >
+      </label>
+    </div>
+
+    <!-- Submit -->
+    <div class="flex gap-3 pt-4">
+      {{ form.submit(class="soft-btn soft-btn-primary px-8 py-2") }}
+      <a
+        href="{{ url_for('admin_award_ceremonies') }}"
+        class="soft-btn px-8 py-2"
+        >Cancel</a
+      >
+    </div>
+  </form>
+
+  {% if ceremony %}
+  <div class="mt-4 text-xs text-slate-500 dark:text-slate-400">
+    Created: {{ ceremony.created_at.strftime('%d %b %Y %H:%M') if
+    ceremony.created_at else '—' }} | Last Updated: {{
+    ceremony.updated_at.strftime('%d %b %Y %H:%M') if ceremony.updated_at else
+    '—' }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

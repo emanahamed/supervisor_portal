@@ -399,6 +399,17 @@ class EnrollmentDiscountForm(FlaskForm):
     submit = SubmitField("Save Discount Settings")
 
 
+# ---------------- Award Ceremonies ---------------- #
+class AwardCeremonyForm(FlaskForm):
+    name = StringField("Event Name", validators=[DataRequired(), Length(max=255)])
+    date = DateField("Event Date", validators=[DataRequired()])
+    venue = StringField("Venue", validators=[Optional(), Length(max=255)])
+    address = TextAreaField("Venue Address", validators=[Optional(), Length(max=500)])
+    time = StringField("Time", validators=[Optional(), Length(max=100)])
+    active = BooleanField("Active (open for public registration)", default=True)
+    submit = SubmitField("Save Event")
+
+
 # ---------------- Resource Management ---------------- #
 class ResourceForm(FlaskForm):
     type = SelectField("Resource Type", choices=RESOURCE_TYPE_CHOICES, validators=[DataRequired()])

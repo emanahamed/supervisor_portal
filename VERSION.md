@@ -1,5 +1,27 @@
 # Version History
 
+## 2.4.0 - 2026-02-10
+
+Enhanced DBS Application System & Appointment Booking Public Link
+
+- DBS Application form: built a full public multi-section Enhanced DBS application form (`/dbs/apply`) with personal details, birth & identity, contact info, identity documents (NI / driving licence / passport with conditional fields), 5-year address history with coverage validation, document uploads (proof of ID & address), and e-signature declaration.
+- DBS payment: Stripe checkout integration with configurable fee (default £72); standalone Excel Tutors–branded payment pages (checkout, success, cancelled) using `_public_base.html` layout.
+- DBS emails: automatic post-payment emails — payment confirmation/invoice and completed application PDF attachment — via existing `send_email()` infrastructure.
+- DBS admin panel: application list with search/filter/pagination (`/admin/dbs`), detail view with 3-column layout, status management (Application Submitted → Sent to UCheck → DBS Issued), document download links, PDF generation via xhtml2pdf.
+- DBS export: XLSX export with selectable fields (`/admin/dbs/export`).
+- DBS settings: admin fee configuration page (`/admin/dbs/settings`, superadmin only).
+- New model: `DBSApplication` with fields for personal data, identity documents, addresses (JSON), Stripe session/payment intent IDs, payment & application status, file upload paths.
+- Blueprint architecture: DBS routes implemented as first Flask Blueprint (`dbs_bp`) in `dbs_routes.py` with 12 routes (4 public + 8 admin).
+- Navigation: added DBS section to sidebar nav with permission-gated links (All Applications, Export, Settings).
+- Permissions: added `manage_dbs` permission with automatic seeding.
+- Public form registry: added Enhanced DBS Application and Appointment Booking entries to the public forms page (`/admin/public-forms`).
+
+Notes:
+
+- New `dbs_application` table created automatically via `db.create_all()` on first request.
+- CSRF protection preserved on all routes (no blanket blueprint exemption); all templates include proper CSRF tokens.
+- No changes to existing models or routes; all DBS functionality is additive.
+
 ## 2.3.0 - 2026-02-09
 
 Enrollment Payment Flow, Confirmation Emails, PDF Invoices & Dark Mode

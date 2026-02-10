@@ -1,0 +1,41 @@
+{% extends "public/_public_base.html" %}
+{% block title %}Payment Successful{% endblock %}
+{% block page_title %}Enhanced DBS Application – Payment Confirmed{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto py-8">
+  <div class="soft-card p-8 text-center">
+    <!-- Success icon -->
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 border-2 border-emerald-200 mb-5">
+      <svg class="h-8 w-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    </div>
+
+    <h2 class="text-xl font-bold text-slate-800 mb-2">Payment Successful!</h2>
+    <p class="text-sm text-slate-500 mb-6">Your Enhanced DBS application has been submitted and payment received.</p>
+
+    {% if app %}
+    <div class="bg-slate-50 rounded-xl border border-slate-100 p-5 mb-6 text-left max-w-sm mx-auto">
+      <div class="text-sm text-slate-600 space-y-2">
+        <div class="flex justify-between"><span>Application ID</span><span class="font-mono font-semibold text-slate-800">{{ app.application_id }}</span></div>
+        <div class="flex justify-between"><span>Name</span><span class="font-medium text-slate-800">{{ app.full_name() }}</span></div>
+        <div class="flex justify-between">
+          <span>Status</span>
+          <span class="soft-badge" style="background:#ecfdf5;color:#047857;">Paid</span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <p class="text-sm text-slate-500 mb-6">
+      You will receive two emails shortly:<br>
+      1.&ensp;A payment confirmation / invoice<br>
+      2.&ensp;Your completed DBS application form as a PDF
+    </p>
+
+    <a href="{{ url_for('dbs.dbs_apply') }}"
+       class="soft-btn soft-btn-primary px-6 py-2.5 rounded-lg text-sm">
+      Submit Another Application
+    </a>
+  </div>
+</div>
+{% endblock %}

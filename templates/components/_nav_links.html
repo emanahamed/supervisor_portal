@@ -479,6 +479,182 @@
         </ul>
       </div>
     </li>
+    {% endif %} {# Award Ceremonies #} {% if can('manage_award_ceremonies') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('award_ceremonies')"
+          :aria-expanded="isOpen('award_ceremonies')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-brand-indigo-50/50 hover:text-brand-indigo dark:text-gray-300 dark:hover:bg-brand-blue-900/30"
+        >
+          <span class="flex items-center gap-2">
+            <svg
+              class="h-4 w-4 text-brand-indigo dark:text-brand-blue"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"
+              />
+            </svg>
+            Award Ceremonies
+          </span>
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('award_ceremonies')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('award_ceremonies')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-brand-indigo-200/50 dark:border-brand-blue-900 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('admin_award_ceremonies') }}"
+              class="nav-leaf {{ 'active' if endpoint in ['admin_award_ceremonies','admin_award_ceremony_new','admin_award_ceremony_edit'] else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>Events</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('admin_award_ceremonies') }}"
+              class="nav-leaf {{ 'active' if endpoint=='admin_award_ceremony_registrations' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 00-3-3.87" />
+                <path d="M16 3.13a4 4 0 010 7.75" />
+              </svg>
+              <span>Registrations</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </li>
+    {% endif %} {# DBS Applications #} {% if can('manage_dbs') %}
+    <li>
+      <div>
+        <button
+          @click="toggle('dbs')"
+          :aria-expanded="isOpen('dbs')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-brand-indigo-50/50 hover:text-brand-indigo dark:text-gray-300 dark:hover:bg-brand-blue-900/30"
+        >
+          <span class="flex items-center gap-2">
+            <svg
+              class="h-4 w-4 text-brand-indigo dark:text-brand-blue"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            DBS Applications
+          </span>
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('dbs')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('dbs')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-brand-indigo-200/50 dark:border-brand-blue-900 pl-3"
+        >
+          <li>
+            <a
+              href="{{ url_for('dbs.admin_dbs_list') }}"
+              class="nav-leaf {{ 'active' if endpoint in ['dbs.admin_dbs_list','dbs.admin_dbs_detail'] else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span>All Applications</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('dbs.admin_dbs_export') }}"
+              class="nav-leaf {{ 'active' if endpoint=='dbs.admin_dbs_export' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                <polyline points="14,2 14,8 20,8" />
+              </svg>
+              <span>Export</span>
+            </a>
+          </li>
+          {% if current_user.is_superadmin %}
+          <li>
+            <a
+              href="{{ url_for('dbs.admin_dbs_settings') }}"
+              class="nav-leaf {{ 'active' if endpoint=='dbs.admin_dbs_settings' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4" />
+              </svg>
+              <span>Settings</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
     {% endif %} {# Floor Management (F) #} {% set show_floor =
     can('floor_dashboard') or can('manage_shifts') or
     can('manage_eod_checklist') or can('manage_floor_reports') or
@@ -1715,19 +1891,18 @@
       state: {},
       init() {
         try {
-          this.state = JSON.parse(localStorage.getItem("navStateV2")) || {};
+          this.state = JSON.parse(localStorage.getItem("navStateV3")) || {};
         } catch (e) {
           this.state = {};
         }
-        if (Object.keys(this.state).length === 0) {
-          this.state = { invoice: true };
-        }
       },
       save() {
-        localStorage.setItem("navStateV2", JSON.stringify(this.state));
+        localStorage.setItem("navStateV3", JSON.stringify(this.state));
       },
       toggle(key) {
-        this.state[key] = !this.state[key];
+        const opening = !this.state[key];
+        Object.keys(this.state).forEach(k => { this.state[k] = false; });
+        if (opening) this.state[key] = true;
         this.save();
       },
       isOpen(key) {

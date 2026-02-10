@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #333; margin: 0; padding: 20px; }
+    h1 { color: #2e9b47; font-size: 18pt; text-align: center; margin-bottom: 5px; }
+    h2 { color: #2e9b47; font-size: 13pt; margin-top: 20px; margin-bottom: 8px; border-bottom: 2px solid #2e9b47; padding-bottom: 4px; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .header p { margin: 2px 0; font-size: 10pt; color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.details td { padding: 4px 8px; vertical-align: top; font-size: 10pt; }
+    table.details td.label { font-weight: bold; width: 35%; color: #555; background: #f5f5f5; }
+    table.details td.value { width: 65%; }
+    table.details tr { border-bottom: 1px solid #ddd; }
+    .address-block { border: 1px solid #ddd; padding: 8px; margin-bottom: 8px; border-radius: 4px; }
+    .address-block p { margin: 2px 0; font-size: 10pt; }
+    .footer { margin-top: 30px; text-align: center; font-size: 9pt; color: #999; border-top: 1px solid #ddd; padding-top: 10px; }
+    .signature { margin-top: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 9pt; font-weight: bold; }
+    .badge-paid { background: #d4edda; color: #155724; }
+    .badge-pending { background: #fff3cd; color: #856404; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Enhanced DBS Application</h1>
+    <p>Application ID: <strong>{{ app.application_id }}</strong></p>
+    <p>Submitted: {{ app.created_at.strftime('%d/%m/%Y %H:%M') if app.created_at else 'N/A' }}</p>
+    <p>Payment:
+      {% if app.payment_status == 'paid' %}
+      <span class="badge badge-paid">PAID</span>
+      {% else %}
+      <span class="badge badge-pending">{{ app.payment_status|upper }}</span>
+      {% endif %}
+    </p>
+  </div>
+
+  <h2>Personal Details</h2>
+  <table class="details">
+    <tr><td class="label">Title</td><td class="value">{{ app.title }}</td></tr>
+    <tr><td class="label">First Name</td><td class="value">{{ app.first_name }}</td></tr>
+    <tr><td class="label">Last Name</td><td class="value">{{ app.last_name }}</td></tr>
+    <tr><td class="label">Date of Birth</td><td class="value">{{ app.date_of_birth.strftime('%d/%m/%Y') if app.date_of_birth else '' }}</td></tr>
+    <tr><td class="label">Gender</td><td class="value">{{ app.gender }}</td></tr>
+    <tr><td class="label">Place of Birth</td><td class="value">{{ app.place_of_birth_town }}, {{ app.place_of_birth_country }}</td></tr>
+    <tr><td class="label">Nationality</td><td class="value">{{ app.nationality }}</td></tr>
+    <tr><td class="label">Email</td><td class="value">{{ app.email }}</td></tr>
+    <tr><td class="label">Phone</td><td class="value">{{ app.phone }}</td></tr>
+  </table>
+
+  {% if app.other_names and app.other_names_list() %}
+  <h2>Previous Names</h2>
+  <table class="details">
+    {% for n in app.other_names_list() %}
+    <tr>
+      <td class="label">{{ n.get('title','') }} {{ n.get('first_name','') }} {{ n.get('last_name','') }}</td>
+      <td class="value">From: {{ n.get('date_from','') }} — To: {{ n.get('date_to','') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h2>Identity Documents</h2>
+  <table class="details">
+    <tr><td class="label">National Insurance Number</td><td class="value">{{ app.ni_number if app.has_ni else 'N/A' }}</td></tr>
+    <tr><td class="label">Driving Licence Number</td><td class="value">{{ app.driving_licence_number if app.has_driving_licence else 'N/A' }}</td></tr>
+    <tr><td class="label">Passport Number</td><td class="value">{{ app.passport_number if app.has_passport else 'N/A' }}</td></tr>
+    {% if app.has_passport %}
+    <tr><td class="label">Passport Issue Date</td><td class="value">{{ app.passport_issue_date.strftime('%d/%m/%Y') if app.passport_issue_date else '' }}</td></tr>
+    <tr><td class="label">Passport Expiry Date</td><td class="value">{{ app.passport_expiry_date.strftime('%d/%m/%Y') if app.passport_expiry_date else '' }}</td></tr>
+    <tr><td class="label">Passport Country of Issue</td><td class="value">{{ app.passport_country_of_issue or '' }}</td></tr>
+    {% endif %}
+  </table>
+
+  <h2>Address History</h2>
+  {% for addr in app.addresses_list() %}
+  <div class="address-block">
+    <p><strong>{{ addr.get('line1','') }}</strong></p>
+    {% if addr.get('line2') %}<p>{{ addr.line2 }}</p>{% endif %}
+    <p>{{ addr.get('postcode','') }}</p>
+    <p style="font-size:9pt; color:#666;">
+      From: {{ addr.get('since','') }}
+      {% if addr.get('current') %}&mdash; <strong>Current address</strong>
+      {% elif addr.get('until') %}&mdash; Until: {{ addr.until }}{% endif %}
+    </p>
+  </div>
+  {% endfor %}
+
+  <div class="signature">
+    <h2 style="border:none; margin-top:0;">Declaration & Signature</h2>
+    <p>I declare that the information provided in this application is complete and true to the best of my knowledge.</p>
+    <p>Declaration agreed: <strong>{{ 'Yes' if app.declaration_agreed else 'No' }}</strong></p>
+    {% if app.signature_data %}
+    <p style="margin-top:10px;">Signature: <em style="font-size:14pt;">{{ app.signature_data }}</em></p>
+    {% endif %}
+  </div>
+
+  <div class="footer">
+    <p>This document was generated automatically on {{ now().strftime('%d/%m/%Y %H:%M') }}.</p>
+    <p>Excel Tutors &bull; Enhanced DBS Application System</p>
+  </div>
+</body>
+</html>

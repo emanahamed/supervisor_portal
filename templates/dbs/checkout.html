@@ -1,0 +1,89 @@
+{% extends "public/_public_base.html" %}
+{% block title %}DBS Payment - {{ app.application_id }}{% endblock %}
+{% block page_title %}Enhanced DBS Application – Payment{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto py-8">
+  <div class="soft-card p-8">
+    <!-- Payment icon -->
+    <div class="text-center mb-6">
+      <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#eef0ff] mb-3">
+        <svg class="h-7 w-7 text-[#363f99]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      </div>
+      <h2 class="text-xl font-bold text-slate-800">Complete Payment</h2>
+      <p class="text-sm text-slate-500 mt-1">Enhanced DBS Application</p>
+    </div>
+
+    <!-- Order summary -->
+    <div class="bg-slate-50 rounded-xl border border-slate-100 p-5 mb-6">
+      <div class="flex justify-between items-center text-sm text-slate-600 mb-2">
+        <span>Application ID</span>
+        <span class="font-mono font-semibold text-slate-800">{{ app.application_id }}</span>
+      </div>
+      <div class="flex justify-between items-center text-sm text-slate-600">
+        <span>Applicant</span>
+        <span class="font-medium text-slate-800">{{ app.full_name() }}</span>
+      </div>
+      <hr class="my-3 border-slate-200">
+      <div class="flex justify-between items-center">
+        <span class="text-sm font-medium text-slate-600">Enhanced DBS Check Fee</span>
+        <span class="text-2xl font-bold text-[#363f99]">£{{ "%.2f"|format(fee) }}</span>
+      </div>
+    </div>
+
+    <!-- Pay button -->
+    <button id="payBtn" onclick="startCheckout()"
+      class="soft-btn soft-btn-primary w-full justify-center py-3 text-base font-semibold rounded-xl shadow-md hover:shadow-lg transition-all">
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/></svg>
+      <span id="payText">Pay £{{ "%.2f"|format(fee) }} with Stripe</span>
+    </button>
+
+    <!-- Security notice -->
+    <div class="flex items-center justify-center gap-2 mt-4 text-xs text-slate-400">
+      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      <span>Secure payment processed by Stripe. Your card details never touch our servers.</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+const stripe = Stripe('{{ stripe_public_key }}');
+
+async function startCheckout() {
+  const btn = document.getElementById('payBtn');
+  const text = document.getElementById('payText');
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+  text.textContent = 'Redirecting to Stripe…';
+
+  try {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const resp = await fetch('{{ url_for("dbs.dbs_checkout") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': csrfToken,
+      },
+      body: 'checkout=1',
+    });
+    const data = await resp.json();
+    if (data.checkout_url) {
+      window.location.href = data.checkout_url;
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      text.textContent = 'Pay £{{ "%.2f"|format(fee) }} with Stripe';
+    }
+  } catch (err) {
+    alert('Payment error: ' + err.message);
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    text.textContent = 'Pay £{{ "%.2f"|format(fee) }} with Stripe';
+  }
+}
+</script>
+{% endblock %}

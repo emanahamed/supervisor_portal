@@ -1,0 +1,141 @@
+{% extends 'public/_public_base.html' %}
+{% from 'components/forms_macros.html' import csrf_field %}
+
+{% block page_title %}Award Ceremony Registration{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-8 px-4">
+
+  <div class="text-center mb-6">
+    <h1 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100">Award Ceremony Registration</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Register your child for an upcoming award ceremony event.</p>
+  </div>
+
+  {% if not ceremonies %}
+  <div class="soft-card p-8 text-center">
+    <svg class="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/>
+    </svg>
+    <p class="text-slate-500 dark:text-slate-400">There are no active award ceremony events open for registration at this time.</p>
+    <p class="text-sm text-slate-400 dark:text-slate-500 mt-1">Please check back later.</p>
+  </div>
+  {% else %}
+
+  <form method="post" class="space-y-5" x-data="{ isSubmitting: false }" @submit="isSubmitting = true">
+    {{ csrf_field() }}
+
+    <!-- Honeypot -->
+    <div class="hidden" aria-hidden="true">
+      <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+    </div>
+
+    <!-- Event Selection -->
+    <div class="soft-card p-5 space-y-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400">Select Event</h2>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+          Award Ceremony <span class="text-red-500">*</span>
+        </label>
+        <select name="ceremony_id" class="soft-input w-full" required>
+          <option value="">-- Select an event --</option>
+          {% for c in ceremonies %}
+          <option value="{{ c.id }}" {{ 'selected' if ceremony_id == c.id|string else '' }}>
+            {{ c.name }} — {{ c.date.strftime('%d %b %Y') if c.date else 'TBC' }}{% if c.venue %} ({{ c.venue }}){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Child Details -->
+    <div class="soft-card p-5 space-y-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400">Child Details</h2>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+          Child's Full Name <span class="text-red-500">*</span>
+        </label>
+        <input type="text" name="child_name" value="{{ child_name }}" class="soft-input w-full"
+          placeholder="Enter the child's full name" required />
+        <p class="text-[11px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+          This name will appear exactly as entered on any certificates issued. Please double-check spelling and capitalisation.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            Student ID <span class="text-red-500">*</span>
+          </label>
+          <input type="text" name="student_id" value="{{ student_id }}" class="soft-input w-full"
+            placeholder="e.g. ET12345" required />
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            Year Group <span class="text-red-500">*</span>
+          </label>
+          <select name="year_group" class="soft-input w-full" required>
+            <option value="">-- Select --</option>
+            {% for yg in year_groups %}
+            <option value="{{ yg }}" {{ 'selected' if year_group == yg else '' }}>{{ yg | replace('year', 'Year ') | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact Details -->
+    <div class="soft-card p-5 space-y-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400">Contact Details</h2>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+          Email Address <span class="text-red-500">*</span>
+        </label>
+        <input type="email" name="email" value="{{ email }}" class="soft-input w-full"
+          placeholder="parent@example.com" required />
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+          Phone Number <span class="text-red-500">*</span>
+        </label>
+        <input type="tel" name="phone" value="{{ phone }}" class="soft-input w-full"
+          placeholder="07xxx xxxxxx" required />
+      </div>
+    </div>
+
+    <!-- Confirmation -->
+    <div class="soft-card p-5 space-y-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400">Declaration</h2>
+
+      <label class="flex items-start gap-3 cursor-pointer">
+        <input type="checkbox" name="confirmation" value="1" class="rounded mt-0.5 shrink-0" required />
+        <span class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+          I confirm that the information provided is accurate to the best of my knowledge.
+          I understand that Excel Tutors reserve the right to verify all submissions and that
+          <strong>submission of this form is not confirmation of receipt of an award</strong>, which is
+          subject to Excel Tutors' internal verification process.
+        </span>
+      </label>
+    </div>
+
+    <!-- Submit -->
+    <div class="text-center pt-2">
+      <button type="submit"
+        class="soft-btn soft-btn-primary px-10 py-3 text-base font-semibold disabled:opacity-50"
+        :disabled="isSubmitting">
+        <span x-show="!isSubmitting">Submit Registration</span>
+        <span x-show="isSubmitting" class="flex items-center gap-2">
+          <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Submitting&hellip;
+        </span>
+      </button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

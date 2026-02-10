@@ -1,0 +1,208 @@
+{% extends 'base.html' %} {% block page_title %}Award Ceremonies{% endblock %}
+{% block content %}
+
+<!-- Header -->
+<div
+  class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4"
+>
+  <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
+    Award Ceremonies
+  </h1>
+  <a
+    href="{{ url_for('admin_award_ceremony_new') }}"
+    class="soft-btn soft-btn-primary text-sm px-4 py-2"
+    >+ New Event</a
+  >
+</div>
+
+<!-- Summary Stats -->
+{% set total = ceremonies | length %} {% set active_count = ceremonies |
+selectattr('active') | list | length %} {% set inactive_count = total -
+active_count %} {% set total_regs = ceremonies | sum(attribute='registrations',
+default=[]) | length if false else namespace(n=0) %} {% for c in ceremonies %}{%
+set total_regs.n = total_regs.n + c.registrations | length %}{% endfor %}
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+  <div class="soft-card p-3 md:p-4">
+    <div
+      class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400"
+    >
+      Total Events
+    </div>
+    <div
+      class="text-xl sm:text-2xl font-semibold text-slate-800 dark:text-slate-100"
+    >
+      {{ total }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div
+      class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400"
+    >
+      Active
+    </div>
+    <div
+      class="text-xl sm:text-2xl font-semibold text-emerald-600 dark:text-emerald-400"
+    >
+      {{ active_count }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div
+      class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400"
+    >
+      Inactive
+    </div>
+    <div
+      class="text-xl sm:text-2xl font-semibold text-slate-500 dark:text-slate-400"
+    >
+      {{ inactive_count }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div
+      class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400"
+    >
+      Total Registrations
+    </div>
+    <div
+      class="text-xl sm:text-2xl font-semibold text-indigo-600 dark:text-indigo-400"
+    >
+      {{ total_regs.n }}
+    </div>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="ceremoniesTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr>
+          <th class="px-4 py-3 text-left">ID</th>
+          <th class="px-4 py-3 text-left">Event Name</th>
+          <th class="px-4 py-3 text-left">Date</th>
+          <th class="px-4 py-3 text-left hidden md:table-cell">Venue</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Time</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-left">Registrations</th>
+          <th class="px-4 py-3 text-left hidden sm:table-cell">Created</th>
+          <th class="px-4 py-3 text-center no-sort">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+        {% for c in ceremonies %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td class="px-4 py-3 text-slate-500 dark:text-slate-400">
+            {{ c.id }}
+          </td>
+          <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">
+            {{ c.name }}
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
+            {{ c.date.strftime('%d %b %Y') if c.date else '—' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell"
+          >
+            {{ c.venue or '—' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell"
+          >
+            {{ c.time or '—' }}
+          </td>
+          <td class="px-4 py-3">
+            <button
+              onclick="toggleCeremonyStatus({{ c.id }})"
+              class="soft-badge text-[10px] cursor-pointer {{ 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' if c.active else 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400' }}"
+            >
+              {{ 'Active' if c.active else 'Inactive' }}
+            </button>
+          </td>
+          <td class="px-4 py-3">
+            <a
+              href="{{ url_for('admin_award_ceremony_registrations', id=c.id) }}"
+              class="text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+            >
+              {{ c.registrations | length }}
+            </a>
+          </td>
+          <td
+            class="px-4 py-3 text-slate-500 dark:text-slate-400 hidden sm:table-cell"
+          >
+            {{ c.created_at.strftime('%d %b %Y') if c.created_at else '—' }}
+          </td>
+          <td class="px-4 py-3 text-center">
+            <div class="flex items-center justify-center gap-2">
+              <a
+                href="{{ url_for('admin_award_ceremony_edit', id=c.id) }}"
+                class="soft-btn text-xs px-2 py-1"
+                >Edit</a
+              >
+              <form
+                method="post"
+                action="{{ url_for('admin_award_ceremony_delete', id=c.id) }}"
+                onsubmit="
+                  return confirm(
+                    'Delete this ceremony and all its registrations?',
+                  );
+                "
+                class="inline"
+              >
+                <input
+                  type="hidden"
+                  name="csrf_token"
+                  value="{{ csrf_token() }}"
+                />
+                <button
+                  type="submit"
+                  class="soft-btn soft-btn-danger text-xs px-2 py-1"
+                >
+                  Delete
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %} {% if not ceremonies %}
+        <tr>
+          <td
+            colspan="9"
+            class="px-4 py-8 text-center text-slate-400 dark:text-slate-500"
+          >
+            No award ceremonies yet. Create your first event above.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  async function toggleCeremonyStatus(id) {
+    try {
+      const response = await fetch(`/admin/award-ceremonies/${id}/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (response.ok) {
+        location.reload();
+      } else {
+        alert("Failed to toggle status");
+      }
+    } catch (error) {
+      alert("An error occurred");
+    }
+  }
+</script>
+{% endblock %}

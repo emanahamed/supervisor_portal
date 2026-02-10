@@ -628,6 +628,64 @@ def build_admission_assessment_confirmation_email(submission) -> Tuple[str, str]
     return subject, html
 
 
+def build_award_ceremony_confirmation_email(registration, ceremony) -> Tuple[str, str]:
+    """Branded confirmation email for award ceremony registration."""
+    child_label = registration.child_name or 'your child'
+    subject = f"Award Ceremony Registration Received \u2013 {ceremony.name}"
+    intro = (
+        f"Dear Parent/Guardian,<br/><br/>"
+        f"Thank you for registering <strong>{child_label}</strong> for "
+        f"<strong>{ceremony.name}</strong>. We have received your submission."
+    )
+
+    def _row(label: str, value: str) -> str:
+        safe_value = (value or '\u2014').replace('\\n', '<br/>')
+        return (
+            "<tr>"
+            f"<td style='padding:6px 0;width:200px;color:#64748b;font-weight:600;'>{label}</td>"
+            f"<td style='padding:6px 0;color:#0f172a;'>{safe_value}</td>"
+            "</tr>"
+        )
+
+    registered_at = 'Just now'
+    if getattr(registration, 'created_at', None):
+        try:
+            registered_at = registration.created_at.strftime('%A, %d %B %Y at %I:%M %p').lstrip('0')
+        except Exception:
+            registered_at = str(registration.created_at)
+
+    ceremony_date = '\u2014'
+    if getattr(ceremony, 'date', None):
+        try:
+            ceremony_date = ceremony.date.strftime('%A, %d %B %Y')
+        except Exception:
+            ceremony_date = str(ceremony.date)
+
+    body_parts = [
+        "<p style='margin:0 0 12px;font-size:14px;color:#334155;'>Here is a summary of your registration:</p>",
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>",
+        _row('Child Name', registration.child_name or '\u2014'),
+        _row('Student ID', registration.student_id or '\u2014'),
+        _row('Year Group', (registration.year_group or '\u2014').replace('year', 'Year ').title()),
+        _row('Event', ceremony.name),
+        _row('Date', ceremony_date),
+        _row('Venue', ceremony.venue or '\u2014'),
+        _row('Time', ceremony.time or '\u2014'),
+        _row('Registered At', registered_at),
+        "</table>",
+        (
+            "<p style='margin:16px 0 0;font-size:13px;color:#64748b;'>"
+            "<strong>Please note:</strong> Submission of this form is not confirmation of receipt of an award. "
+            "All registrations are subject to internal verification by Excel Tutors. "
+            "The child's name will appear exactly as entered on any certificates issued."
+            "</p>"
+        ),
+        "<p style='margin:12px 0 0;font-size:13px;color:#64748b;'>If you have any questions, reply to this email or phone 0207 0011 411.</p>",
+    ]
+    html = _render_email_shell('Award Ceremony Registration', 'Registration Received', intro, ''.join(body_parts))
+    return subject, html
+
+
 def build_admission_assessment_scores_email(submission, scores: list) -> Tuple[str, str]:
     parent_name = submission.parent_name or 'Parent/Guardian'
     student_label = submission.student_name or 'your child'
