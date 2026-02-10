@@ -43,13 +43,22 @@
     <div class="text-2xl font-semibold text-amber-600">{{ user_week }}</div>
   </div>
   <div class="soft-card p-4">
-    <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Total</div>
+    <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Showing</div>
     <div class="text-2xl font-semibold text-slate-800">{{ total }}</div>
+    <div class="text-[10px] text-slate-400 mt-0.5 capitalize">{{ show }}</div>
   </div>
 </div>
 
 <div class="soft-card p-4 mb-6">
+  <!-- Time scope toggle -->
+  <div class="flex items-center gap-1 mb-4">
+    <span class="text-xs font-medium text-slate-500 mr-2">Show:</span>
+    <button type="button" data-show="upcoming" class="soft-btn text-xs py-1 px-3 rounded-full {{ 'soft-btn-primary' if show == 'upcoming' else '' }}">Upcoming</button>
+    <button type="button" data-show="past" class="soft-btn text-xs py-1 px-3 rounded-full {{ 'soft-btn-primary' if show == 'past' else '' }}">Past</button>
+    <button type="button" data-show="all" class="soft-btn text-xs py-1 px-3 rounded-full {{ 'soft-btn-primary' if show == 'all' else '' }}">All</button>
+  </div>
   <form id="meetingFilters" class="grid gap-4 md:grid-cols-6">
+    <input type="hidden" id="showScope" value="{{ show }}" />
     <div class="md:col-span-2 flex flex-col gap-2">
       <label class="text-xs font-medium text-slate-500">Search Agenda</label>
       <input id="meetingSearch" value="{{ search or '' }}" class="soft-input" placeholder="Search meetings..." />
@@ -167,8 +176,12 @@
     const startEl = document.getElementById('startDate');
     const endEl = document.getElementById('endDate');
 
+    const showEl = document.getElementById('showScope');
+
     function apply(){
       const p = new URLSearchParams();
+      const scope = showEl.value || 'upcoming';
+      if (scope !== 'upcoming') p.set('show', scope);
       const sv = searchEl.value.trim(); if (sv) p.set('search', sv);
       if (partSel.value) p.set('participant', partSel.value);
       if (bookedSel.value) p.set('booked_by', bookedSel.value);
@@ -178,6 +191,14 @@
     }
     applyBtn.addEventListener('click', function(e){ e.preventDefault(); apply(); });
     clearBtn.addEventListener('click', function(){ window.location = window.location.pathname; });
+
+    // Time scope toggle buttons
+    document.querySelectorAll('[data-show]').forEach(btn => {
+      btn.addEventListener('click', function() {
+        showEl.value = this.dataset.show;
+        apply();
+      });
+    });
     searchEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); apply(); }});
 
     // Modal logic for create/edit

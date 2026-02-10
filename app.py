@@ -12354,6 +12354,15 @@ def meetings_index():
     today = _date.today()
     week_ahead = today + timedelta(days=7)
     q = Meeting.query
+
+    # Time scope filter: 'upcoming' (default), 'past', or 'all'
+    show = (request.args.get('show') or 'upcoming').strip().lower()
+    if show == 'upcoming':
+        q = q.filter(Meeting.date >= today)
+    elif show == 'past':
+        q = q.filter(Meeting.date < today)
+    # 'all' → no date scope filter
+
     # Filters (participant, booked_by, date range, search in agenda)
     part = request.args.get('participant', type=int)
     if part:
@@ -12380,9 +12389,10 @@ def meetings_index():
         q = q.filter(db.func.lower(Meeting.agenda).like(f"%{search}%"))
     meetings = q.order_by(Meeting.date.asc(), Meeting.time.asc()).all()
 
-    # Analytics / summaries
-    upcoming_today = [m for m in meetings if m.date == today]
-    upcoming_week = [m for m in meetings if today <= m.date <= week_ahead]
+    # Analytics / summaries (always computed against upcoming meetings from today)
+    all_upcoming = Meeting.query.filter(Meeting.date >= today).all()
+    upcoming_today = [m for m in all_upcoming if m.date == today]
+    upcoming_week = [m for m in all_upcoming if m.date <= week_ahead]
     total = len(meetings)
     user_today = [m for m in upcoming_today if m.participant_id == current_user.id or m.booked_by_id == current_user.id]
     user_week = [m for m in upcoming_week if m.participant_id == current_user.id or m.booked_by_id == current_user.id]
@@ -12399,7 +12409,8 @@ def meetings_index():
     return render_template('meetings/index.html', meetings=meetings, users=users,
                            total=total, upcoming_today=len(upcoming_today), upcoming_week=len(upcoming_week),
                            user_today=len(user_today), user_week=len(user_week), search=search,
-                           sel_part=part, sel_booked=booked, start_date=start_date, end_date=end_date)
+                           sel_part=part, sel_booked=booked, start_date=start_date, end_date=end_date,
+                           show=show)
 
 # Fallback: handle accidental POSTs to /meetings (collection) by treating as create
 @app.route('/meetings', methods=['POST'])
@@ -12411,8 +12422,10 @@ def meetings_index_post():
     Prefer using /meetings/new for creation; this simply delegates.
     """
     form = MeetingForm()
-    users = User.query.order_by(User.name.asc()).all()
-    form.participant_id.choices = [(u.id, u.name) for u in users]
+    eligible_users = User.query.filter(
+        db.or_(User.is_superadmin == True, User.role == 'centre_manager')
+    ).order_by(User.name.asc()).all()
+    form.participant_id.choices = [(u.id, u.name) for u in eligible_users]
     # Student choices (include sentinel 0 for none)
     try:
         from models import Student as _Student
@@ -12486,8 +12499,10 @@ def meetings_index_post():
 @login_required
 def meeting_new():
     form = MeetingForm()
-    users = User.query.order_by(User.name.asc()).all()
-    form.participant_id.choices = [(u.id, u.name) for u in users]
+    eligible_users = User.query.filter(
+        db.or_(User.is_superadmin == True, User.role == 'centre_manager')
+    ).order_by(User.name.asc()).all()
+    form.participant_id.choices = [(u.id, u.name) for u in eligible_users]
     # Populate student choices
     try:
         students = Student.query.order_by(Student.name.asc()).all()
@@ -12558,8 +12573,13 @@ def meeting_new():
 def meeting_edit(mid):
     m = Meeting.query.get_or_404(mid)
     form = MeetingForm(obj=m)
-    users = User.query.order_by(User.name.asc()).all()
-    form.participant_id.choices = [(u.id, u.name) for u in users]
+    eligible_users = User.query.filter(
+        db.or_(User.is_superadmin == True, User.role == 'centre_manager')
+    ).order_by(User.name.asc()).all()
+    form.participant_id.choices = [(u.id, u.name) for u in eligible_users]
+    # Ensure current participant is in choices even if role changed
+    if m.participant_id and m.participant_id not in [u.id for u in eligible_users]:
+        form.participant_id.choices.append((m.participant_id, m.participant.name if m.participant else f'User #{m.participant_id}'))
     # Populate student choices
     try:
         students = Student.query.order_by(Student.name.asc()).all()
