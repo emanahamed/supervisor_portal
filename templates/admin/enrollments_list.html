@@ -54,6 +54,41 @@
   </div>
 </div>
 
+{# ── Filter bar ──────────────────────────────────────────────── #}
+<div class="soft-card p-4 mb-4">
+  <form class="grid gap-4 md:grid-cols-6" method="get">
+    <div class="md:col-span-2 flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Search</label>
+      <input name="q" value="{{ q }}" class="soft-input" placeholder="Student name, ID or email…" />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Branch</label>
+      <select name="branch" class="soft-input">
+        <option value="">All Branches</option>
+        {%- for b in all_branches %}<option value="{{ b }}"{{ ' selected' if branch_filter == b else '' }}>{{ b }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Status</label>
+      <select name="status" class="soft-input">
+        <option value="">All Statuses</option>
+        {%- for s in all_statuses %}<option value="{{ s }}"{{ ' selected' if status_filter == s else '' }}>{{ s|title }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Year</label>
+      <select name="year" class="soft-input">
+        <option value="">All Years</option>
+        {%- for y in all_years %}<option value="{{ y }}"{{ ' selected' if year_filter == y else '' }}>{{ y|replace('year','Y')|upper }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end gap-2">
+      <button class="soft-btn bg-slate-100 w-full">Apply</button>
+      <a href="{{ url_for('admin_enrollments_list') }}" class="soft-btn bg-slate-100" title="Clear filters">Clear</a>
+    </div>
+  </form>
+</div>
+
 <div class="soft-card p-0">
   <div class="overflow-x-auto">
     <table

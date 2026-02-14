@@ -7532,9 +7532,58 @@ def admin_products_toggle(id):
 @permission_required('view_enrollments')
 def admin_enrollments_list():
     """List all course enrollment orders"""
-    from models import Order
-    orders = Order.query.order_by(Order.created_at.desc()).all()
-    return render_template('admin/enrollments_list.html', orders=orders)
+    from models import Order, OrderItem
+
+    # ── query-string filters ────────────────────────────────────
+    q = (request.args.get('q') or '').strip()
+    branch_filter = (request.args.get('branch') or '').strip()
+    status_filter = (request.args.get('status') or '').strip().lower()
+    year_filter = (request.args.get('year') or '').strip()
+    product_filter = (request.args.get('product') or '').strip()
+
+    query = Order.query
+
+    if q:
+        like = f'%{q}%'
+        query = query.filter(
+            db.or_(
+                Order.student_name.ilike(like),
+                Order.student_id.ilike(like),
+                Order.parent_email.ilike(like),
+            )
+        )
+    if branch_filter:
+        query = query.filter(Order.branch == branch_filter)
+    if status_filter:
+        query = query.filter(Order.payment_status == status_filter)
+    if year_filter:
+        query = query.filter(Order.year_group == year_filter)
+    if product_filter:
+        query = query.filter(
+            Order.items.any(OrderItem.product_name.ilike(f'%{product_filter}%'))
+        )
+
+    orders = query.order_by(Order.created_at.desc()).all()
+
+    # ── distinct values for filter dropdowns ────────────────────
+    all_branches = sorted({o.branch for o in Order.query.with_entities(Order.branch).distinct()})
+    all_statuses = sorted({r[0] for r in Order.query.with_entities(Order.payment_status).distinct()})
+    all_years = sorted({r[0] for r in Order.query.with_entities(Order.year_group).distinct()})
+    all_products = sorted({r[0] for r in db.session.query(OrderItem.product_name).distinct()})
+
+    return render_template(
+        'admin/enrollments_list.html',
+        orders=orders,
+        q=q,
+        branch_filter=branch_filter,
+        status_filter=status_filter,
+        year_filter=year_filter,
+        product_filter=product_filter,
+        all_branches=all_branches,
+        all_statuses=all_statuses,
+        all_years=all_years,
+        all_products=all_products,
+    )
 
 
 @app.route('/admin/enrollments/<int:id>')
