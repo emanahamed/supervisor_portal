@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+{% block page_title %}Award Ceremony Registrations{% endblock %}
+{% block content %}
+
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">Award Ceremony Registrations</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">All submissions across all events</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a id="exportLink" href="{{ url_for('admin_all_award_registrations_export', ceremony=sel_ceremony or '', year_group=sel_year_group or '', search=search or '') }}"
+       class="soft-btn soft-btn-primary text-sm px-4 py-2 flex items-center gap-2">
+      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      Export XLSX
+    </a>
+    <a href="{{ url_for('admin_award_ceremonies') }}" class="soft-btn text-sm px-4 py-2">Events</a>
+  </div>
+</div>
+
+<!-- Summary Stats -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400">Total Shown</div>
+    <div class="text-xl sm:text-2xl font-semibold text-indigo-600 dark:text-indigo-400">{{ total }}</div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400">Events</div>
+    <div class="text-xl sm:text-2xl font-semibold text-slate-800 dark:text-slate-100">{{ ceremonies|length }}</div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400">Active Events</div>
+    <div class="text-xl sm:text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{{ ceremonies|selectattr('active')|list|length }}</div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500 dark:text-gray-400">Public Link</div>
+    <a href="{{ url_for('award_ceremony_register', _external=True) }}" class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline break-all">Registration Form</a>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="soft-card p-4 mb-4">
+  <form id="regFilters" class="grid gap-4 md:grid-cols-5">
+    <div class="md:col-span-2 flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Search</label>
+      <input id="regSearch" value="{{ search or '' }}" class="soft-input" placeholder="Name, email, student ID, phone…" />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Ceremony</label>
+      <select id="ceremonySel" class="soft-input">
+        <option value="">All Events</option>
+        {% for c in ceremonies %}
+        <option value="{{ c.id }}" {% if sel_ceremony == c.id %}selected{% endif %}>{{ c.name }}{% if c.date %} ({{ c.date.strftime('%d %b %Y') }}){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-500">Year Group</label>
+      <select id="yearSel" class="soft-input">
+        <option value="">All</option>
+        {% for yg in year_groups %}
+        <option value="{{ yg }}" {% if sel_year_group == yg %}selected{% endif %}>{{ yg|replace('year', 'Year ') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end gap-2">
+      <button id="applyFilters" class="soft-btn bg-slate-100 w-full" type="button">Apply</button>
+      <button id="clearFilters" class="soft-btn bg-slate-100" type="button">Clear</button>
+    </div>
+  </form>
+</div>
+
+<!-- Table -->
+<div class="soft-card p-0">
+  <!-- Mobile cards -->
+  <div class="block md:hidden divide-y divide-slate-100 dark:divide-slate-700">
+    {% for r in registrations %}
+    <div class="p-3">
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">{{ r.child_name }}</div>
+        <span class="soft-badge text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">{{ r.ceremony.name if r.ceremony else '—' }}</span>
+      </div>
+      <div class="mt-1 grid grid-cols-2 gap-1 text-[12px] text-slate-600 dark:text-slate-300">
+        <div><span class="font-medium text-slate-700 dark:text-slate-200">Student ID:</span> {{ r.student_id }}</div>
+        <div><span class="font-medium text-slate-700 dark:text-slate-200">Year:</span> {{ r.year_group|replace('year','Year ') if r.year_group else '—' }}</div>
+        <div><span class="font-medium text-slate-700 dark:text-slate-200">Email:</span> {{ r.email }}</div>
+        <div><span class="font-medium text-slate-700 dark:text-slate-200">Phone:</span> {{ r.phone }}</div>
+      </div>
+      <div class="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{{ r.created_at.strftime('%d %b %Y %H:%M') if r.created_at else '—' }}</div>
+      <div class="mt-2 flex items-center gap-3 text-[12px]">
+        <a class="text-indigo-600 dark:text-indigo-400 hover:underline" href="{{ url_for('admin_award_registration_detail', reg_id=r.id) }}">View</a>
+        <span class="text-slate-300">|</span>
+        <form method="post" action="{{ url_for('admin_award_registration_delete', reg_id=r.id) }}" onsubmit="return confirm('Delete this registration?')" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="text-rose-600 dark:text-rose-400 hover:underline" type="submit">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+    {% if not registrations %}
+    <div class="p-6 text-center text-slate-400 dark:text-slate-500">No registrations found.</div>
+    {% endif %}
+  </div>
+
+  <!-- Desktop table -->
+  <div class="hidden md:block overflow-x-auto">
+    <table class="min-w-full text-sm" id="allRegsTable" data-sortable data-paginate data-page-size="25">
+      <thead class="bg-slate-100/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold tracking-wide uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">#</th>
+          <th class="px-4 py-3 text-left">Child Name</th>
+          <th class="px-4 py-3 text-left">Student ID</th>
+          <th class="px-4 py-3 text-left">Year Group</th>
+          <th class="px-4 py-3 text-left">Email</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Phone</th>
+          <th class="px-4 py-3 text-left">Ceremony</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Event Date</th>
+          <th class="px-4 py-3 text-left">Registered</th>
+          <th class="px-4 py-3 text-center no-sort">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+        {% for r in registrations %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ r.id }}</td>
+          <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">
+            <a href="{{ url_for('admin_award_registration_detail', reg_id=r.id) }}" class="hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline">{{ r.child_name }}</a>
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 font-mono text-xs">{{ r.student_id }}</td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ r.year_group|replace('year','Year ') if r.year_group else '—' }}</td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 text-xs">{{ r.email }}</td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 text-xs hidden lg:table-cell">{{ r.phone }}</td>
+          <td class="px-4 py-3">
+            <a href="{{ url_for('admin_award_ceremony_registrations', id=r.ceremony_id) }}" class="soft-badge text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 hover:underline">{{ r.ceremony.name if r.ceremony else '—' }}</a>
+          </td>
+          <td class="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs hidden lg:table-cell">{{ r.ceremony.date.strftime('%d %b %Y') if r.ceremony and r.ceremony.date else '—' }}</td>
+          <td class="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{{ r.created_at.strftime('%d %b %Y %H:%M') if r.created_at else '—' }}</td>
+          <td class="px-4 py-3 text-center">
+            <div class="flex items-center justify-center gap-2">
+              <a href="{{ url_for('admin_award_registration_detail', reg_id=r.id) }}" class="soft-btn text-xs px-2 py-1">View</a>
+              <form method="post" action="{{ url_for('admin_award_registration_delete', reg_id=r.id) }}" onsubmit="return confirm('Delete this registration?')" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="soft-btn soft-btn-danger text-xs px-2 py-1">Del</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not registrations %}
+        <tr>
+          <td colspan="10" class="px-4 py-8 text-center text-slate-400 dark:text-slate-500">No registrations found.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function(){
+  const searchEl = document.getElementById('regSearch');
+  const ceremonySel = document.getElementById('ceremonySel');
+  const yearSel = document.getElementById('yearSel');
+  const applyBtn = document.getElementById('applyFilters');
+  const clearBtn = document.getElementById('clearFilters');
+
+  function apply(){
+    const p = new URLSearchParams();
+    const sv = searchEl.value.trim(); if (sv) p.set('search', sv);
+    if (ceremonySel.value) p.set('ceremony', ceremonySel.value);
+    if (yearSel.value) p.set('year_group', yearSel.value);
+    window.location = '?' + p.toString();
+  }
+  applyBtn.addEventListener('click', apply);
+  clearBtn.addEventListener('click', function(){ window.location = window.location.pathname; });
+  searchEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); apply(); }});
+})();
+</script>
+{% endblock %}

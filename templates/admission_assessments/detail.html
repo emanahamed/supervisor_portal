@@ -97,41 +97,39 @@
 
   <div class="grid gap-6 xl:grid-cols-[2fr,1fr]">
     <section class="space-y-6">
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <form method="post" action="{{ url_for('admission_assessment_update_status', submission_id=submission.id) }}" class="space-y-4" data-assessment-submit>
+      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+        <form method="post" action="{{ url_for('admission_assessment_save_scores', submission_id=submission.id) }}" class="space-y-6" data-assessment-submit>
           {{ csrf_field() }}
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 class="text-base font-semibold text-slate-800">Status &amp; next step</h3>
-              <p class="text-xs text-slate-500">Last change {{ submission.status_updated_at|fmt_datetime if submission.status_updated_at else '—' }}</p>
+
+          {# ── Status & next step ────────────────────────────────── #}
+          <div class="space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold text-slate-800">Status &amp; next step</h3>
+                <p class="text-xs text-slate-500">Last change {{ submission.status_updated_at|fmt_datetime if submission.status_updated_at else '—' }}</p>
+              </div>
+              <span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">{{ submission.status or 'Application Submitted' }}</span>
             </div>
-            <span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">{{ submission.status or 'Application Submitted' }}</span>
-          </div>
-          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr),auto]">
             <select class="soft-input w-full rounded-xl border-slate-200" name="status">
               {% for s in statuses %}
               <option value="{{ s }}" {% if (submission.status or 'Application Submitted') == s %}selected{% endif %}>{{ s }}</option>
               {% endfor %}
             </select>
-            <button type="submit" class="soft-btn soft-btn-primary px-6">Update</button>
           </div>
-        </form>
-      </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 class="text-base font-semibold text-slate-800">Assessment scores</h3>
-            <p class="text-xs text-slate-500">Percentages auto-calculate when you update marks or totals.</p>
-          </div>
-          {% if submission.parent_email %}
-          <span class="text-[11px] text-slate-400">Parent email: {{ submission.parent_email }}</span>
-          {% endif %}
-        </div>
+          <hr class="border-slate-200" />
 
-        <form method="post" action="{{ url_for('admission_assessment_save_scores', submission_id=submission.id) }}" class="space-y-4" data-assessment-submit>
-          {{ csrf_field() }}
+          {# ── Assessment scores ─────────────────────────────────── #}
           <div class="space-y-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold text-slate-800">Assessment scores</h3>
+                <p class="text-xs text-slate-500">Percentages auto-calculate when you update marks or totals.</p>
+              </div>
+              {% if submission.parent_email %}
+              <span class="text-[11px] text-slate-400">Parent email: {{ submission.parent_email }}</span>
+              {% endif %}
+            </div>
             {% for subj in subjects %}
             {% set score = scores_map.get(subj) %}
               <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm" data-score-card>
@@ -168,8 +166,8 @@
             {% endif %}
           </div>
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <button type="submit" class="soft-btn soft-btn-primary">Save scores</button>
-            <span class="text-[11px] text-slate-400">Save updates before sending to parents.</span>
+            <button type="submit" class="soft-btn soft-btn-primary">Save</button>
+            <span class="text-[11px] text-slate-400">Saves status and score changes.</span>
           </div>
         </form>
 

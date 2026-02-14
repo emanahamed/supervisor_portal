@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block page_title %}Registration Detail — {{ reg.child_name }}{% endblock %}
+{% block content %}
+
+<!-- Breadcrumb -->
+<div class="mb-4">
+  <a href="{{ url_for('admin_all_award_registrations') }}" class="inline-flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+    All Registrations
+  </a>
+</div>
+
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">{{ reg.child_name }}</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Registration #{{ reg.id }}</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <form method="post" action="{{ url_for('admin_award_registration_delete', reg_id=reg.id) }}" onsubmit="return confirm('Delete this registration permanently?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="soft-btn soft-btn-danger text-sm px-4 py-2 flex items-center gap-2">
+        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+        Delete
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Detail Cards -->
+<div class="grid md:grid-cols-2 gap-4 mb-4">
+  <!-- Registration Details -->
+  <div class="soft-card p-5">
+    <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
+      <svg class="h-4 w-4 text-indigo-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+      Registration Details
+    </h2>
+    <dl class="space-y-3 text-sm">
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Child Name</dt>
+        <dd class="font-medium text-slate-800 dark:text-slate-100">{{ reg.child_name }}</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Student ID</dt>
+        <dd class="font-mono text-slate-800 dark:text-slate-100">{{ reg.student_id }}</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Year Group</dt>
+        <dd class="text-slate-800 dark:text-slate-100">{{ reg.year_group|replace('year','Year ') if reg.year_group else '—' }}</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Email</dt>
+        <dd class="text-slate-800 dark:text-slate-100"><a href="mailto:{{ reg.email }}" class="text-indigo-600 dark:text-indigo-400 hover:underline">{{ reg.email }}</a></dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Phone</dt>
+        <dd class="text-slate-800 dark:text-slate-100">{{ reg.phone }}</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Registered At</dt>
+        <dd class="text-slate-800 dark:text-slate-100">{{ reg.created_at.strftime('%d %B %Y at %H:%M') if reg.created_at else '—' }}</dd>
+      </div>
+    </dl>
+  </div>
+
+  <!-- Ceremony Details -->
+  <div class="soft-card p-5">
+    <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2">
+      <svg class="h-4 w-4 text-indigo-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
+      Ceremony Event
+    </h2>
+    {% if reg.ceremony %}
+    <dl class="space-y-3 text-sm">
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Event Name</dt>
+        <dd class="font-medium text-slate-800 dark:text-slate-100">
+          <a href="{{ url_for('admin_award_ceremony_registrations', id=reg.ceremony.id) }}" class="text-indigo-600 dark:text-indigo-400 hover:underline">{{ reg.ceremony.name }}</a>
+        </dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Date</dt>
+        <dd class="text-slate-800 dark:text-slate-100">{{ reg.ceremony.date.strftime('%d %B %Y') if reg.ceremony.date else '—' }}</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Time</dt>
+        <dd class="text-slate-800 dark:text-slate-100">{{ reg.ceremony.time or '—' }}</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Venue</dt>
+        <dd class="text-slate-800 dark:text-slate-100">{{ reg.ceremony.venue or '—' }}</dd>
+      </div>
+      {% if reg.ceremony.address %}
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Address</dt>
+        <dd class="text-slate-800 dark:text-slate-100 text-right max-w-[200px]">{{ reg.ceremony.address }}</dd>
+      </div>
+      {% endif %}
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Status</dt>
+        <dd>
+          <span class="soft-badge text-[10px] {{ 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' if reg.ceremony.active else 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400' }}">
+            {{ 'Active' if reg.ceremony.active else 'Inactive' }}
+          </span>
+        </dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500 dark:text-slate-400">Total Registrations</dt>
+        <dd class="font-semibold text-indigo-600 dark:text-indigo-400">{{ reg.ceremony.registration_count() }}</dd>
+      </div>
+    </dl>
+    {% else %}
+    <p class="text-sm text-slate-400 dark:text-slate-500">Ceremony data not available.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

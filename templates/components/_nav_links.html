@@ -183,7 +183,7 @@
           x-collapse
           class="mt-1 space-y-0.5 border-l border-brand-indigo-200/50 dark:border-brand-blue-900 pl-3"
         >
-          {% if current_user.is_superadmin %}
+          {% if can('manage_users') %}
           <li>
             <a
               href="{{ url_for('approve_users') }}"
@@ -242,6 +242,24 @@
                 <path d="M13 17h8" />
               </svg>
               <span>User Overrides</span>
+            </a>
+          </li>
+          <li>
+            <a
+              href="{{ url_for('access_control_summary') }}"
+              class="nav-leaf {{ 'active' if endpoint=='access_control_summary' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 12l2 2 4-4" />
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+              </svg>
+              <span>Access Summary</span>
             </a>
           </li>
           <li>
@@ -538,8 +556,8 @@
           </li>
           <li>
             <a
-              href="{{ url_for('admin_award_ceremonies') }}"
-              class="nav-leaf {{ 'active' if endpoint=='admin_award_ceremony_registrations' else '' }}"
+              href="{{ url_for('admin_all_award_registrations') }}"
+              class="nav-leaf {{ 'active' if endpoint in ['admin_all_award_registrations','admin_award_registration_detail','admin_award_ceremony_registrations'] else '' }}"
             >
               <svg
                 class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
@@ -1013,6 +1031,7 @@
       </div>
     </li>
     {% endif %}
+    {% if can('manage_issues') %}
     <li>
       <a
         href="{{ url_for('issues_index') }}"
@@ -1032,6 +1051,7 @@
         Issues
       </a>
     </li>
+    {% endif %}
     {% endif %} {# Meetings (M) #} {% if can('manage_meetings') or
     can('manage_appointments') %}
     <li>

@@ -86,13 +86,7 @@ page_title %}Tasks{% endblock %} {% block content %}
         {% for u in users %}
         <option
           value="{{ u.id }}"
-          {%
-          if
-          selected_assigned=""
-          ="u.id"
-          %}selected{%
-          endif
-          %}
+          {% if selected_assigned == u.id %}selected{% endif %}
         >
           {{ u.name }}
         </option>
@@ -111,15 +105,7 @@ page_title %}Tasks{% endblock %} {% block content %}
         {% for s in statuses %}
         <option
           value="{{ s }}"
-          {%
-          if
-          selected_status
-          and
-          selected_status[0]=""
-          ="s"
-          %}selected{%
-          endif
-          %}
+          {% if selected_status and selected_status[0] == s %}selected{% endif %}
         >
           {{ s }}
         </option>
@@ -137,15 +123,7 @@ page_title %}Tasks{% endblock %} {% block content %}
         {% for c in criticalities %}
         <option
           value="{{ c }}"
-          {%
-          if
-          selected_criticality
-          and
-          selected_criticality[0]=""
-          ="c"
-          %}selected{%
-          endif
-          %}
+          {% if selected_criticality and selected_criticality[0] == c %}selected{% endif %}
         >
           {{ c }}
         </option>
@@ -163,15 +141,7 @@ page_title %}Tasks{% endblock %} {% block content %}
         {% for u in urgencies %}
         <option
           value="{{ u }}"
-          {%
-          if
-          selected_urgency
-          and
-          selected_urgency[0]=""
-          ="u"
-          %}selected{%
-          endif
-          %}
+          {% if selected_urgency and selected_urgency[0] == u %}selected{% endif %}
         >
           {{ u }}
         </option>
@@ -270,25 +240,13 @@ page_title %}Tasks{% endblock %} {% block content %}
               <select class="soft-input py-1 px-1 text-xs h-7" name="status">
                 <option
                   value="Pending"
-                  {%
-                  if
-                  t.status=""
-                  ="Pending"
-                  %}selected{%
-                  endif
-                  %}
+                  {% if t.status == 'Pending' %}selected{% endif %}
                 >
                   Pending
                 </option>
                 <option
                   value="Done"
-                  {%
-                  if
-                  t.status=""
-                  ="Done"
-                  %}selected{%
-                  endif
-                  %}
+                  {% if t.status == 'Done' %}selected{% endif %}
                 >
                   Done
                 </option>

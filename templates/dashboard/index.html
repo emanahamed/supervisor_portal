@@ -260,8 +260,7 @@ content %}
           >Complete now</a
         >.
       </div>
-      {% endif %} {% if current_user.is_superadmin or current_user.role in
-      ['admin','centre_manager'] %}
+      {% endif %} {% if can('manage_eod_checklist') %}
       <div class="text-sm">
         <div
           class="text-[11px] uppercase tracking-wide text-slate-500 dark:text-gray-400 mb-1"

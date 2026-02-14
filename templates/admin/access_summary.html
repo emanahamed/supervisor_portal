@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}Access Control Summary{% endblock %}
+{% block page_title %}Access Control Summary{% endblock %}
+{% block content %}
+<div class="mb-6 flex items-center justify-between flex-wrap gap-4">
+  <div>
+    <h2 class="text-lg font-semibold text-slate-700 dark:text-gray-300">Access Control Summary</h2>
+    <p class="text-xs text-slate-500 dark:text-gray-400 mt-1">
+      Complete audit view of all permissions, role assignments, and effective user access.
+      {{ perms|length }} permissions &middot; {{ known_roles|length }} roles &middot; {{ user_access|length }} active users
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{{ url_for('role_permissions') }}" class="soft-btn bg-slate-100 dark:bg-gray-800 text-xs">Edit Role Permissions</a>
+    <a href="{{ url_for('user_permissions') }}" class="soft-btn bg-slate-100 dark:bg-gray-800 text-xs">User Overrides</a>
+  </div>
+</div>
+
+<!-- Role Permission Matrix -->
+<div class="soft-card p-4 mb-6">
+  <h3 class="text-sm font-semibold text-slate-700 dark:text-gray-300 mb-3">Role Permission Matrix</h3>
+  <p class="text-xs text-slate-500 dark:text-gray-400 mb-4">
+    Shows which permissions each role has by default. Superadmin automatically has all permissions.
+  </p>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-xs" data-sortable>
+      <thead class="bg-slate-100 dark:bg-gray-800/70 text-slate-600 dark:text-gray-400 text-[10px] font-semibold tracking-wide uppercase">
+        <tr class="border-b border-slate-200 dark:border-gray-700">
+          <th class="py-2 px-3 text-left sticky left-0 bg-slate-100 dark:bg-gray-800/70 z-10">Permission</th>
+          {% for role in known_roles %}
+          <th class="py-2 px-3 text-center">{{ role|replace('_', ' ')|title }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-gray-700/50">
+        {% for group in permission_groups %}
+        <tr class="bg-slate-50 dark:bg-gray-800/40">
+          <td colspan="{{ known_roles|length + 1 }}" class="py-2 px-3 font-semibold text-[11px] text-slate-600 dark:text-gray-400 uppercase tracking-wide">
+            {{ group.label }}
+            {% if group.description %}<span class="font-normal text-slate-400 dark:text-gray-500 normal-case ml-2">{{ group.description }}</span>{% endif %}
+          </td>
+        </tr>
+        {% for p in group.permissions %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-gray-800">
+          <td class="py-1.5 px-3 sticky left-0 bg-white dark:bg-gray-900 z-10">
+            <span class="font-medium text-slate-700 dark:text-gray-300">{{ p.key }}</span>
+            {% if p.description %}
+            <span class="block text-[10px] text-slate-400 dark:text-gray-500">{{ p.description }}</span>
+            {% endif %}
+          </td>
+          {% for role in known_roles %}
+          <td class="py-1.5 px-3 text-center">
+            {% if p.key in role_map.get(role, []) %}
+            <span class="inline-block w-4 h-4 rounded-full bg-emerald-500 text-white text-[9px] leading-4">&check;</span>
+            {% else %}
+            <span class="inline-block w-4 h-4 rounded-full bg-slate-200 dark:bg-gray-700 text-slate-400 dark:text-gray-500 text-[9px] leading-4">&minus;</span>
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- User Effective Access -->
+<div class="soft-card p-4">
+  <h3 class="text-sm font-semibold text-slate-700 dark:text-gray-300 mb-3">User Effective Access</h3>
+  <p class="text-xs text-slate-500 dark:text-gray-400 mb-4">
+    Shows the effective permissions for each active user after applying role defaults and user-level overrides.
+    Users with overrides are highlighted.
+  </p>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-xs" data-sortable data-paginate data-page-size="25">
+      <thead class="bg-slate-100 dark:bg-gray-800/70 text-slate-600 dark:text-gray-400 text-[10px] font-semibold tracking-wide uppercase">
+        <tr class="border-b border-slate-200 dark:border-gray-700">
+          <th class="py-2 px-3 text-left sticky left-0 bg-slate-100 dark:bg-gray-800/70 z-10">User</th>
+          <th class="py-2 px-3 text-left">Role</th>
+          <th class="py-2 px-3 text-center">Overrides</th>
+          <th class="py-2 px-3 text-center">Permissions</th>
+          <th class="py-2 px-3 text-left">Effective Access</th>
+          <th class="py-2 px-3 text-left w-20">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-gray-700/50">
+        {% for entry in user_access %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-gray-800 {% if entry.override_count > 0 %}bg-amber-50/50 dark:bg-amber-900/10{% endif %}">
+          <td class="py-2 px-3 sticky left-0 bg-white dark:bg-gray-900 z-10">
+            <div class="font-medium text-slate-700 dark:text-gray-300">{{ entry.user.name }}</div>
+            <div class="text-[10px] text-slate-400 dark:text-gray-500">{{ entry.user.email }}</div>
+          </td>
+          <td class="py-2 px-3">
+            <span class="px-2 py-0.5 rounded text-[10px] font-medium
+              {% if entry.source == 'superadmin' %}bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400
+              {% elif entry.role == 'admin' %}bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400
+              {% elif entry.role == 'centre_manager' %}bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400
+              {% elif entry.role == 'supervisor' %}bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400
+              {% else %}bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-400{% endif %}">
+              {{ entry.role|replace('_', ' ')|title }}
+            </span>
+          </td>
+          <td class="py-2 px-3 text-center">
+            {% if entry.override_count > 0 %}
+            <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px] font-medium">
+              {{ entry.override_count }}
+            </span>
+            {% else %}
+            <span class="text-slate-300 dark:text-gray-600">&mdash;</span>
+            {% endif %}
+          </td>
+          <td class="py-2 px-3 text-center">
+            <span class="font-medium text-slate-700 dark:text-gray-300">{{ entry.effective|length }}</span>
+            <span class="text-slate-400 dark:text-gray-500">/ {{ all_keys|length }}</span>
+          </td>
+          <td class="py-2 px-3">
+            <div class="flex flex-wrap gap-0.5 max-w-md">
+              {% for key in all_keys|sort %}
+              {% if key in entry.effective %}
+              <span class="px-1 py-0 rounded text-[9px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" title="{{ perm_desc.get(key, key) }}">{{ key }}</span>
+              {% endif %}
+              {% endfor %}
+            </div>
+          </td>
+          <td class="py-2 px-3">
+            <a href="{{ url_for('user_permissions', user_id=entry.user.id) }}" class="text-indigo-600 dark:text-indigo-400 text-[10px] hover:underline">Edit</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

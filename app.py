@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import click
 import pandas as pd
-from flask import (Flask, abort, flash, jsonify, make_response, redirect,
+from flask import (Flask, abort, flash, g, jsonify, make_response, redirect,
                    render_template, request, send_file, send_from_directory,
                    session, url_for)
 from flask_login import (LoginManager, current_user, login_required,
@@ -1792,12 +1792,15 @@ def attendance_fix():
 
 @app.route('/attendance/fix/process', methods=['POST'])
 @login_required
+@permission_required('manage_attendance_fix')
 def attendance_process():
     try:
         year = int(request.form.get('year'))
         month = int(request.form.get('month'))
     except Exception:
         return ('Invalid year or month', 400)
+    if month < 1 or month > 12:
+        return ('Month must be between 1 and 12', 400)
     excel_file = request.files.get('excel_file')
     if not excel_file:
         return ('No file uploaded', 400)
@@ -1806,12 +1809,13 @@ def attendance_process():
         df = combine_all_sheets(excel_file, year, month)
     except Exception as e:
         return (f'Failed to process workbook: {e}', 500)
+    if df.empty:
+        return ('No valid attendance records found. Check that sheet names use the format staffId.staffId (e.g. 12.34) and contain data rows.', 400)
     start_date, end_date = compute_date_range(year, month)
     try:
         out = export_with_custom_header_to_bytes(df, start_date, end_date)
     except Exception as e:
         return (f'Failed to build output workbook: {e}', 500)
-    # Successful build – return generated file
     return send_file(out, as_attachment=True, download_name='Attendance_Fixed.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @login_manager.user_loader
@@ -2306,6 +2310,18 @@ def create_tables_and_superadmin():
             ('view_enrollments','View enrollment orders and student purchases'),
             # Award Ceremonies
             ('manage_award_ceremonies','Manage award ceremony events and registrations'),
+            # Resource Management
+            ('manage_resources','Manage resource inventory'),
+            # DBS & Compliance
+            ('manage_dbs','Manage DBS applications'),
+            # Settings & System
+            ('manage_settings','Manage system settings & configuration'),
+            ('manage_error_reports','View & manage error reports'),
+            # Timetabling Tools
+            ('access_timetable_main','Access main timetable generator'),
+            ('access_timetable_eastham','Access East Ham timetable generator'),
+            # Enrollment Tool
+            ('access_enrollment_tool','Access enrollment calculator tool'),
         ]
         existing_keys = {p.key for p in Permission.query.all()}
         for k, description in base_permissions:
@@ -2316,28 +2332,46 @@ def create_tables_and_superadmin():
         # Refresh permission list after potential inserts
         all_perm_keys = [p.key for p in Permission.query.all()]
 
-        # Default role permission seeds (updated taxonomy 0.9.3)
+        # Default role permission seeds (updated taxonomy 0.10.0)
+        # Now ADDITIVE — adds any missing default permissions even if the role
+        # already has some rows, so admin UI edits don't block new defaults.
         role_defaults = {
             'tutor': {'view_dashboard','manage_tasks','view_reports','submit_staff_invoices'},
             'staff': {'view_dashboard','manage_tasks','submit_staff_invoices'},
-            'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings','view_reports','manage_books','order_books','manage_students','manage_staff_invoices'},
-            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','view_reports','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment','manage_admission_assessments',
-                               'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list','manage_students'},
-            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff','manage_cycles','manage_issues','manage_availability','manage_meetings','manage_users','manage_attendance_fix','view_reports','manage_kids_club_invoices','manage_appointments','manage_students','manage_books','order_books','manage_pricing','manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices','manage_recruitment','manage_admission_assessments',
-                      'floor_dashboard','manage_shifts','manage_eod_checklist','manage_floor_reports','manage_call_list'},
+            'supervisor': {'view_dashboard','manage_tasks','manage_observations','manage_meetings',
+                           'view_reports','manage_books','order_books','manage_students',
+                           'manage_staff_invoices'},
+            'centre_manager': {'view_dashboard','manage_tasks','manage_observations','manage_staff',
+                               'manage_cycles','manage_issues','manage_availability','manage_meetings',
+                               'view_reports','manage_books','order_books','manage_pricing',
+                               'manage_student_concerns','manage_supervisor_shifts','manage_staff_invoices',
+                               'manage_recruitment','manage_admission_assessments','manage_award_ceremonies',
+                               'floor_dashboard','manage_shifts','manage_eod_checklist',
+                               'manage_floor_reports','manage_call_list','manage_students',
+                               'manage_resources','manage_dbs','manage_error_reports'},
+            'admin': {'view_dashboard','manage_tasks','manage_observations','manage_staff',
+                      'manage_cycles','manage_issues','manage_availability','manage_meetings',
+                      'manage_users','manage_attendance_fix','view_reports',
+                      'manage_kids_club_invoices','manage_appointments','manage_students',
+                      'manage_books','order_books','manage_pricing','manage_student_concerns',
+                      'manage_supervisor_shifts','manage_staff_invoices','manage_recruitment',
+                      'manage_admission_assessments','manage_award_ceremonies',
+                      'floor_dashboard','manage_shifts','manage_eod_checklist',
+                      'manage_floor_reports','manage_call_list','manage_resources',
+                      'manage_dbs','manage_settings','manage_error_reports',
+                      'manage_email_logs','manage_products','view_enrollments',
+                      'access_enrollment_tool','access_timetable_main',
+                      'access_timetable_eastham'},
         }
-        # Admin should also manage students (append if not present for backward runs)
-        role_defaults['admin'].add('manage_students')
-        role_defaults['centre_manager'].add('manage_students')
-        role_defaults['centre_manager'].add('manage_award_ceremonies')
-        role_defaults['admin'].add('manage_award_ceremonies')
-        role_defaults['supervisor'].add('manage_students')  # allow view/manage if desired
-        for role, perms in role_defaults.items():
-            has_any = RolePermission.query.filter_by(role=role).first()
-            if not has_any:
-                for pk in perms:
-                    if Permission.query.get(pk):
-                        db.session.add(RolePermission(role=role, permission_key=pk))
+        # Additive seeding: add any default permissions the role is missing
+        for role, default_perms in role_defaults.items():
+            existing_for_role = {
+                rp.permission_key
+                for rp in RolePermission.query.filter_by(role=role).all()
+            }
+            for pk in default_perms:
+                if pk not in existing_for_role and Permission.query.get(pk):
+                    db.session.add(RolePermission(role=role, permission_key=pk))
         # Ensure superadmin explicit role rows contain ALL permissions (even though bypass exists)
         for pk in all_perm_keys:
             if not RolePermission.query.filter_by(role='superadmin', permission_key=pk).first():
@@ -4630,7 +4664,7 @@ def floor_checklists_index():
 
     # Base query scoped by date and role
     query = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == selected_date)
-    is_admin = bool(getattr(current_user, 'is_superadmin', False) or current_user.role in ('admin','centre_manager'))
+    is_admin = bool(getattr(current_user, 'is_superadmin', False) or user_can('manage_eod_checklist'))
     if not is_admin:
         query = query.filter(EndOfDayChecklist.staff_user_id == current_user.id)
         staff_filter = current_user.id  # lock to self for non-admins
@@ -4730,7 +4764,7 @@ def floor_checklists_new():
 def floor_checklist_print(cid: int):
     cl = EndOfDayChecklist.query.get_or_404(cid)
     # Only allow owner or admins to print
-    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or cl.staff_user_id == current_user.id):
+    if not (user_can('manage_eod_checklist') or cl.staff_user_id == current_user.id):
         abort(403)
     return render_template('floor/checklists/print.html', cl=cl)
 
@@ -4741,7 +4775,7 @@ def floor_checklist_print(cid: int):
 def floor_checklist_pdf(cid: int):
     from xhtml2pdf import pisa
     cl = EndOfDayChecklist.query.get_or_404(cid)
-    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or cl.staff_user_id == current_user.id):
+    if not (user_can('manage_eod_checklist') or cl.staff_user_id == current_user.id):
         abort(403)
     # Render the same print template to HTML and convert to PDF
     html = render_template('floor/checklists/print.html', cl=cl)
@@ -4758,10 +4792,9 @@ def floor_checklist_pdf(cid: int):
 
 @app.route('/floor/checklists/<int:cid>/delete', methods=['POST'])
 @login_required
+@permission_required('manage_eod_checklist')
 def floor_checklists_delete(cid: int):
-    """Allow superadmin to delete an End of Day Checklist (irreversible)."""
-    if not getattr(current_user, 'is_superadmin', False):
-        abort(403)
+    """Allow users with manage_eod_checklist permission to delete an End of Day Checklist (irreversible)."""
     cl = EndOfDayChecklist.query.get_or_404(cid)
     try:
         db.session.delete(cl)
@@ -4775,17 +4808,17 @@ def floor_checklists_delete(cid: int):
 
 @app.route('/api/floor/checklists/today')
 @login_required
+@permission_required('manage_eod_checklist')
 def api_floor_checklists_today():
     today = date.today()
     q = EndOfDayChecklist.query.filter(EndOfDayChecklist.date == today)
-    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager')):
-        q = q.filter(EndOfDayChecklist.staff_user_id == current_user.id)
     rows = [c.serialize() for c in q.all()]
     return jsonify(rows)
 
 
 @app.route('/api/floor/reports/today')
 @login_required
+@permission_required('manage_floor_reports')
 def api_floor_reports_today():
     from models import PrintReport
     raw_date = (request.args.get('date') or '').strip()
@@ -4799,8 +4832,6 @@ def api_floor_reports_today():
     if not d:
         d = date.today()
     q = PrintReport.query.filter(PrintReport.date == d)
-    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager')):
-        q = q.filter(PrintReport.staff_user_id == current_user.id)
     rows = [r.serialize() for r in q.all()]
     return jsonify(rows)
 
@@ -4901,7 +4932,7 @@ def floor_reports_index():
     staff_filter = request.args.get('staff', type=int)
     q = (request.args.get('q') or '').strip()
 
-    is_admin = bool(getattr(current_user,'is_superadmin',False) or current_user.role in ('admin','centre_manager'))
+    is_admin = bool(getattr(current_user,'is_superadmin',False) or user_can('manage_floor_reports'))
     query = PrintReport.query.filter(PrintReport.date == selected_date)
     if not is_admin:
         query = query.filter(PrintReport.staff_user_id == current_user.id)
@@ -5822,7 +5853,7 @@ def floor_report_print(rid: int):
     from models import PrintReport
     pr = PrintReport.query.get_or_404(rid)
     # Only allow owner or admins to view
-    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or pr.staff_user_id == current_user.id):
+    if not (user_can('manage_floor_reports') or pr.staff_user_id == current_user.id):
         abort(403)
     return render_template('floor/reports/print.html', r=pr)
 
@@ -5837,7 +5868,7 @@ def floor_report_pdf(rid: int):
     """
     from models import PrintReport
     pr = PrintReport.query.get_or_404(rid)
-    if not (current_user.is_superadmin or current_user.role in ('admin','centre_manager') or pr.staff_user_id == current_user.id):
+    if not (user_can('manage_floor_reports') or pr.staff_user_id == current_user.id):
         abort(403)
     # For now, return the same printable HTML (browser can print to PDF)
     return render_template('floor/reports/print.html', r=pr)
@@ -6424,10 +6455,8 @@ def _force_password_change_gate():
         pass
 @app.route("/approve")
 @login_required
+@permission_required('manage_users')
 def approve_users():
-    if not current_user.is_superadmin:
-        flash("Only superadmin can approve users", "warning")
-        return redirect(url_for('index'))
     role_filter = request.args.get('role')
     q = User.query
     if role_filter and role_filter not in ('all',''):
@@ -6463,9 +6492,8 @@ def approve_users():
 
 @app.route('/approve/bulk-role', methods=['POST'])
 @login_required
+@permission_required('manage_users')
 def bulk_role_assign():
-    if not current_user.is_superadmin:
-        abort(403)
     ids_raw = request.form.get('user_ids','')
     target_role = (request.form.get('target_role') or '').strip().lower()
     legacy_alias = {'observer':'supervisor','lead':'centre_manager'}
@@ -6500,10 +6528,8 @@ def bulk_role_assign():
 
 @app.route("/approve/<int:uid>", methods=["POST"])
 @login_required
+@permission_required('manage_users')
 def approve_user(uid):
-    if not current_user.is_superadmin:
-        flash("Only superadmin can approve", "warning")
-        return redirect(url_for('approve_users'))
     u = User.query.get_or_404(uid)
     u.is_approved = True
     db.session.commit()
@@ -6512,10 +6538,11 @@ def approve_user(uid):
 
 @app.route("/approve/<int:uid>/toggle_sa", methods=["POST"])
 @login_required
+@permission_required('manage_users')
 def toggle_superadmin(uid):
+    # Only superadmins can toggle superadmin status
     if not current_user.is_superadmin:
-        flash("Only superadmin can toggle SA", "warning")
-        return redirect(url_for('approve_users'))
+        abort(403)
     u = User.query.get_or_404(uid)
     u.is_superadmin = not u.is_superadmin
     db.session.commit()
@@ -6524,9 +6551,8 @@ def toggle_superadmin(uid):
 
 @app.route('/approve/<int:uid>/role', methods=['POST'])
 @login_required
+@permission_required('manage_users')
 def set_user_role(uid):
-    if not current_user.is_superadmin:
-        abort(403)
     u = User.query.get_or_404(uid)
     role = request.form.get('role','').strip().lower()
     legacy_alias = {'observer': 'supervisor', 'lead': 'centre_manager'}
@@ -6548,16 +6574,15 @@ def set_user_role(uid):
 
 @app.route('/approve/<int:uid>/delete', methods=['POST'])
 @login_required
+@permission_required('manage_users')
 def delete_user(uid):
-    """Delete a user (superadmin only).
+    """Delete a user.
 
     Safety guards:
     - Cannot delete yourself.
     - Cannot delete the last remaining superadmin.
     - Blocks deletion if the user has dependent records (observations, meetings, tasks, appointment slots/bookings, permission audits, todos) to avoid orphaned references.
     """
-    if not current_user.is_superadmin:
-        abort(403)
     user = User.query.get_or_404(uid)
     if user.id == current_user.id:
         flash('You cannot delete your own account.', 'warning')
@@ -6596,9 +6621,8 @@ def delete_user(uid):
 
 @app.route('/approve/<int:uid>/toggle_active', methods=['POST'])
 @login_required
+@permission_required('manage_users')
 def toggle_user_active(uid):
-    if not current_user.is_superadmin:
-        abort(403)
     u = User.query.get_or_404(uid)
     if u.id == current_user.id and u.is_active is False:
         # allow re-activating self, but not deactivating self (avoid lockout)
@@ -6614,7 +6638,7 @@ def toggle_user_active(uid):
 @app.route('/approve/<int:uid>/picture', methods=['POST'])
 @login_required
 def upload_user_picture(uid):
-    if not current_user.is_superadmin and current_user.id != uid:
+    if not current_user.is_superadmin and not user_can('manage_users') and current_user.id != uid:
         abort(403)
     u = User.query.get_or_404(uid)
     file = request.files.get('picture')
@@ -6647,9 +6671,8 @@ def upload_user_picture(uid):
 
 @app.route('/approve/<int:uid>/reset-password', methods=['POST'])
 @login_required
+@permission_required('manage_users')
 def reset_user_password(uid):
-    if not current_user.is_superadmin:
-        abort(403)
     u = User.query.get_or_404(uid)
     try:
         temp_pwd = _generate_temp_password()
@@ -6674,12 +6697,14 @@ PERMISSION_GROUP_DEFINITIONS: OrderedDict[str, dict[str, object]] = OrderedDict(
         'core',
         {
             'label': 'Core Platform',
-            'description': 'Dashboard access and global workforce tools.',
+            'description': 'Dashboard access, global workforce tools and system administration.',
             'keys': [
                 'view_dashboard',
                 'manage_tasks',
                 'view_reports',
                 'manage_users',
+                'manage_settings',
+                'manage_error_reports',
             ],
         },
     ),
@@ -6716,12 +6741,13 @@ PERMISSION_GROUP_DEFINITIONS: OrderedDict[str, dict[str, object]] = OrderedDict(
         'resources',
         {
             'label': 'Resources & Curriculum',
-            'description': 'Book catalogues, tuition pricing and resource inventory.',
+            'description': 'Book catalogues, tuition pricing, resource inventory and DBS management.',
             'keys': [
                 'manage_books',
                 'order_books',
                 'manage_pricing',
                 'manage_resources',
+                'manage_dbs',
             ],
         },
     ),
@@ -6821,9 +6847,8 @@ def _organize_permissions(perms: list[Permission]) -> list[dict[str, object]]:
 # ---------------- Permission Management (0.9.0) ----------------
 @app.route('/admin/role-permissions', methods=['GET','POST'])
 @login_required
+@permission_required('manage_users')
 def role_permissions():
-    if not current_user.is_superadmin:
-        abort(403)
     # Dynamic roles (exclude superadmin which is implicit all-access)
     roles = sorted({r[0] for r in db.session.query(User.role).distinct() if r[0] and r[0] != 'superadmin'} | {'tutor','staff','supervisor','centre_manager','admin'})
     perms = Permission.query.order_by(Permission.key.asc()).all()
@@ -6882,14 +6907,12 @@ def role_permissions():
 
 @app.route('/admin/role-permissions/appointments', methods=['POST'])
 @login_required
+@permission_required('manage_users')
 def role_permissions_appointments():
     """Quick update endpoint to adjust only the manage_appointments permission per role.
 
     Does not disturb other role permissions (unlike full matrix save which rewrites all).
-    Superadmin only.
     """
-    if not current_user.is_superadmin:
-        abort(403)
     roles = sorted({r[0] for r in db.session.query(User.role).distinct() if r[0] and r[0] != 'superadmin'} | {'tutor','staff','supervisor','centre_manager','admin'})
     target_perm = 'manage_appointments'
     # Snapshot existing state
@@ -6928,9 +6951,8 @@ def role_permissions_appointments():
 
 @app.route('/admin/user-permissions', methods=['GET','POST'])
 @login_required
+@permission_required('manage_users')
 def user_permissions():
-    if not current_user.is_superadmin:
-        abort(403)
     user_id = request.args.get('user_id', type=int) or request.form.get('user_id', type=int)
     users = User.query.order_by(User.name.asc()).all()
     perms = Permission.query.order_by(Permission.key.asc()).all()
@@ -7008,6 +7030,70 @@ def user_permissions():
         overrides=overrides,
         permission_groups=permission_groups,
     )
+
+
+@app.route('/admin/access-summary')
+@login_required
+@permission_required('manage_users')
+def access_control_summary():
+    """Comprehensive access control summary showing all roles, their permissions,
+    and every user's effective access — useful for auditing and debugging access issues."""
+    perms = Permission.query.order_by(Permission.key.asc()).all()
+    perm_desc = {p.key: p.description for p in perms}
+    all_keys = [p.key for p in perms]
+
+    # Roles and their assigned permissions
+    known_roles = ['tutor', 'staff', 'supervisor', 'centre_manager', 'admin', 'superadmin']
+    role_map = {}
+    for role in known_roles:
+        if role == 'superadmin':
+            role_map[role] = set(all_keys)  # superadmin has everything
+        else:
+            role_map[role] = {
+                rp.permission_key
+                for rp in RolePermission.query.filter_by(role=role).all()
+            }
+
+    # All users with their effective permissions
+    users = User.query.filter_by(is_active=True).order_by(User.name.asc()).all()
+    user_access = []
+    for u in users:
+        if u.is_superadmin:
+            effective = set(all_keys)
+            source = 'superadmin'
+        else:
+            role = u.role or 'staff'
+            effective = set(role_map.get(role, set()))
+            source = role
+        # Apply user overrides
+        overrides = {up.permission_key: up.allow for up in UserPermission.query.filter_by(user_id=u.id).all()}
+        override_count = len(overrides)
+        for key, allow in overrides.items():
+            if allow:
+                effective.add(key)
+            else:
+                effective.discard(key)
+        user_access.append({
+            'user': u,
+            'role': u.role or 'staff',
+            'effective': effective,
+            'override_count': override_count,
+            'source': source,
+        })
+
+    permission_groups = _organize_permissions(perms)
+
+    return render_template(
+        'admin/access_summary.html',
+        perms=perms,
+        perm_desc=perm_desc,
+        all_keys=all_keys,
+        known_roles=known_roles,
+        role_map=role_map,
+        user_access=user_access,
+        permission_groups=permission_groups,
+    )
+
 
 # ---------------- Appointment Admin ---------------- #
 
@@ -7556,6 +7642,117 @@ def admin_award_ceremony_registrations(id):
         .order_by(AwardCeremonyRegistration.created_at.desc()).all()
     return render_template('admin/award_ceremony_registrations.html',
                            ceremony=ceremony, registrations=registrations)
+
+
+@app.route('/admin/award-ceremony-registrations')
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_all_award_registrations():
+    """View all award ceremony registrations across all events with search/filter."""
+    from models import AwardCeremony, AwardCeremonyRegistration
+    q = AwardCeremonyRegistration.query
+
+    # Filters
+    ceremony_id = request.args.get('ceremony', type=int)
+    if ceremony_id:
+        q = q.filter(AwardCeremonyRegistration.ceremony_id == ceremony_id)
+    year_group = request.args.get('year_group', '').strip()
+    if year_group:
+        q = q.filter(AwardCeremonyRegistration.year_group == year_group)
+    search = (request.args.get('search') or '').strip().lower()
+    if search:
+        q = q.filter(
+            db.or_(
+                db.func.lower(AwardCeremonyRegistration.child_name).like(f"%{search}%"),
+                db.func.lower(AwardCeremonyRegistration.email).like(f"%{search}%"),
+                db.func.lower(AwardCeremonyRegistration.student_id).like(f"%{search}%"),
+                db.func.lower(AwardCeremonyRegistration.phone).like(f"%{search}%"),
+            )
+        )
+
+    registrations = q.order_by(AwardCeremonyRegistration.created_at.desc()).all()
+    ceremonies = AwardCeremony.query.order_by(AwardCeremony.date.desc()).all()
+    year_groups = sorted({r.year_group for r in AwardCeremonyRegistration.query.with_entities(
+        AwardCeremonyRegistration.year_group).distinct().all() if r.year_group})
+    return render_template('admin/award_all_registrations.html',
+                           registrations=registrations, ceremonies=ceremonies,
+                           year_groups=year_groups, total=len(registrations),
+                           sel_ceremony=ceremony_id, sel_year_group=year_group, search=search)
+
+
+@app.route('/admin/award-ceremony-registrations/<int:reg_id>')
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_registration_detail(reg_id):
+    """View a single registration submission."""
+    from models import AwardCeremonyRegistration
+    reg = AwardCeremonyRegistration.query.get_or_404(reg_id)
+    return render_template('admin/award_registration_detail.html', reg=reg)
+
+
+@app.route('/admin/award-ceremony-registrations/<int:reg_id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_award_registration_delete(reg_id):
+    """Delete a single registration."""
+    from models import AwardCeremonyRegistration
+    reg = AwardCeremonyRegistration.query.get_or_404(reg_id)
+    ceremony_name = reg.ceremony.name if reg.ceremony else 'Unknown'
+    db.session.delete(reg)
+    db.session.commit()
+    flash(f'Registration for "{reg.child_name}" ({ceremony_name}) deleted.', 'success')
+    ref = request.referrer
+    if ref and 'award-ceremony-registrations' in ref:
+        return redirect(ref)
+    return redirect(url_for('admin_all_award_registrations'))
+
+
+@app.route('/admin/award-ceremony-registrations/export')
+@login_required
+@permission_required('manage_award_ceremonies')
+def admin_all_award_registrations_export():
+    """Export all (or filtered) award ceremony registrations as XLSX."""
+    import io
+
+    import pandas as pd
+
+    from models import AwardCeremonyRegistration
+    q = AwardCeremonyRegistration.query
+    ceremony_id = request.args.get('ceremony', type=int)
+    if ceremony_id:
+        q = q.filter(AwardCeremonyRegistration.ceremony_id == ceremony_id)
+    year_group = request.args.get('year_group', '').strip()
+    if year_group:
+        q = q.filter(AwardCeremonyRegistration.year_group == year_group)
+    search = (request.args.get('search') or '').strip().lower()
+    if search:
+        q = q.filter(
+            db.or_(
+                db.func.lower(AwardCeremonyRegistration.child_name).like(f"%{search}%"),
+                db.func.lower(AwardCeremonyRegistration.email).like(f"%{search}%"),
+                db.func.lower(AwardCeremonyRegistration.student_id).like(f"%{search}%"),
+            )
+        )
+    registrations = q.order_by(AwardCeremonyRegistration.created_at.desc()).all()
+    data = []
+    for r in registrations:
+        data.append({
+            'Ceremony': r.ceremony.name if r.ceremony else '',
+            'Ceremony Date': r.ceremony.date.strftime('%d %b %Y') if r.ceremony and r.ceremony.date else '',
+            'Child Name': r.child_name,
+            'Student ID': r.student_id,
+            'Year Group': (r.year_group or '').replace('year', 'Year '),
+            'Email': r.email,
+            'Phone': r.phone,
+            'Registered At': r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '',
+        })
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='All Registrations')
+    out.seek(0)
+    return send_file(out, as_attachment=True, download_name='award_ceremony_all_registrations.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.route('/admin/award-ceremonies/<int:id>/export')
@@ -8200,6 +8397,7 @@ def reset_with_token(token):
 # ---------------- STAFF CRUD + Import/Export ----------------
 @app.route("/staff")
 @login_required
+@permission_required('manage_staff')
 def staff_index():
     q = Staff.query
     # Multi-select branch (?branch=Whitechapel&branch=Stratford) and department (?department=Science)
@@ -8259,6 +8457,7 @@ def staff_index():
 
 @app.route("/staff/new", methods=["GET","POST"])
 @login_required
+@permission_required('manage_staff')
 def staff_new():
     form = StaffForm()
     # Ensure branch multiselect choices are populated
@@ -8417,6 +8616,7 @@ def staff_new():
 
 @app.route("/staff/<int:sid>/edit", methods=["GET","POST"])
 @login_required
+@permission_required('manage_staff')
 def staff_edit(sid):
     s = Staff.query.get_or_404(sid)
     form = StaffForm()
@@ -8587,6 +8787,7 @@ def staff_edit(sid):
 
 @app.route("/staff/<int:sid>/delete")
 @login_required
+@permission_required('manage_staff')
 def staff_delete(sid):
     s = Staff.query.get_or_404(sid)
     db.session.delete(s)
@@ -8596,6 +8797,7 @@ def staff_delete(sid):
 
 @app.route('/staff/<int:sid>/toggle')
 @login_required
+@permission_required('manage_staff')
 def staff_toggle_active(sid):
     s = Staff.query.get_or_404(sid)
     s.active = not bool(s.active)
@@ -8615,6 +8817,7 @@ def staff_toggle_active(sid):
 
 @app.route('/api/staff/<int:sid>/toggle-active', methods=['POST'])
 @login_required
+@permission_required('manage_staff')
 def staff_toggle_active_api(sid: int):
     s = Staff.query.get_or_404(sid)
     s.active = not bool(s.active)
@@ -8907,6 +9110,7 @@ def api_postcodes_addresses():
 
 @app.route('/staff/<int:sid>/upload-photo', methods=['POST'])
 @login_required
+@permission_required('manage_staff')
 def staff_upload_photo(sid: int):
     s = Staff.query.get_or_404(sid)
     photo_file = request.files.get('photo')
@@ -8956,6 +9160,7 @@ def staff_map_user(sid: int):
 
 @app.route('/staff/<int:sid>')
 @login_required
+@permission_required('manage_staff')
 def staff_detail(sid: int):
     """Detail view for a staff member including recent change log (up to 200 entries)."""
     from models import StaffChange  # local import to avoid circular issues
@@ -9022,6 +9227,7 @@ def staff_detail(sid: int):
 
 @app.route('/staff/<int:sid>/changes/export')
 @login_required
+@permission_required('manage_staff')
 def staff_changes_export(sid: int):
     """Export (filtered) staff change log as CSV."""
     from models import StaffChange
@@ -11385,6 +11591,7 @@ def api_books():
 
 @app.route("/staff/import", methods=["GET","POST"])
 @login_required
+@permission_required('manage_staff')
 def staff_import():
     preview = None
     token = None
@@ -11506,6 +11713,7 @@ def staff_import():
 
 @app.route("/staff/export")
 @login_required
+@permission_required('manage_staff')
 def staff_export():
     rows = Staff.query.all()
     output = io.StringIO()
@@ -11521,12 +11729,14 @@ def staff_export():
 # ---------------- Cycles CRUD ----------------
 @app.route("/cycles")
 @login_required
+@permission_required('manage_cycles')
 def cycles_index():
     cycles = ObservationCycle.query.order_by(ObservationCycle.start_date.desc().nullslast()).all()
     return render_template("cycles/index.html", cycles=cycles)
 
 @app.route("/cycles/new", methods=["GET","POST"])
 @login_required
+@permission_required('manage_cycles')
 def cycle_new():
     form = CycleForm()
     if form.validate_on_submit():
@@ -11539,6 +11749,7 @@ def cycle_new():
 
 @app.route("/cycles/<int:cid>/edit", methods=["GET","POST"])
 @login_required
+@permission_required('manage_cycles')
 def cycle_edit(cid):
     c = ObservationCycle.query.get_or_404(cid)
     form = CycleForm()
@@ -11557,6 +11768,7 @@ def cycle_edit(cid):
 
 @app.route("/cycles/<int:cid>/delete")
 @login_required
+@permission_required('manage_cycles')
 def cycle_delete(cid):
     c = ObservationCycle.query.get_or_404(cid)
     db.session.delete(c)
@@ -11567,6 +11779,7 @@ def cycle_delete(cid):
 # ---------------- Availability CRUD & Import ----------------
 @app.route('/availability')
 @login_required
+@permission_required('manage_availability')
 def availability_index():
     # Remote API sync disabled – use only locally stored availability data
     sync_count = None
@@ -11744,6 +11957,7 @@ def availability_index():
 
 @app.route('/availability/import_xlsx', methods=['POST'])
 @login_required
+@permission_required('manage_availability')
 def availability_import_xlsx():
     if request.is_json:
         payload = request.get_json(silent=True) or {}
@@ -11917,6 +12131,7 @@ def availability_import_xlsx():
 
 @app.route('/availability/changelog')
 @login_required
+@permission_required('manage_availability')
 def availability_changelog():
     staff_filter = (request.args.get('staff') or '').strip()
     field_filter = (request.args.get('field') or '').strip()
@@ -11965,6 +12180,7 @@ def availability_changelog():
 
 @app.route('/availability/bulk', methods=['POST'])
 @login_required
+@permission_required('manage_availability')
 def availability_bulk():
     action = (request.form.get('action') or '').strip().lower()
     raw_ids = request.form.getlist('ids')
@@ -12055,6 +12271,7 @@ except Exception:
 
 @app.route('/availability/new', methods=['GET','POST'])
 @login_required
+@permission_required('manage_availability')
 def availability_new():
     form = AvailabilityForm()
     ensure_form_branch_choices(form)
@@ -12121,6 +12338,7 @@ def availability_new():
 
 @app.route('/availability/<int:aid>/edit', methods=['GET','POST'])
 @login_required
+@permission_required('manage_availability')
 def availability_edit(aid):
     a = Availability.query.get_or_404(aid)
     form = AvailabilityForm()
@@ -12192,6 +12410,7 @@ def availability_edit(aid):
 
 @app.route('/availability/<int:aid>/delete')
 @login_required
+@permission_required('manage_availability')
 def availability_delete(aid):
     a = Availability.query.get_or_404(aid)
     db.session.delete(a)
@@ -12201,6 +12420,7 @@ def availability_delete(aid):
 
 @app.route('/availability/import_remote', methods=['POST'])
 @login_required
+@permission_required('manage_availability')
 def availability_import_remote():
     flash('Remote availability import has been disabled. Use the New/Edit forms to manage availability data locally.', 'info')
     return redirect(url_for('availability_index'))
@@ -12208,6 +12428,7 @@ def availability_import_remote():
 # ---------------- Issues (tracker) ----------------
 @app.route('/issues')
 @login_required
+@permission_required('manage_issues')
 def issues_index():
     # Base query
     q = Issue.query
@@ -12262,6 +12483,7 @@ def issues_index():
 
 @app.route('/issues/new', methods=['GET','POST'])
 @login_required
+@permission_required('manage_issues')
 def issue_new():
     form = IssueForm()
     # Ensure branch dropdown is populated consistently
@@ -12299,6 +12521,7 @@ def issue_new():
 
 @app.route('/issues/<int:iid>/edit', methods=['GET','POST'])
 @login_required
+@permission_required('manage_issues')
 def issue_edit(iid):
     issue = Issue.query.get_or_404(iid)
     form = IssueForm(obj=issue)
@@ -12338,6 +12561,7 @@ def issue_edit(iid):
 
 @app.route('/issues/<int:iid>/delete')
 @login_required
+@permission_required('manage_issues')
 def issue_delete(iid):
     issue = Issue.query.get_or_404(iid)
     db.session.delete(issue)
@@ -12348,6 +12572,7 @@ def issue_delete(iid):
 # ---------------- Meetings ----------------
 @app.route('/meetings')
 @login_required
+@permission_required('manage_meetings')
 def meetings_index():
     from datetime import date as _date
     from datetime import timedelta
@@ -12415,6 +12640,7 @@ def meetings_index():
 # Fallback: handle accidental POSTs to /meetings (collection) by treating as create
 @app.route('/meetings', methods=['POST'])
 @login_required
+@permission_required('manage_meetings')
 def meetings_index_post():
     """Fallback creation endpoint if the create form posts to /meetings instead of /meetings/new.
 
@@ -12497,6 +12723,7 @@ def meetings_index_post():
 
 @app.route('/meetings/new', methods=['GET','POST'])
 @login_required
+@permission_required('manage_meetings')
 def meeting_new():
     form = MeetingForm()
     eligible_users = User.query.filter(
@@ -12570,6 +12797,7 @@ def meeting_new():
 
 @app.route('/meetings/<int:mid>/edit', methods=['GET','POST'])
 @login_required
+@permission_required('manage_meetings')
 def meeting_edit(mid):
     m = Meeting.query.get_or_404(mid)
     form = MeetingForm(obj=m)
@@ -12608,6 +12836,7 @@ def meeting_edit(mid):
 
 @app.route('/meetings/<int:mid>/delete')
 @login_required
+@permission_required('manage_meetings')
 def meeting_delete(mid):
     m = Meeting.query.get_or_404(mid)
     try:
@@ -12622,6 +12851,7 @@ def meeting_delete(mid):
 # ---------------- To-Do Module ----------------
 @app.route('/todos')
 @login_required
+@permission_required('manage_tasks')
 def todos_index():
     # Filters: assigned_to (default: current user), status multi, criticality multi, urgency multi, search
     q = Todo.query
@@ -12679,6 +12909,7 @@ def todos_index():
 
 @app.route('/todos/new', methods=['GET','POST'])
 @login_required
+@permission_required('manage_tasks')
 def todo_new():
     form = TodoForm()
     users = User.query.order_by(User.name.asc()).all()
@@ -12737,6 +12968,7 @@ def todo_new():
 
 @app.route('/todos/<int:tid>/edit', methods=['GET','POST'])
 @login_required
+@permission_required('manage_tasks')
 def todo_edit(tid):
     t = Todo.query.get_or_404(tid)
     # Access: superadmin or creator or assigned user
@@ -12767,6 +12999,7 @@ def todo_edit(tid):
 
 @app.route('/todos/<int:tid>/delete')
 @login_required
+@permission_required('manage_tasks')
 def todo_delete(tid):
     t = Todo.query.get_or_404(tid)
     assigned = t.assigned_to_id
@@ -12777,6 +13010,7 @@ def todo_delete(tid):
 
 @app.route('/todos/<int:tid>/toggle', methods=['POST'])
 @login_required
+@permission_required('manage_tasks')
 def todo_toggle_status(tid):
     t = Todo.query.get_or_404(tid)
     # Only assigned user or creator can toggle; superadmin override
@@ -12791,6 +13025,7 @@ def todo_toggle_status(tid):
 
 @app.route('/todos/<int:tid>/status', methods=['POST'])
 @login_required
+@permission_required('manage_tasks')
 def todo_update_status(tid):
     """Direct status update via inline select (AJAX)."""
     t = Todo.query.get_or_404(tid)
@@ -12806,6 +13041,7 @@ def todo_update_status(tid):
 # ---------------- Observations CRUD + filters ----------------
 @app.route("/observations")
 @login_required
+@permission_required('manage_observations')
 def observations_index():
     q = Observation.query
     cycle_id = request.args.get('cycle_id', type=int)
@@ -12829,6 +13065,7 @@ def observations_index():
 
 @app.route("/observations/new", methods=["GET","POST"])
 @login_required
+@permission_required('manage_observations')
 def observation_new():
     form = ObservationForm()
     cycles = ObservationCycle.query.order_by(ObservationCycle.start_date.desc().nullslast()).all()
@@ -12849,6 +13086,7 @@ def observation_new():
 
 @app.route("/observations/<int:oid>/edit", methods=["GET","POST"])
 @login_required
+@permission_required('manage_observations')
 def observation_edit(oid):
     o = Observation.query.get_or_404(oid)
     cycles = ObservationCycle.query.order_by(ObservationCycle.start_date.desc().nullslast()).all()
@@ -12867,6 +13105,7 @@ def observation_edit(oid):
 
 @app.route("/observations/<int:oid>/delete")
 @login_required
+@permission_required('manage_observations')
 def observation_delete(oid):
     o = Observation.query.get_or_404(oid)
     cid = o.cycle_id
@@ -12891,6 +13130,7 @@ def _deserialize_checklist(prefix, form):
 
 @app.route('/observations/extended/new', methods=['GET','POST'])
 @login_required
+@permission_required('manage_observations')
 def observation_extended_new():
     cycles = ObservationCycle.query.order_by(ObservationCycle.start_date.desc().nullslast()).all()
     staff = Staff.query.order_by(Staff.name.asc()).all()
@@ -13031,6 +13271,7 @@ def observation_extended_new():
 
 @app.route('/observations/extended/<int:oid>/edit', methods=['GET','POST'])
 @login_required
+@permission_required('manage_observations')
 def observation_extended_edit(oid):
     from models import ObservationDetail
     obs = Observation.query.get_or_404(oid)
@@ -13113,6 +13354,7 @@ def observation_extended_edit(oid):
 
 @app.route('/observations/<int:oid>/report')
 @login_required
+@permission_required('manage_observations')
 def observation_report(oid):
     obs = Observation.query.get_or_404(oid)
     detail = obs.detail
@@ -13141,6 +13383,7 @@ def observation_report(oid):
 
 @app.route('/observations/<int:oid>/email')
 @login_required
+@permission_required('manage_observations')
 def observation_email(oid):
     obs = Observation.query.get_or_404(oid)
     detail = obs.detail
@@ -13212,6 +13455,7 @@ def observation_email(oid):
 
 @app.route('/observations/<int:oid>/debug_checklist')
 @login_required
+@permission_required('manage_observations')
 def observation_debug_checklist(oid):
     obs = Observation.query.get_or_404(oid)
     if not obs.detail:
@@ -15977,7 +16221,7 @@ def error_report_create():
 
 @app.route('/error-reports')
 @login_required
-@permission_required('manage_issues', any=True)
+@permission_required('manage_error_reports')
 def error_reports_index():
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 25, type=int), 100)
@@ -15987,14 +16231,14 @@ def error_reports_index():
 
 @app.route('/error-reports/<int:rid>')
 @login_required
-@permission_required('manage_issues', any=True)
+@permission_required('manage_error_reports')
 def error_report_detail(rid):
     rep = ErrorReport.query.get_or_404(rid)
     return render_template('errors/report_detail.html', report=rep)
 
 @app.route('/error-reports/<int:rid>/status', methods=['POST'])
 @login_required
-@permission_required('manage_issues', any=True)
+@permission_required('manage_error_reports')
 def error_report_status(rid):
     rep = ErrorReport.query.get_or_404(rid)
     new_status = (request.form.get('status') or '').strip() or rep.status
@@ -16019,8 +16263,6 @@ def error_report_status(rid):
 @login_required
 @permission_required('manage_users')
 def admin_public_forms():
-    if not getattr(current_user, 'is_superadmin', False):
-        abort(403)
     forms = _public_form_rows()
     total_urls = sum(len(row['urls']) for row in forms)
     return render_template('admin/public_forms.html', forms=forms, total_forms=len(forms), total_urls=total_urls)
@@ -17415,6 +17657,17 @@ def admission_assessment_delete(submission_id: int):
 @permission_required('manage_admission_assessments')
 def admission_assessment_save_scores(submission_id: int):
     submission = AdmissionAssessmentSubmission.query.get_or_404(submission_id)
+
+    # ── handle inline status update (merged into one form) ──────────
+    new_status = (request.form.get('status') or '').strip()
+    if new_status and new_status in ADMISSION_ASSESSMENT_STATUSES:
+        current_status = submission.status or 'Application Submitted'
+        if new_status != current_status:
+            submission.status = new_status
+            submission.status_updated_at = datetime.utcnow()
+            submission.updated_at = datetime.utcnow()
+            _record_assessment_change(submission, 'status', current_status, new_status)
+
     raw_rows: dict[str, dict[str, str]] = {}
     for key, value in request.form.items():
         if not key.startswith('scores-'):
@@ -17426,7 +17679,16 @@ def admission_assessment_save_scores(submission_id: int):
         raw_rows.setdefault(idx, {})[field] = value
 
     if not raw_rows:
-        flash('No score data submitted.', 'warning')
+        # No score fields but status may have changed
+        if db.session.is_modified(submission):
+            try:
+                db.session.commit()
+                flash('Status updated.', 'success')
+            except Exception as exc:
+                db.session.rollback()
+                flash(f'Failed to save: {exc}', 'danger')
+        else:
+            flash('No changes detected.', 'info')
         return redirect(url_for('admission_assessment_detail', submission_id=submission.id))
 
     errors: list[str] = []
@@ -17503,16 +17765,23 @@ def admission_assessment_save_scores(submission_id: int):
             new_json = json.dumps(new_payload) if new_payload is not None else None
             _record_assessment_change(submission, f'score:{subject}', old_json, new_json)
 
-    if updated_subjects:
+    # ── determine what changed and commit ─────────────────────────
+    status_changed = db.session.is_modified(submission)
+    if updated_subjects or status_changed:
         submission.updated_at = datetime.utcnow()
         try:
             db.session.commit()
-            flash(f'Scores saved for {len(updated_subjects)} subject(s).', 'success')
+            parts = []
+            if status_changed:
+                parts.append('Status updated')
+            if updated_subjects:
+                parts.append(f'Scores saved for {len(updated_subjects)} subject(s)')
+            flash('. '.join(parts) + '.', 'success')
         except Exception as exc:
             db.session.rollback()
-            flash(f'Failed to save scores: {exc}', 'danger')
+            flash(f'Failed to save: {exc}', 'danger')
     else:
-        flash('No score changes detected.', 'info')
+        flash('No changes detected.', 'info')
 
     for msg in errors:
         flash(msg, 'warning')
