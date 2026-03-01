@@ -286,10 +286,16 @@
         <svg class="h-5 w-5 text-brand-indigo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
         Document Uploads
       </h2>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">You must upload <strong>two separate</strong> proofs of address (e.g. utility bill, bank statement, council tax bill) dated within the last 3 months.</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Proof of Address (from last 3 months) <span class="text-red-500">*</span></label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Proof of Address 1 <span class="text-red-500">*</span></label>
           <input type="file" name="proof_of_address" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-indigo-50 file:text-brand-indigo hover:file:bg-brand-indigo-100 dark:file:bg-brand-blue-900 dark:file:text-brand-blue-300">
+          <p class="text-xs text-gray-500 mt-1">Accepted: PDF, PNG, JPG (max 16MB)</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Proof of Address 2 <span class="text-red-500">*</span></label>
+          <input type="file" name="proof_of_address_2" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-indigo-50 file:text-brand-indigo hover:file:bg-brand-indigo-100 dark:file:bg-brand-blue-900 dark:file:text-brand-blue-300">
           <p class="text-xs text-gray-500 mt-1">Accepted: PDF, PNG, JPG (max 16MB)</p>
         </div>
         <div>

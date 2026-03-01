@@ -1596,6 +1596,7 @@ class DBSApplication(db.Model):
 
     # Document uploads (relative paths under static/uploads/dbs/)
     proof_of_address_path = db.Column(db.String(500))
+    proof_of_address_2_path = db.Column(db.String(500))
     proof_of_id_path = db.Column(db.String(500))
 
     # Payment (Stripe)

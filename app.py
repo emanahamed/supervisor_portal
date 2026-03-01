@@ -17708,6 +17708,7 @@ def admission_assessment_save_scores(submission_id: int):
     submission = AdmissionAssessmentSubmission.query.get_or_404(submission_id)
 
     # ── handle inline status update (merged into one form) ──────────
+    status_changed = False
     new_status = (request.form.get('status') or '').strip()
     if new_status and new_status in ADMISSION_ASSESSMENT_STATUSES:
         current_status = submission.status or 'Application Submitted'
@@ -17716,6 +17717,7 @@ def admission_assessment_save_scores(submission_id: int):
             submission.status_updated_at = datetime.utcnow()
             submission.updated_at = datetime.utcnow()
             _record_assessment_change(submission, 'status', current_status, new_status)
+            status_changed = True
 
     raw_rows: dict[str, dict[str, str]] = {}
     for key, value in request.form.items():
@@ -17729,7 +17731,7 @@ def admission_assessment_save_scores(submission_id: int):
 
     if not raw_rows:
         # No score fields but status may have changed
-        if db.session.is_modified(submission):
+        if status_changed:
             try:
                 db.session.commit()
                 flash('Status updated.', 'success')
@@ -17815,7 +17817,6 @@ def admission_assessment_save_scores(submission_id: int):
             _record_assessment_change(submission, f'score:{subject}', old_json, new_json)
 
     # ── determine what changed and commit ─────────────────────────
-    status_changed = db.session.is_modified(submission)
     if updated_subjects or status_changed:
         submission.updated_at = datetime.utcnow()
         try:

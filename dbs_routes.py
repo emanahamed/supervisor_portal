@@ -224,9 +224,12 @@ def dbs_apply():
 
         # File uploads
         proof_of_address_file = request.files.get('proof_of_address')
+        proof_of_address_2_file = request.files.get('proof_of_address_2')
         proof_of_id_file = request.files.get('proof_of_id')
         if not proof_of_address_file or not proof_of_address_file.filename:
-            errors.append('Proof of address is required.')
+            errors.append('Proof of address 1 is required.')
+        if not proof_of_address_2_file or not proof_of_address_2_file.filename:
+            errors.append('Proof of address 2 is required.')
         if not proof_of_id_file or not proof_of_id_file.filename:
             errors.append('Proof of ID is required.')
 
@@ -255,10 +258,13 @@ def dbs_apply():
 
         # Save uploads
         poa_path = _save_upload(proof_of_address_file, 'poa')
+        poa2_path = _save_upload(proof_of_address_2_file, 'poa2')
         poi_path = _save_upload(proof_of_id_file, 'poi')
 
         if not poa_path:
-            errors.append('Proof of address file type not allowed. Accepted: PDF, PNG, JPG.')
+            errors.append('Proof of address 1 file type not allowed. Accepted: PDF, PNG, JPG.')
+        if not poa2_path:
+            errors.append('Proof of address 2 file type not allowed. Accepted: PDF, PNG, JPG.')
         if not poi_path:
             errors.append('Proof of ID file type not allowed. Accepted: PDF, PNG, JPG.')
         if errors:
@@ -293,6 +299,7 @@ def dbs_apply():
             signature_data=signature,
             declaration_agreed=declaration,
             proof_of_address_path=poa_path,
+            proof_of_address_2_path=poa2_path,
             proof_of_id_path=poi_path,
             payment_status='pending',
             application_status='Application Submitted',
@@ -561,7 +568,23 @@ def admin_dbs_download_address(app_id):
     if not os.path.isfile(full_path):
         abort(404)
     return send_file(full_path, as_attachment=True,
-                     download_name=f'Address_{app_obj.application_id}{os.path.splitext(full_path)[1]}')
+                     download_name=f'Address1_{app_obj.application_id}{os.path.splitext(full_path)[1]}')
+
+
+@dbs_bp.route('/admin/dbs/<int:app_id>/address-doc-2')
+@login_required
+def admin_dbs_download_address_2(app_id):
+    """Admin: download second proof of address."""
+    if not (current_user.is_superadmin or _can('manage_dbs')):
+        abort(403)
+    app_obj = DBSApplication.query.get_or_404(app_id)
+    if not app_obj.proof_of_address_2_path:
+        abort(404)
+    full_path = os.path.join(current_app.root_path, 'static', app_obj.proof_of_address_2_path)
+    if not os.path.isfile(full_path):
+        abort(404)
+    return send_file(full_path, as_attachment=True,
+                     download_name=f'Address2_{app_obj.application_id}{os.path.splitext(full_path)[1]}')
 
 
 @dbs_bp.route('/admin/dbs/export', methods=['GET', 'POST'])

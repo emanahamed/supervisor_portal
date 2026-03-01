@@ -25,7 +25,12 @@
       {% endif %}
       {% if app.proof_of_address_path %}
       <a href="{{ url_for('dbs.admin_dbs_download_address', app_id=app.id) }}" class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-        Download Address Proof
+        Download Address Proof 1
+      </a>
+      {% endif %}
+      {% if app.proof_of_address_2_path %}
+      <a href="{{ url_for('dbs.admin_dbs_download_address_2', app_id=app.id) }}" class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+        Download Address Proof 2
       </a>
       {% endif %}
     </div>
@@ -173,7 +178,13 @@
           {% if app.proof_of_address_path %}
           <a href="{{ url_for('dbs.admin_dbs_download_address', app_id=app.id) }}" class="flex items-center gap-2 text-sm text-brand-indigo hover:underline">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
-            Proof of Address
+            Proof of Address 1
+          </a>
+          {% endif %}
+          {% if app.proof_of_address_2_path %}
+          <a href="{{ url_for('dbs.admin_dbs_download_address_2', app_id=app.id) }}" class="flex items-center gap-2 text-sm text-brand-indigo hover:underline">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+            Proof of Address 2
           </a>
           {% endif %}
         </div>
