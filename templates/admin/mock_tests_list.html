@@ -1,0 +1,198 @@
+{% extends 'base.html' %} {% block page_title %}Mock Test Management{% endblock
+%} {% block crumb_current %}Mock Tests{% endblock %} {% block content %}
+<div
+  class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4"
+>
+  <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
+    Mock Tests
+  </h1>
+  <div class="flex gap-2">
+    <a
+      href="{{ url_for('admin_mock_test_bookings_list') }}"
+      class="soft-btn text-center whitespace-nowrap"
+      >📋 View Bookings</a
+    >
+    <a
+      href="{{ url_for('admin_mock_tests_new') }}"
+      class="soft-btn soft-btn-primary text-center whitespace-nowrap"
+      >+ Add New Mock Test</a
+    >
+  </div>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Total Mock Tests
+    </div>
+    <div
+      class="text-xl sm:text-2xl font-semibold text-slate-800 dark:text-slate-100"
+    >
+      {{ mock_tests | length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Active
+    </div>
+    <div class="text-xl sm:text-2xl font-semibold text-green-600">
+      {{ mock_tests | selectattr('active', 'equalto', True) | list | length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Inactive
+    </div>
+    <div class="text-xl sm:text-2xl font-semibold text-slate-400">
+      {{ mock_tests | selectattr('active', 'equalto', False) | list | length }}
+    </div>
+  </div>
+  <div class="soft-card p-3 md:p-4">
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Branches
+    </div>
+    <div class="text-xl sm:text-2xl font-semibold text-indigo-600">
+      {{ mock_tests | map(attribute='branch') | unique | list | length }}
+    </div>
+  </div>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      id="mockTestsTable"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr>
+          <th class="px-4 py-3 text-left">ID</th>
+          <th class="px-4 py-3 text-left">Exam Name</th>
+          <th class="px-4 py-3 text-left">Branch</th>
+          <th class="px-4 py-3 text-left hidden md:table-cell">Subject</th>
+          <th class="px-4 py-3 text-left hidden md:table-cell">Date</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Year Group</th>
+          <th class="px-4 py-3 text-left">Price</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+        {% if mock_tests %} {% for mt in mock_tests %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+            #{{ mt.id }}
+          </td>
+          <td class="px-4 py-3">
+            <div class="font-semibold text-slate-800 dark:text-slate-100">
+              {{ mt.name }}
+            </div>
+            {% if mt.venue %}
+            <div class="text-xs text-slate-500 mt-0.5">📍 {{ mt.venue }}</div>
+            {% endif %} {% if mt.date %}
+            <div class="text-xs text-slate-500 mt-0.5 md:hidden">
+              📅 {{ mt.date.strftime('%d %b %Y') }}
+            </div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
+            <span class="soft-badge bg-indigo-100 text-indigo-700"
+              >{{ mt.branch }}</span
+            >
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell"
+          >
+            {{ mt.subject or '-' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell"
+          >
+            {{ mt.date.strftime('%d %b %Y') if mt.date else '-' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell"
+          >
+            {{ mt.year_group | replace('year', 'Year ') | title if mt.year_group
+            else 'All' }}
+          </td>
+          <td
+            class="px-4 py-3 font-semibold text-indigo-600 dark:text-indigo-400"
+          >
+            £{{ "%.2f" | format(mt.price | float) }}
+          </td>
+          <td class="px-4 py-3">
+            <button
+              onclick="toggleMockTestStatus({{ mt.id }})"
+              class="soft-badge {{ 'bg-green-100 text-green-700' if mt.active else 'bg-slate-200 text-slate-600' }} cursor-pointer hover:opacity-80"
+            >
+              {{ 'Active' if mt.active else 'Inactive' }}
+            </button>
+          </td>
+          <td class="px-4 py-3 text-center">
+            <div class="flex items-center justify-center gap-2 flex-wrap">
+              <a
+                href="{{ url_for('admin_mock_tests_edit', id=mt.id) }}"
+                class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 text-xs font-semibold min-h-[44px] flex items-center"
+                >Edit</a
+              >
+              <form
+                method="post"
+                action="{{ url_for('admin_mock_tests_delete', id=mt.id) }}"
+                onsubmit="
+                  return confirm(
+                    'Are you sure you want to delete this mock test?',
+                  );
+                "
+                class="inline"
+              >
+                <button
+                  type="submit"
+                  class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-xs font-semibold min-h-[44px] flex items-center"
+                >
+                  Delete
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %} {% else %}
+        <tr>
+          <td colspan="9" class="px-4 py-8 text-center text-slate-500">
+            No mock tests found.
+            <a
+              href="{{ url_for('admin_mock_tests_new') }}"
+              class="text-indigo-600 hover:underline"
+              >Add your first mock test</a
+            >
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  async function toggleMockTestStatus(id) {
+    try {
+      const response = await fetch(`/admin/mock-tests/${id}/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (response.ok) {
+        location.reload();
+      } else {
+        alert("Failed to toggle mock test status");
+      }
+    } catch (error) {
+      console.error("Error toggling mock test status:", error);
+      alert("An error occurred");
+    }
+  }
+</script>
+{% endblock %}

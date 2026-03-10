@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ inline_css | safe }}
+      body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #0f172a; font-size: 13px; }
+      .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #363f99; }
+      .header h1 { color: #363f99; font-size: 22px; margin: 0 0 5px; }
+      .header p { color: #64748b; font-size: 11px; margin: 0; }
+      .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
+      .info-table td { padding: 5px 0; vertical-align: top; }
+      .info-table .label { color: #64748b; font-weight: 600; width: 140px; }
+      .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+      .items-table th { background: #f1f5f9; color: #363f99; font-weight: 700; text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+      .items-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+      .items-table .price { text-align: right; }
+      .totals { text-align: right; margin-top: 10px; }
+      .totals .row { padding: 4px 0; font-size: 13px; }
+      .totals .total-row { font-size: 16px; font-weight: 700; color: #363f99; border-top: 2px solid #e2e8f0; padding-top: 8px; margin-top: 4px; }
+      .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 11px; }
+      .paid-badge { display: inline-block; background: #dcfce7; color: #16a34a; padding: 3px 10px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Excel Tutors</h1>
+      <p>Mock Exam Booking Invoice</p>
+    </div>
+
+    <table class="info-table">
+      <tr>
+        <td class="label">Booking Number:</td>
+        <td>#{{ booking.id }}</td>
+      </tr>
+      <tr>
+        <td class="label">Date:</td>
+        <td>
+          {{ booking.created_at.strftime('%d %B %Y') if booking.created_at else
+          '—' }}
+        </td>
+      </tr>
+      <tr>
+        <td class="label">Payment Status:</td>
+        <td>
+          <span class="paid-badge">{{ booking.payment_status | upper }}</span>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2" style="height: 10px"></td>
+      </tr>
+      <tr>
+        <td class="label">Student Name:</td>
+        <td>{{ booking.student_name }}</td>
+      </tr>
+      <tr>
+        <td class="label">Branch:</td>
+        <td>{{ booking.branch }}</td>
+      </tr>
+      <tr>
+        <td class="label">Year Group:</td>
+        <td>
+          {{ (booking.year_group or '—') | replace('year', 'Year ') | title }}
+        </td>
+      </tr>
+      {% if booking.parent_email %}
+      <tr>
+        <td class="label">Email:</td>
+        <td>{{ booking.parent_email }}</td>
+      </tr>
+      {% endif %}
+    </table>
+
+    <h3 style="color: #363f99; font-size: 14px; margin: 20px 0 8px">
+      Booked Exams
+    </h3>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Exam</th>
+          <th>Subject</th>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Venue</th>
+          <th class="price">Price</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in booking.items %}
+        <tr>
+          <td>{{ item.test_name }}</td>
+          <td>{{ item.test_subject or '—' }}</td>
+          <td>
+            {{ item.test_date.strftime('%d %b %Y') if item.test_date else '—' }}
+          </td>
+          <td>{{ item.test_time or '—' }}</td>
+          <td>{{ item.test_venue or '—' }}</td>
+          <td class="price">£{{ "%.2f" | format(item.test_price | float) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="row">
+        Subtotal: £{{ "%.2f" | format(booking.subtotal | float) }}
+      </div>
+      <div class="row total-row">
+        Total: £{{ "%.2f" | format(booking.total | float) }}
+      </div>
+    </div>
+
+    <div class="footer">
+      <p><strong>Payment received in full</strong></p>
+      <p>Excel Tutors · management@exceltutors.org.uk</p>
+      <p>Thank you for your booking!</p>
+    </div>
+  </body>
+</html>

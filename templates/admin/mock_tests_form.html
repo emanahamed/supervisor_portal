@@ -1,0 +1,183 @@
+{% extends 'base.html' %} {% block page_title %}{{ title }}{% endblock %} {%
+block crumb_current %}{{ title }}{% endblock %} {% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="flex items-center mb-6">
+    <a href="{{ url_for('admin_mock_tests_list') }}" class="soft-btn mr-4"
+      >← Back to Mock Tests</a
+    >
+    <h1 class="text-2xl font-bold text-slate-800 dark:text-slate-100">
+      {{ title }}
+    </h1>
+  </div>
+
+  <div class="soft-card p-6">
+    <form method="post" class="space-y-5">
+      {{ form.hidden_tag() }}
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.name.label }} <span class="text-red-500">*</span>
+        </label>
+        {{ form.name(class="soft-input w-full", placeholder="e.g., Year 6 Maths
+        Mock Exam") }} {% if form.name.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.name.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.description.label }}
+        </label>
+        {{ form.description(class="soft-input w-full", rows="3") }} {% if
+        form.description.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.description.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-5">
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.price.label }} <span class="text-red-500">*</span>
+          </label>
+          {{ form.price(class="soft-input w-full") }} {% if form.price.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.price.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.branch.label }} <span class="text-red-500">*</span>
+          </label>
+          {{ form.branch(class="soft-input w-full") }} {% if form.branch.errors
+          %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.branch.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-5">
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.subject.label }}
+          </label>
+          {{ form.subject(class="soft-input w-full", placeholder="e.g.,
+          Mathematics, English, Science") }} {% if form.subject.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.subject.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.year_group.label }}
+          </label>
+          {{ form.year_group(class="soft-input w-full") }} {% if
+          form.year_group.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.year_group.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+          <p class="text-xs text-slate-500 mt-1">
+            Leave blank to show this test to all year groups
+          </p>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-5">
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.date.label }}
+          </label>
+          {{ form.date(class="soft-input w-full", type="date") }} {% if
+          form.date.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.date.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.time.label }}
+          </label>
+          {{ form.time(class="soft-input w-full", placeholder="e.g., 10:00 AM -
+          12:00 PM") }} {% if form.time.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.time.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.venue.label }}
+        </label>
+        {{ form.venue(class="soft-input w-full", placeholder="e.g., Main Hall,
+        Room 101") }} {% if form.venue.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.venue.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label class="flex items-center gap-2 cursor-pointer">
+          {{ form.active(class="rounded") }}
+          <span class="text-sm font-semibold text-slate-700 dark:text-slate-300"
+            >{{ form.active.label.text }}</span
+          >
+        </label>
+        <p class="text-xs text-slate-500 mt-1 ml-6">
+          Only active mock tests will be shown on the public booking form
+        </p>
+      </div>
+
+      <div class="flex gap-3 pt-4">
+        {{ form.submit(class="soft-btn soft-btn-primary px-8 py-2") }}
+        <a
+          href="{{ url_for('admin_mock_tests_list') }}"
+          class="soft-btn px-8 py-2"
+          >Cancel</a
+        >
+      </div>
+    </form>
+  </div>
+
+  {% if mock_test %}
+  <div class="mt-4 text-xs text-slate-500">
+    Created: {{ mock_test.created_at.strftime('%d %b %Y %H:%M') if
+    mock_test.created_at else '-' }} | Last Updated: {{
+    mock_test.updated_at.strftime('%d %b %Y %H:%M') if mock_test.updated_at else
+    '-' }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

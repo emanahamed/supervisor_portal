@@ -30,8 +30,6 @@
   <!-- Users Table -->
   <div class="soft-card p-0">
     <div class="overflow-x-auto">
-      <form id="bulkForm" method="post" action="{{ url_for('bulk_role_assign') }}">
-        <input type="hidden" name="user_ids" id="bulk_user_ids" />
         <table class="min-w-full text-sm" id="userTable" data-sortable data-paginate data-page-size="25">
           <thead>
             <tr>
@@ -110,6 +108,8 @@
           </tbody>
         </table>
         <!-- Bulk Actions -->
+        <form id="bulkForm" method="post" action="{{ url_for('bulk_role_assign') }}">
+        <input type="hidden" name="user_ids" id="bulk_user_ids" />
         <div class="flex items-center gap-2 p-3 border-t border-gray-200 dark:border-gray-700">
           <select name="target_role" class="soft-input text-xs w-52" data-no-combobox>
             <option value="">Bulk assign role...</option>
@@ -123,7 +123,7 @@
           <button type="submit" class="soft-btn soft-btn-primary text-xs" onclick="prepareBulk()">Apply to Selected</button>
           <span class="text-[10px] text-gray-400 dark:text-gray-500" id="bulkCount"></span>
         </div>
-      </form>
+        </form>
     </div>
   </div>
 

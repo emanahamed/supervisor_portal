@@ -1273,6 +1273,90 @@ class OrderItem(db.Model):
         }
 
 
+# ---------------- Mock Tests ---------------- #
+class MockTest(db.Model):
+    """Mock exam offering (admin configures per branch)."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    description = db.Column(db.Text)
+    price = db.Column(db.Numeric(10, 2), nullable=False)
+    branch = db.Column(db.String(120), nullable=False, index=True)
+    subject = db.Column(db.String(255))
+    date = db.Column(db.Date, index=True)
+    time = db.Column(db.String(100))
+    venue = db.Column(db.String(255))
+    year_group = db.Column(db.String(20), index=True)
+    active = db.Column(db.Boolean, default=True, index=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'price': float(self.price or 0),
+            'branch': self.branch,
+            'subject': self.subject,
+            'date': self.date.isoformat() if self.date else None,
+            'time': self.time,
+            'venue': self.venue,
+            'year_group': self.year_group,
+            'active': self.active,
+        }
+
+
+class MockTestBooking(db.Model):
+    """Booking record created after Stripe payment for mock tests."""
+    id = db.Column(db.Integer, primary_key=True)
+    student_name = db.Column(db.String(255), nullable=False, index=True)
+    branch = db.Column(db.String(120), nullable=False, index=True)
+    year_group = db.Column(db.String(20), nullable=False, index=True)
+    parent_email = db.Column(db.String(255), nullable=True, index=True)
+    parent_phone = db.Column(db.String(30), nullable=True)
+    exam_board = db.Column(db.String(120), nullable=True)
+    tier_specification = db.Column(db.String(255), nullable=True)
+
+    stripe_checkout_session_id = db.Column(db.String(255), unique=True, index=True)
+    stripe_payment_intent_id = db.Column(db.String(255), index=True)
+    payment_status = db.Column(db.String(40), default='pending', index=True)
+
+    subtotal = db.Column(db.Numeric(10, 2), default=0)
+    total = db.Column(db.Numeric(10, 2), default=0)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    items = db.relationship('MockTestBookingItem', backref='booking', cascade='all, delete-orphan', lazy=True)
+
+
+class MockTestBookingItem(db.Model):
+    """Snapshot of each mock test in a booking (immutable after creation)."""
+    id = db.Column(db.Integer, primary_key=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey('mock_test_booking.id', ondelete='CASCADE'), nullable=False, index=True)
+    mock_test_id = db.Column(db.Integer, db.ForeignKey('mock_test.id', ondelete='SET NULL'), nullable=True, index=True)
+    # Snapshot fields (preserved even if MockTest is later edited/deleted)
+    test_name = db.Column(db.String(255), nullable=False)
+    test_price = db.Column(db.Numeric(10, 2), nullable=False)
+    test_date = db.Column(db.Date)
+    test_venue = db.Column(db.String(255))
+    test_time = db.Column(db.String(100))
+    test_subject = db.Column(db.String(255))
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'booking_id': self.booking_id,
+            'mock_test_id': self.mock_test_id,
+            'test_name': self.test_name,
+            'test_price': float(self.test_price or 0),
+            'test_date': self.test_date.isoformat() if self.test_date else None,
+            'test_venue': self.test_venue,
+            'test_time': self.test_time,
+            'test_subject': self.test_subject,
+        }
+
+
 # ---------------- Floor Management: Print Reports ---------------- #
 class PrintReport(db.Model):
     id = db.Column(db.Integer, primary_key=True)

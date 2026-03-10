@@ -257,7 +257,9 @@
                 stroke-width="2"
               >
                 <path d="M9 12l2 2 4-4" />
-                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                <path
+                  d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"
+                />
               </svg>
               <span>Access Summary</span>
             </a>
@@ -497,6 +499,94 @@
         </ul>
       </div>
     </li>
+    {% endif %} {# Mock Tests (M) #} {% set can_mock_mgmt =
+    can('manage_products') or can('view_enrollments') %} {% if can_mock_mgmt %}
+    <li>
+      <div>
+        <button
+          @click="toggle('mock_tests')"
+          :aria-expanded="isOpen('mock_tests')"
+          class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 font-medium text-gray-600 hover:bg-brand-indigo-50/50 hover:text-brand-indigo dark:text-gray-300 dark:hover:bg-brand-blue-900/30"
+        >
+          <span class="flex items-center gap-2">
+            <svg
+              class="h-4 w-4 text-brand-indigo dark:text-brand-blue"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"
+              />
+              <rect x="9" y="3" width="6" height="4" rx="1" />
+              <path d="M9 14l2 2 4-4" />
+            </svg>
+            Mock Tests
+          </span>
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{'rotate-90': isOpen('mock_tests')}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6 6L14 10L6 14V6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <ul
+          x-show="isOpen('mock_tests')"
+          x-collapse
+          class="mt-1 space-y-0.5 border-l border-brand-indigo-200/50 dark:border-brand-blue-900 pl-3"
+        >
+          {% if can('manage_products') %}
+          <li>
+            <a
+              href="{{ url_for('admin_mock_tests_list') }}"
+              class="nav-leaf {{ 'active' if endpoint in ['admin_mock_tests_list','admin_mock_tests_new','admin_mock_tests_edit'] else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                <path
+                  d="M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5z"
+                />
+              </svg>
+              <span>Mock Test Products</span>
+            </a>
+          </li>
+          {% endif %} {% if can('view_enrollments') %}
+          <li>
+            <a
+              href="{{ url_for('admin_mock_test_bookings_list') }}"
+              class="nav-leaf {{ 'active' if endpoint=='admin_mock_test_bookings_list' else '' }}"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-brand-indigo-300 dark:text-brand-blue-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3h2l.4 2M7 13h10l4-8H5.4" />
+                <circle cx="7" cy="21" r="1" />
+                <circle cx="17" cy="21" r="1" />
+              </svg>
+              <span>Mock Test Orders</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </li>
     {% endif %} {# Award Ceremonies #} {% if can('manage_award_ceremonies') %}
     <li>
       <div>
@@ -549,7 +639,9 @@
                 stroke="currentColor"
                 stroke-width="2"
               >
-                <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <path
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
               </svg>
               <span>Events</span>
             </a>
@@ -644,7 +736,9 @@
                 stroke="currentColor"
                 stroke-width="2"
               >
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                <path
+                  d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+                />
                 <polyline points="14,2 14,8 20,8" />
               </svg>
               <span>Export</span>
@@ -664,7 +758,9 @@
                 stroke-width="2"
               >
                 <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4"
+                />
               </svg>
               <span>Settings</span>
             </a>
@@ -1030,8 +1126,7 @@
         </ul>
       </div>
     </li>
-    {% endif %}
-    {% if can('manage_issues') %}
+    {% endif %} {% if can('manage_issues') %}
     <li>
       <a
         href="{{ url_for('issues_index') }}"
@@ -1051,8 +1146,7 @@
         Issues
       </a>
     </li>
-    {% endif %}
-    {% endif %} {# Meetings (M) #} {% if can('manage_meetings') or
+    {% endif %} {% endif %} {# Meetings (M) #} {% if can('manage_meetings') or
     can('manage_appointments') %}
     <li>
       <div>
@@ -1921,7 +2015,9 @@
       },
       toggle(key) {
         const opening = !this.state[key];
-        Object.keys(this.state).forEach(k => { this.state[k] = false; });
+        Object.keys(this.state).forEach((k) => {
+          this.state[k] = false;
+        });
         if (opening) this.state[key] = true;
         this.save();
       },

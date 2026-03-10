@@ -1,0 +1,198 @@
+{% extends 'base.html' %} {% block page_title %}Mock Test Bookings{% endblock %}
+{% block crumb_current %}Mock Test Bookings{% endblock %} {% block content %}
+<div
+  class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4"
+>
+  <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
+    Mock Test Bookings
+  </h1>
+  <a
+    href="{{ url_for('admin_mock_tests_list') }}"
+    class="soft-btn text-center whitespace-nowrap"
+    >← Manage Mock Tests</a
+  >
+</div>
+
+<!-- Filters -->
+<div class="soft-card p-3 mb-4">
+  <form method="get" class="flex flex-wrap gap-3 items-end">
+    <div>
+      <label
+        class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
+        >Search</label
+      >
+      <input
+        type="text"
+        name="q"
+        value="{{ q }}"
+        placeholder="Student name..."
+        class="soft-input text-sm w-48"
+      />
+    </div>
+    <div>
+      <label
+        class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
+        >Branch</label
+      >
+      <select name="branch" class="soft-input text-sm">
+        <option value="">All Branches</option>
+        {% for b in branches %}
+        <option
+          value="{{ b }}"
+          {%
+          if
+          branch_filter=""
+          ="b"
+          %}selected{%
+          endif
+          %}
+        >
+          {{ b }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label
+        class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
+        >Status</label
+      >
+      <select name="status" class="soft-input text-sm">
+        <option value="">All</option>
+        <option
+          value="paid"
+          {%
+          if
+          status_filter=""
+          ="paid"
+          %}selected{%
+          endif
+          %}
+        >
+          Paid
+        </option>
+        <option
+          value="pending"
+          {%
+          if
+          status_filter=""
+          ="pending"
+          %}selected{%
+          endif
+          %}
+        >
+          Pending
+        </option>
+      </select>
+    </div>
+    <button type="submit" class="soft-btn soft-btn-primary text-sm">
+      Filter
+    </button>
+    <a
+      href="{{ url_for('admin_mock_test_bookings_list') }}"
+      class="soft-btn text-sm"
+      >Clear</a
+    >
+  </form>
+</div>
+
+<div class="soft-card p-0">
+  <div class="overflow-x-auto">
+    <table
+      class="min-w-full text-sm"
+      data-sortable
+      data-paginate
+      data-page-size="25"
+    >
+      <thead
+        class="bg-slate-100/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold tracking-wide uppercase"
+      >
+        <tr>
+          <th class="px-4 py-3 text-left">ID</th>
+          <th class="px-4 py-3 text-left">Student</th>
+          <th class="px-4 py-3 text-left">Branch</th>
+          <th class="px-4 py-3 text-left hidden md:table-cell">Year Group</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Email</th>
+          <th class="px-4 py-3 text-left hidden lg:table-cell">Phone</th>
+          <th class="px-4 py-3 text-left hidden xl:table-cell">Exam Board</th>
+          <th class="px-4 py-3 text-left hidden xl:table-cell">Tier/Spec</th>
+          <th class="px-4 py-3 text-left">Tests</th>
+          <th class="px-4 py-3 text-left">Total</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-left hidden sm:table-cell">Date</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+        {% if bookings %} {% for booking in bookings %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+            #{{ booking.id }}
+          </td>
+          <td
+            class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100"
+          >
+            {{ booking.student_name }}
+          </td>
+          <td class="px-4 py-3">
+            <span class="soft-badge bg-indigo-100 text-indigo-700"
+              >{{ booking.branch }}</span
+            >
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell"
+          >
+            {{ booking.year_group | replace('year', 'Year ') | title if
+            booking.year_group else '-' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell text-xs"
+          >
+            {{ booking.parent_email or '-' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell text-xs"
+          >
+            {{ booking.parent_phone or '-' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden xl:table-cell text-xs"
+          >
+            {{ booking.exam_board or '-' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden xl:table-cell text-xs"
+          >
+            {{ booking.tier_specification or '-' }}
+          </td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
+            {{ booking.items | length }}
+          </td>
+          <td
+            class="px-4 py-3 font-semibold text-indigo-600 dark:text-indigo-400"
+          >
+            £{{ "%.2f" | format(booking.total | float) }}
+          </td>
+          <td class="px-4 py-3">
+            <span
+              class="soft-badge {{ 'bg-green-100 text-green-700' if booking.payment_status == 'paid' else 'bg-amber-100 text-amber-700' }}"
+            >
+              {{ booking.payment_status | title }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-slate-500 text-xs hidden sm:table-cell">
+            {{ booking.created_at.strftime('%d %b %Y %H:%M') if
+            booking.created_at else '-' }}
+          </td>
+        </tr>
+        {% endfor %} {% else %}
+        <tr>
+          <td colspan="12" class="px-4 py-8 text-center text-slate-500">
+            No bookings found.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

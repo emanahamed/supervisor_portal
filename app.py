@@ -144,6 +144,23 @@ PUBLIC_FORM_REGISTRY = [
         'endpoints': ['booking_index'],
         'static_paths': ['/booking'],
     },
+    {
+        'name': 'Mock Test Booking (Step 1 - Student Info)',
+        'endpoints': ['mock_test_step1'],
+        'static_paths': ['/public/mock-test'],
+    },
+    {
+        'name': 'Mock Test Booking (Step 2 - Select Tests)',
+        'endpoints': ['mock_test_step2'],
+        'static_paths': ['/public/mock-test/select'],
+        'note': 'Student must complete Step 1 first.',
+    },
+    {
+        'name': 'Mock Test Booking (Step 3 - Checkout)',
+        'endpoints': ['mock_test_checkout'],
+        'static_paths': ['/public/mock-test/checkout'],
+        'note': 'Redirects to Stripe for payment.',
+    },
 ]
 
 
@@ -6856,8 +6873,8 @@ def role_permissions():
 
         # For each role/perm pair, expect checkbox name rp_<role>__<perm>
         existing = {(rp.role, rp.permission_key): rp for rp in RolePermission.query.all()}
-        seen_keys = set()
         changes = {'added': [], 'removed': []}
+        audit_entries = []
         for role in roles:
             for p in perms:
                 field = f"rp_{role}__{p.key}"
@@ -6866,20 +6883,13 @@ def role_permissions():
                 if want and key not in existing:
                     db.session.add(RolePermission(role=role, permission_key=p.key))
                     changes['added'].append(f"{role}:{p.key}")
-                    try:
-                        db.session.flush()
-                        db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='added'))
-                    except Exception:
-                        pass
+                    audit_entries.append(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='added'))
                 if not want and key in existing:
                     db.session.delete(existing[key])
                     changes['removed'].append(f"{role}:{p.key}")
-                    try:
-                        db.session.flush()
-                        db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='removed'))
-                    except Exception:
-                        pass
-                seen_keys.add(key)
+                    audit_entries.append(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=p.key, action='removed'))
+        for entry in audit_entries:
+            db.session.add(entry)
         db.session.commit()
 
         # Show detailed feedback
@@ -6919,27 +6929,22 @@ def role_permissions_appointments():
     existing = {rp.role: rp for rp in RolePermission.query.filter_by(permission_key=target_perm).all() if rp.role in roles}
     desired_roles = set(request.form.getlist('roles'))
     changed_any = False
+    audit_entries = []
     for role in roles:
         has_now = role in existing
         want = role in desired_roles
         if want and not has_now:
             db.session.add(RolePermission(role=role, permission_key=target_perm))
-            try:
-                db.session.flush()
-                db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=target_perm, action='added'))
-            except Exception:
-                pass
+            audit_entries.append(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=target_perm, action='added'))
             changed_any = True
         if has_now and not want:
             db.session.delete(existing[role])
-            try:
-                db.session.flush()
-                db.session.add(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=target_perm, action='removed'))
-            except Exception:
-                pass
+            audit_entries.append(PermissionAudit(actor_user_id=current_user.id, role=role, permission_key=target_perm, action='removed'))
             changed_any = True
     if changed_any:
         try:
+            for entry in audit_entries:
+                db.session.add(entry)
             db.session.commit()
             flash('Appointment permission updated for selected roles.', 'success')
         except Exception as exc:
@@ -6963,6 +6968,7 @@ def user_permissions():
 
         # Track changes for better UX feedback
         changes_detail = {'added_allow': [], 'added_deny': [], 'removed': [], 'modified': []}
+        audit_entries = []
 
         for p in perms:
             val = request.form.get(f'perm_{p.key}')
@@ -6970,11 +6976,7 @@ def user_permissions():
                 if p.key in existing:
                     db.session.delete(existing[p.key])
                     changes_detail['removed'].append(p.key)
-                    try:
-                        db.session.flush()
-                        db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='inherit'))
-                    except Exception:
-                        pass
+                    audit_entries.append(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='inherit'))
             elif val in ('allow','deny'):
                 allow_flag = (val == 'allow')
                 if p.key in existing:
@@ -6982,23 +6984,17 @@ def user_permissions():
                     existing[p.key].allow = allow_flag
                     if old_allow != allow_flag:
                         changes_detail['modified'].append(f"{p.key} → {'allow' if allow_flag else 'deny'}")
-                        try:
-                            db.session.flush()
-                            db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
-                        except Exception:
-                            pass
+                        audit_entries.append(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
                 else:
                     db.session.add(UserPermission(user_id=selected_user.id, permission_key=p.key, allow=allow_flag))
                     if allow_flag:
                         changes_detail['added_allow'].append(p.key)
                     else:
                         changes_detail['added_deny'].append(p.key)
-                    try:
-                        db.session.flush()
-                        db.session.add(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
-                    except Exception:
-                        pass
+                    audit_entries.append(PermissionAudit(actor_user_id=current_user.id, target_user_id=selected_user.id, permission_key=p.key, action='allow' if allow_flag else 'deny'))
 
+        for entry in audit_entries:
+            db.session.add(entry)
         db.session.commit()
 
         # Show detailed feedback based on what actually changed
@@ -7524,6 +7520,130 @@ def admin_products_toggle(id):
     product.active = not product.active
     db.session.commit()
     return jsonify({'success': True, 'active': product.active})
+
+
+# ---------------- Admin: Mock Tests Management ---------------- #
+@app.route('/admin/mock-tests')
+@login_required
+@permission_required('manage_products')
+def admin_mock_tests_list():
+    """List all mock tests"""
+    from models import MockTest
+    from utils import BRANCH_CHOICES
+    mock_tests = MockTest.query.order_by(MockTest.created_at.desc()).all()
+    branches = BRANCH_CHOICES()
+    return render_template('admin/mock_tests_list.html', mock_tests=mock_tests, branches=branches)
+
+
+@app.route('/admin/mock-tests/new', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_products')
+def admin_mock_tests_new():
+    """Create new mock test"""
+    from forms import MockTestForm
+    from models import MockTest
+    from utils import BRANCH_CHOICES
+    form = MockTestForm()
+    form.branch.choices = [('', '-- Select branch --')] + [(b, b) for b in BRANCH_CHOICES()]
+    if form.validate_on_submit():
+        mock_test = MockTest(
+            name=form.name.data,
+            description=form.description.data,
+            price=form.price.data,
+            branch=form.branch.data,
+            subject=form.subject.data,
+            date=form.date.data,
+            time=form.time.data,
+            venue=form.venue.data,
+            year_group=form.year_group.data or None,
+            active=form.active.data,
+        )
+        db.session.add(mock_test)
+        db.session.commit()
+        flash('Mock test created successfully', 'success')
+        return redirect(url_for('admin_mock_tests_list'))
+    return render_template('admin/mock_tests_form.html', form=form, title='New Mock Test')
+
+
+@app.route('/admin/mock-tests/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_products')
+def admin_mock_tests_edit(id):
+    """Edit existing mock test"""
+    from forms import MockTestForm
+    from models import MockTest
+    from utils import BRANCH_CHOICES
+    mock_test = MockTest.query.get_or_404(id)
+    form = MockTestForm(obj=mock_test)
+    form.branch.choices = [('', '-- Select branch --')] + [(b, b) for b in BRANCH_CHOICES()]
+    if form.validate_on_submit():
+        mock_test.name = form.name.data
+        mock_test.description = form.description.data
+        mock_test.price = form.price.data
+        mock_test.branch = form.branch.data
+        mock_test.subject = form.subject.data
+        mock_test.date = form.date.data
+        mock_test.time = form.time.data
+        mock_test.venue = form.venue.data
+        mock_test.year_group = form.year_group.data or None
+        mock_test.active = form.active.data
+        mock_test.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash('Mock test updated successfully', 'success')
+        return redirect(url_for('admin_mock_tests_list'))
+    return render_template('admin/mock_tests_form.html', form=form, title='Edit Mock Test', mock_test=mock_test)
+
+
+@app.route('/admin/mock-tests/<int:id>/delete', methods=['POST'])
+@login_required
+@permission_required('manage_products')
+def admin_mock_tests_delete(id):
+    """Delete mock test"""
+    from models import MockTest
+    mock_test = MockTest.query.get_or_404(id)
+    db.session.delete(mock_test)
+    db.session.commit()
+    flash('Mock test deleted successfully', 'success')
+    return redirect(url_for('admin_mock_tests_list'))
+
+
+@app.route('/admin/mock-tests/<int:id>/toggle', methods=['POST'])
+@login_required
+@permission_required('manage_products')
+def admin_mock_tests_toggle(id):
+    """Toggle mock test active status"""
+    from models import MockTest
+    mock_test = MockTest.query.get_or_404(id)
+    mock_test.active = not mock_test.active
+    db.session.commit()
+    return jsonify({'success': True, 'active': mock_test.active})
+
+
+@app.route('/admin/mock-test-bookings')
+@login_required
+@permission_required('view_enrollments')
+def admin_mock_test_bookings_list():
+    """List all mock test bookings"""
+    from models import MockTestBooking
+    from utils import BRANCH_CHOICES
+
+    q = (request.args.get('q') or '').strip()
+    branch_filter = (request.args.get('branch') or '').strip()
+    status_filter = (request.args.get('status') or '').strip().lower()
+
+    query = MockTestBooking.query
+    if q:
+        query = query.filter(MockTestBooking.student_name.ilike(f'%{q}%'))
+    if branch_filter:
+        query = query.filter_by(branch=branch_filter)
+    if status_filter:
+        query = query.filter_by(payment_status=status_filter)
+
+    bookings = query.order_by(MockTestBooking.created_at.desc()).all()
+    branches = BRANCH_CHOICES()
+    return render_template('admin/mock_test_bookings.html',
+                          bookings=bookings, branches=branches,
+                          q=q, branch_filter=branch_filter, status_filter=status_filter)
 
 
 # ---------------- Admin: Enrollment/Order Tracking ---------------- #
@@ -18382,8 +18502,13 @@ def enroll_step2():
     products = Product.query.filter_by(active=True).order_by(Product.date).all()
     cart_ids = session.get('enrollment_cart', [])
 
+    from utils import get_setting
+    discount_amount = float(get_setting('enrollment_discount_amount', '0'))
+
     return render_template('public/enroll_step2.html',
-                         products=[p.serialize() for p in products], cart_ids=cart_ids)
+                         products=[p.serialize() for p in products],
+                         cart_ids=cart_ids,
+                         discount_amount=discount_amount)
 
 
 @csrf.exempt
@@ -18552,6 +18677,13 @@ def stripe_webhook():
         session_obj = event['data']['object']
         metadata = session_obj.get('metadata', {})
 
+        # Route to correct handler based on booking_type
+        booking_type = metadata.get('booking_type', '')
+
+        if booking_type == 'mock_test':
+            return _handle_mock_test_webhook(session_obj, metadata)
+
+        # ── Default: Enrollment order ──
         # Check if order already exists (idempotent webhook handling)
         existing_order = Order.query.filter_by(
             stripe_checkout_session_id=session_obj['id']
@@ -18626,6 +18758,85 @@ def stripe_webhook():
     return jsonify({'status': 'success'}), 200
 
 
+def _handle_mock_test_webhook(session_obj, metadata):
+    """Handle Stripe webhook for mock test bookings."""
+    import json
+    from datetime import datetime
+    from decimal import Decimal
+
+    from models import MockTestBooking, MockTestBookingItem
+
+    # Idempotent check
+    existing = MockTestBooking.query.filter_by(
+        stripe_checkout_session_id=session_obj['id']
+    ).first()
+    if existing:
+        return jsonify({'status': 'already_processed'}), 200
+
+    try:
+        student_name = metadata['student_name']
+        branch = metadata['branch']
+        year_group = metadata['year_group']
+        parent_email = metadata.get('parent_email')
+        parent_phone = metadata.get('parent_phone', '')
+        exam_board = metadata.get('exam_board', '')
+        tier_specification = metadata.get('tier_specification', '')
+        subtotal = Decimal(metadata['subtotal'])
+        total = Decimal(metadata['total'])
+        tests = json.loads(metadata['tests'])
+    except (KeyError, json.JSONDecodeError, ValueError) as e:
+        print(f"Mock test webhook metadata parse error: {e}")
+        return jsonify({'error': 'Invalid metadata'}), 400
+
+    booking = MockTestBooking(
+        student_name=student_name,
+        branch=branch,
+        year_group=year_group,
+        parent_email=parent_email,
+        parent_phone=parent_phone or None,
+        exam_board=exam_board or None,
+        tier_specification=tier_specification or None,
+        subtotal=subtotal,
+        total=total,
+        payment_status='paid',
+        stripe_checkout_session_id=session_obj['id'],
+        stripe_payment_intent_id=session_obj.get('payment_intent'),
+    )
+    db.session.add(booking)
+    db.session.flush()
+
+    for t in tests:
+        item = MockTestBookingItem(
+            booking_id=booking.id,
+            mock_test_id=t['id'],
+            test_name=t['name'],
+            test_price=Decimal(str(t['price'])),
+            test_date=datetime.fromisoformat(t['date']) if t.get('date') else None,
+            test_venue=t.get('venue'),
+            test_time=t.get('time'),
+            test_subject=t.get('subject'),
+        )
+        db.session.add(item)
+
+    db.session.commit()
+
+    # Generate PDF invoice
+    try:
+        pdf_bytes = generate_mock_test_invoice_pdf(booking)
+    except Exception as e:
+        print(f"Mock test PDF generation failed: {e}")
+        pdf_bytes = None
+
+    # Send confirmation email
+    try:
+        if parent_email:
+            send_mock_test_confirmation_email(booking, pdf_bytes)
+    except Exception as e:
+        print(f"Mock test email send failed: {e}")
+
+    return jsonify({'status': 'success'}), 200
+
+
 def generate_enrollment_invoice_pdf(order) -> bytes:
     """Generate binary PDF invoice for enrollment order using xhtml2pdf."""
     from io import BytesIO
@@ -18675,6 +18886,279 @@ def send_enrollment_confirmation_email(order, pdf_bytes=None):
     recipient_email = order.parent_email
     if not recipient_email:
         raise ValueError("Order missing parent_email - cannot send confirmation")
+
+    send_email(
+        to_email=recipient_email,
+        subject=subject,
+        html=html,
+        attachments=attachments if attachments else None
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+#  PUBLIC  MOCK-TEST  BOOKING  FLOW
+# ═══════════════════════════════════════════════════════════
+
+@csrf.exempt
+@app.route('/public/mock-test', methods=['GET', 'POST'])
+def mock_test_step1():
+    """Step 1: Student information for mock test booking"""
+    from utils import BRANCH_CHOICES
+    branches = BRANCH_CHOICES()
+    year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
+                   'year9', 'year10', 'year11', 'year12', 'year13']
+
+    if request.method == 'POST':
+        # Honeypot check
+        if (request.form.get('website') or '').strip():
+            return redirect(url_for('mock_test_step1'))
+
+        student_name = (request.form.get('student_name') or '').strip()
+        branch = (request.form.get('branch') or '').strip()
+        year_group = (request.form.get('year_group') or '').strip()
+        parent_email = (request.form.get('parent_email') or '').strip()
+        parent_phone = (request.form.get('parent_phone') or '').strip()
+        exam_board = (request.form.get('exam_board') or '').strip()
+        tier_specification = (request.form.get('tier_specification') or '').strip()
+
+        errors = []
+        if not student_name:
+            errors.append("Full Name is required")
+        if not branch or branch not in branches:
+            errors.append("Valid branch is required")
+        if not year_group or year_group not in year_groups:
+            errors.append("Valid year group is required")
+        if not parent_email:
+            errors.append("Parent/Guardian Email is required")
+        if not parent_phone:
+            errors.append("Parent/Guardian Phone is required")
+
+        if errors:
+            for err in errors:
+                flash(err, 'warning')
+            return render_template('public/mock_test_step1.html',
+                                 branches=branches, year_groups=year_groups,
+                                 student_name=student_name, branch=branch,
+                                 year_group=year_group, parent_email=parent_email,
+                                 parent_phone=parent_phone, exam_board=exam_board,
+                                 tier_specification=tier_specification)
+
+        session['mock_test_step1'] = {
+            'student_name': student_name,
+            'branch': branch,
+            'year_group': year_group,
+            'parent_email': parent_email,
+            'parent_phone': parent_phone,
+            'exam_board': exam_board,
+            'tier_specification': tier_specification,
+        }
+        return redirect(url_for('mock_test_step2'))
+
+    return render_template('public/mock_test_step1.html',
+                         branches=branches, year_groups=year_groups)
+
+
+@csrf.exempt
+@app.route('/public/mock-test/select', methods=['GET', 'POST'])
+def mock_test_step2():
+    """Step 2: Browse and select mock tests for the student's branch"""
+    from models import MockTest
+
+    if 'mock_test_step1' not in session:
+        flash('Please complete student information first', 'warning')
+        return redirect(url_for('mock_test_step1'))
+
+    student_info = session['mock_test_step1']
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        test_id = request.form.get('test_id')
+
+        if 'mock_test_cart' not in session:
+            session['mock_test_cart'] = []
+
+        if action == 'add' and test_id:
+            if int(test_id) not in session['mock_test_cart']:
+                session['mock_test_cart'].append(int(test_id))
+                session.modified = True
+                return jsonify({'success': True, 'cart_count': len(session['mock_test_cart'])})
+
+        elif action == 'remove' and test_id:
+            try:
+                session['mock_test_cart'].remove(int(test_id))
+                session.modified = True
+                return jsonify({'success': True, 'cart_count': len(session['mock_test_cart'])})
+            except ValueError:
+                pass
+
+        elif action == 'checkout':
+            if not session.get('mock_test_cart'):
+                flash('Please add at least one mock test to your cart', 'warning')
+                return redirect(url_for('mock_test_step2'))
+            return redirect(url_for('mock_test_checkout'))
+
+    # Show tests matching student's branch (and matching year group or "all")
+    branch = student_info['branch']
+    year_group = student_info['year_group']
+    tests = MockTest.query.filter_by(active=True, branch=branch).filter(
+        db.or_(MockTest.year_group == None, MockTest.year_group == '', MockTest.year_group == year_group)
+    ).order_by(MockTest.date).all()
+
+    cart_ids = session.get('mock_test_cart', [])
+
+    return render_template('public/mock_test_step2.html',
+                         tests=[t.serialize() for t in tests],
+                         cart_ids=cart_ids,
+                         student_info=student_info)
+
+
+@csrf.exempt
+@app.route('/public/mock-test/checkout', methods=['GET', 'POST'])
+def mock_test_checkout():
+    """Step 3: Review and pay via Stripe"""
+    from decimal import Decimal
+
+    from models import MockTest
+
+    if 'mock_test_step1' not in session or not session.get('mock_test_cart'):
+        flash('Please complete all steps', 'warning')
+        return redirect(url_for('mock_test_step1'))
+
+    student_info = session['mock_test_step1']
+    cart_ids = session['mock_test_cart']
+    tests = MockTest.query.filter(MockTest.id.in_(cart_ids)).all()
+
+    if not tests:
+        flash('No valid mock tests in cart', 'warning')
+        return redirect(url_for('mock_test_step2'))
+
+    subtotal = sum(Decimal(str(t.price)) for t in tests)
+    total = subtotal  # No discount logic for mock tests by default
+
+    if request.method == 'POST':
+        import json
+
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+
+        test_snapshots = []
+        for t in tests:
+            test_snapshots.append({
+                'id': t.id,
+                'name': t.name,
+                'price': float(t.price),
+                'date': t.date.isoformat() if t.date else None,
+                'venue': t.venue,
+                'time': t.time,
+                'subject': t.subject,
+            })
+
+        line_items = [{
+            'price_data': {
+                'currency': 'gbp',
+                'product_data': {'name': t['name']},
+                'unit_amount': int(t['price'] * 100),
+            },
+            'quantity': 1,
+        } for t in test_snapshots]
+
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=line_items,
+                mode='payment',
+                success_url=url_for('mock_test_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
+                cancel_url=url_for('mock_test_cancelled', _external=True),
+                metadata={
+                    'booking_type': 'mock_test',
+                    'student_name': student_info['student_name'],
+                    'branch': student_info['branch'],
+                    'year_group': student_info['year_group'],
+                    'parent_email': student_info['parent_email'],
+                    'parent_phone': student_info.get('parent_phone', ''),
+                    'exam_board': student_info.get('exam_board', ''),
+                    'tier_specification': student_info.get('tier_specification', ''),
+                    'subtotal': str(subtotal),
+                    'total': str(total),
+                    'tests': json.dumps(test_snapshots),
+                },
+            )
+            return jsonify({'checkout_url': checkout_session.url})
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+
+    return render_template('public/mock_test_step3.html',
+                         student_info=student_info,
+                         tests=tests,
+                         subtotal=subtotal,
+                         total=total,
+                         stripe_public_key=STRIPE_PUBLIC_KEY)
+
+
+@csrf.exempt
+@app.route('/public/mock-test/success')
+def mock_test_success():
+    """Payment success page for mock test booking"""
+    from models import MockTestBooking
+    session_id = request.args.get('session_id')
+    if not session_id:
+        flash('Missing session information.', 'danger')
+        return redirect(url_for('mock_test_step1'))
+    booking = MockTestBooking.query.filter_by(stripe_checkout_session_id=session_id).first()
+    session.pop('mock_test_step1', None)
+    session.pop('mock_test_cart', None)
+    return render_template('public/mock_test_success.html', booking=booking)
+
+
+@csrf.exempt
+@app.route('/public/mock-test/cancelled')
+def mock_test_cancelled():
+    """Payment cancelled page for mock test booking"""
+    return render_template('public/mock_test_cancelled.html')
+
+
+def generate_mock_test_invoice_pdf(booking) -> bytes:
+    """Generate binary PDF invoice for mock test booking using xhtml2pdf."""
+    from io import BytesIO
+
+    from xhtml2pdf import pisa
+
+    css_path = os.path.join(app.root_path, 'static', 'css', 'invoice.css')
+    inline_css = ''
+    try:
+        with open(css_path, 'r', encoding='utf-8') as f:
+            inline_css = f.read()
+    except Exception:
+        pass
+
+    html = render_template(
+        'public/mock_test_invoice.html',
+        booking=booking,
+        inline_css=inline_css
+    )
+
+    pdf_file = BytesIO()
+    pisa_status = pisa.CreatePDF(html, dest=pdf_file)
+    if pisa_status.err:
+        raise RuntimeError(f"PDF generation failed: {pisa_status.err}")
+    pdf_file.seek(0)
+    return pdf_file.read()
+
+
+def send_mock_test_confirmation_email(booking, pdf_bytes=None):
+    """Send mock test booking confirmation email with optional PDF invoice."""
+    from email_utils import build_mock_test_confirmation_email, send_email
+
+    subject, html = build_mock_test_confirmation_email(booking)
+
+    attachments = []
+    if pdf_bytes:
+        attachments.append((pdf_bytes, 'application', 'pdf', f'mock_test_booking_{booking.id}.pdf'))
+
+    recipient_email = booking.parent_email
+    if not recipient_email:
+        raise ValueError("Booking missing parent_email - cannot send confirmation")
 
     send_email(
         to_email=recipient_email,

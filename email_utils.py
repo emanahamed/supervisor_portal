@@ -1177,3 +1177,88 @@ def build_enrollment_confirmation_email(order) -> Tuple[str, str]:
         ''.join(body_parts),
     )
     return subject, html
+
+
+def build_mock_test_confirmation_email(booking) -> Tuple[str, str]:
+    """Branded confirmation email for a completed mock test booking."""
+    student_name = booking.student_name or 'Student'
+    subject = f"Mock Exam Booking Confirmation – Booking #{booking.id}"
+
+    intro = (
+        f"Thank you for booking mock exams for <strong>{student_name}</strong> with Excel Tutors!<br/><br/>"
+        "Your payment has been received and the booking is confirmed. "
+        "Please find the details of your booking below."
+    )
+
+    def row(label, value):
+        safe = (str(value) or '').replace('\n', '<br/>')
+        return (
+            f"<tr>"
+            f"<td style='padding:6px 0;width:160px;color:#64748b;font-weight:600;'>{label}</td>"
+            f"<td style='padding:6px 0;color:#0f172a;'>{safe}</td>"
+            f"</tr>"
+        )
+
+    booking_date = booking.created_at.strftime('%d %B %Y') if booking.created_at else '—'
+    body_parts = [
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:14px;color:#0f172a;'>",
+        row('Booking Number', f"#{booking.id}"),
+        row('Student Name', student_name),
+        row('Branch', booking.branch or '—'),
+        row('Year Group', (booking.year_group or '—').replace('year', 'Year ').title()),
+        row('Booking Date', booking_date),
+        "</table>",
+    ]
+
+    items = booking.items if booking.items else []
+    if items:
+        body_parts.append(
+            "<h3 style='margin:20px 0 8px;font-size:15px;color:#363f99;font-weight:700;'>Booked Exams</h3>"
+            "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;font-size:13px;'>"
+            "<tr style='background:#f1f5f9;'>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Exam</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Subject</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Date</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Time</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Venue</th>"
+            "<th style='padding:8px 10px;text-align:right;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Price</th>"
+            "</tr>"
+        )
+        for item in items:
+            date_str = item.test_date.strftime('%d %b %Y') if item.test_date else '—'
+            price_str = f"£{float(item.test_price or 0):.2f}"
+            body_parts.append(
+                f"<tr>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#0f172a;'>{item.test_name}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.test_subject or '—'}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{date_str}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.test_time or '—'}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.test_venue or '—'}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#0f172a;text-align:right;font-weight:600;'>{price_str}</td>"
+                f"</tr>"
+            )
+        body_parts.append("</table>")
+
+    total_str = f"£{float(booking.total or 0):.2f}"
+    body_parts.append(
+        "<table role='presentation' cellpadding='0' cellspacing='0' style='margin:12px 0 0 auto;border-collapse:collapse;font-size:14px;'>"
+        f"<tr style='border-top:2px solid #e2e8f0;'><td style='padding:8px 16px 4px 0;color:#0f172a;font-weight:700;font-size:16px;'>Total Paid:</td>"
+        f"<td style='padding:8px 0 4px;text-align:right;color:#363f99;font-weight:700;font-size:16px;'>{total_str}</td></tr>"
+        "</table>"
+    )
+
+    body_parts.append(
+        "<p style='margin:20px 0 0;font-size:13px;color:#475569;'>"
+        "A PDF invoice is attached to this email for your records. "
+        "If you have any questions about your booking, please contact us at "
+        "<a href='mailto:management@exceltutors.org.uk' style='color:#363f99;'>management@exceltutors.org.uk</a>."
+        "</p>"
+    )
+
+    html = _render_email_shell(
+        'Mock Exam Booking',
+        'Booking Confirmed',
+        intro,
+        ''.join(body_parts),
+    )
+    return subject, html

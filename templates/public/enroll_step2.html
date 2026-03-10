@@ -197,7 +197,10 @@ Select Courses{% endblock %} {% block page_title %}Select Courses{% endblock %}
               <template x-if="hasDiscount">
                 <div class="flex justify-between text-sm text-green-600">
                   <span>Discount (even items):</span>
-                  <span class="font-semibold">-£10.00</span>
+                  <span
+                    class="font-semibold"
+                    x-text="'-£' + discountAmount.toFixed(2)"
+                  ></span>
                 </div>
               </template>
             </div>
@@ -223,6 +226,7 @@ Select Courses{% endblock %} {% block page_title %}Select Courses{% endblock %}
     return {
       cart: initialCart || [],
       products: {{ products | tojson }},
+      discountAmount: {{ discount_amount | default(0) }},
 
       get cartCount() {
         return this.cart.length;
@@ -237,7 +241,7 @@ Select Courses{% endblock %} {% block page_title %}Select Courses{% endblock %}
       },
 
       get hasDiscount() {
-        return this.cartCount > 0 && this.cartCount % 2 === 0;
+        return this.cartCount > 0 && this.cartCount % 2 === 0 && this.discountAmount > 0;
       },
 
       inCart(productId) {

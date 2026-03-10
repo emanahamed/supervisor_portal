@@ -1,0 +1,170 @@
+{% extends "public/_public_base.html" %}
+
+{% block title %}Mock Test Booking - Step 1{% endblock %}
+{% block page_title %}Mock Test Booking{% endblock %}
+
+{% block content %}
+<div
+  x-data="{ show: false }"
+  x-init="setTimeout(() => show = true, 50)"
+  x-show="show"
+  x-transition:enter="transition ease-out duration-500"
+  x-transition:enter-start="opacity-0 translate-y-4"
+  x-transition:enter-end="opacity-100 translate-y-0"
+  class="soft-card px-4 py-6 max-w-2xl mx-auto"
+>
+  <div class="mb-6">
+    <h2 class="text-2xl font-bold text-slate-800 dark:text-gray-200 mb-2">Student Information</h2>
+    <p class="text-sm text-slate-600 dark:text-gray-400">Please provide your details to book a mock exam.</p>
+    <div class="flex items-center gap-2 mt-3 text-xs text-slate-500 dark:text-gray-400">
+      <span class="soft-badge bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">Step 1 of 3</span>
+      <span>→</span>
+      <span class="text-slate-400 dark:text-gray-500">Select Exams</span>
+      <span>→</span>
+      <span class="text-slate-400 dark:text-gray-500">Payment</span>
+    </div>
+  </div>
+
+  <form
+    method="post"
+    action="{{ url_for('mock_test_step1') }}"
+    class="space-y-4"
+    x-data="{ formReady: false }"
+    x-init="setTimeout(() => formReady = true, 200)"
+  >
+    <!-- Honeypot field for spam protection -->
+    <input type="text" name="website" style="position:absolute;left:-5000px" tabindex="-1" autocomplete="off" />
+
+    <div
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-100"
+      x-transition:enter-start="opacity-0 translate-x-4"
+      x-transition:enter-end="opacity-100 translate-x-0"
+    >
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Full Name *</label>
+      <input
+        type="text"
+        name="student_name"
+        value="{{ request.form.get('student_name', '') or student_name or '' }}"
+        required
+        class="soft-input w-full transition-all duration-200 focus:scale-[1.01]"
+        placeholder="e.g., John Smith"
+      />
+    </div>
+
+    <div
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-200"
+      x-transition:enter-start="opacity-0 translate-x-4"
+      x-transition:enter-end="opacity-100 translate-x-0"
+    >
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Branch *</label>
+      <select name="branch" required class="soft-input w-full transition-all duration-200 focus:scale-[1.01]">
+        <option value="">-- Select a branch --</option>
+        {% for b in branches %}
+        <option value="{{ b }}" {% if (request.form.get('branch', '') or branch or '') == b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-300"
+      x-transition:enter-start="opacity-0 translate-x-4"
+      x-transition:enter-end="opacity-100 translate-x-0"
+    >
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Year Group *</label>
+      <select name="year_group" required class="soft-input w-full transition-all duration-200 focus:scale-[1.01]">
+        <option value="">-- Select year group --</option>
+        {% for yg in year_groups %}
+        <option value="{{ yg }}" {% if (request.form.get('year_group', '') or year_group or '') == yg %}selected{% endif %}>
+          {{ yg | replace('year', 'Year ') | title }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-[400ms]"
+      x-transition:enter-start="opacity-0 translate-x-4"
+      x-transition:enter-end="opacity-100 translate-x-0"
+    >
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Parent/Guardian Email *</label>
+      <input
+        type="email"
+        name="parent_email"
+        value="{{ request.form.get('parent_email', '') or parent_email or '' }}"
+        required
+        class="soft-input w-full transition-all duration-200 focus:scale-[1.01]"
+        placeholder="e.g., parent@example.com"
+      />
+      <p class="text-xs text-slate-500 dark:text-gray-400 mt-1">We'll send booking confirmation and invoice to this email</p>
+    </div>
+
+    <div
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-[500ms]"
+      x-transition:enter-start="opacity-0 translate-x-4"
+      x-transition:enter-end="opacity-100 translate-x-0"
+    >
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Parent/Guardian Phone *</label>
+      <input
+        type="tel"
+        name="parent_phone"
+        value="{{ request.form.get('parent_phone', '') or parent_phone or '' }}"
+        required
+        class="soft-input w-full transition-all duration-200 focus:scale-[1.01]"
+        placeholder="e.g., 07123 456789"
+      />
+    </div>
+
+    <div
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-[600ms]"
+      x-transition:enter-start="opacity-0 translate-x-4"
+      x-transition:enter-end="opacity-100 translate-x-0"
+    >
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Exam Board</label>
+      <select name="exam_board" class="soft-input w-full transition-all duration-200 focus:scale-[1.01]">
+        <option value="">-- Select exam board (optional) --</option>
+        {% for eb in ['AQA', 'Edexcel', 'OCR', 'WJEC', 'CIE', 'Other'] %}
+        <option value="{{ eb }}" {% if (request.form.get('exam_board', '') or exam_board or '') == eb %}selected{% endif %}>{{ eb }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-[700ms]"
+      x-transition:enter-start="opacity-0 translate-x-4"
+      x-transition:enter-end="opacity-100 translate-x-0"
+    >
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Tier / Specification</label>
+      <input
+        type="text"
+        name="tier_specification"
+        value="{{ request.form.get('tier_specification', '') or tier_specification or '' }}"
+        class="soft-input w-full transition-all duration-200 focus:scale-[1.01]"
+        placeholder="e.g., Higher Tier, Foundation, Combined Science"
+      />
+      <p class="text-xs text-slate-500 dark:text-gray-400 mt-1">Optional – specify the tier or specification if applicable</p>
+    </div>
+
+    <div
+      class="pt-4"
+      x-show="formReady"
+      x-transition:enter="transition ease-out duration-400 delay-[800ms]"
+      x-transition:enter-start="opacity-0 translate-y-4"
+      x-transition:enter-end="opacity-100 translate-y-0"
+    >
+      <button
+        type="submit"
+        class="soft-btn soft-btn-primary w-full py-3 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+      >
+        Continue to Exam Selection →
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

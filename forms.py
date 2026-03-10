@@ -389,10 +389,29 @@ class ProductForm(FlaskForm):
     submit = SubmitField("Save Product")
 
 
+class MockTestForm(FlaskForm):
+    name = StringField("Exam Name", validators=[DataRequired(), Length(max=255)])
+    description = TextAreaField("Description", validators=[Optional()])
+    price = DecimalField("Price (£)", validators=[DataRequired(), NumberRange(min=0)], places=2)
+    branch = SelectField("Branch", choices=[], validators=[DataRequired()])
+    subject = StringField("Subject", validators=[Optional(), Length(max=255)])
+    date = DateField("Exam Date", validators=[Optional()])
+    time = StringField("Time", validators=[Optional(), Length(max=100)])
+    venue = StringField("Venue", validators=[Optional(), Length(max=255)])
+    year_group = SelectField("Year Group", choices=[
+        ('', '-- All year groups --'),
+        ('year3', 'Year 3'), ('year4', 'Year 4'), ('year5', 'Year 5'), ('year6', 'Year 6'),
+        ('year7', 'Year 7'), ('year8', 'Year 8'), ('year9', 'Year 9'), ('year10', 'Year 10'),
+        ('year11', 'Year 11'), ('year12', 'Year 12'), ('year13', 'Year 13'),
+    ], validators=[Optional()])
+    active = BooleanField("Active (visible on booking form)", default=True)
+    submit = SubmitField("Save Mock Test")
+
+
 class EnrollmentDiscountForm(FlaskForm):
     discount_amount = DecimalField(
         "Discount Amount (£)",
-        validators=[DataRequired(), NumberRange(min=0)],
+        validators=[Optional(), NumberRange(min=0)],
         places=2,
         description="Fixed amount off when cart has even number of products"
     )
