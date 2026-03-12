@@ -22,7 +22,7 @@ Select Exams{% endblock %} {% block page_title %}Select Mock Exams{% endblock %}
       >
       <span class="hidden sm:inline">→</span>
       <span class="text-slate-400 dark:text-gray-500 hidden sm:inline"
-        >Payment</span
+        >Confirm Order</span
       >
     </div>
     <h2 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-gray-200">
@@ -50,25 +50,17 @@ Select Exams{% endblock %} {% block page_title %}Select Mock Exams{% endblock %}
         x-transition:enter-start="opacity-0 scale-95"
         x-transition:enter-end="opacity-100 scale-100"
       >
-        <div
-          class="w-full h-32 bg-gradient-to-br from-indigo-100 to-violet-100 rounded mb-3 flex items-center justify-center"
-        >
-          <span class="text-indigo-400 text-3xl">📝</span>
-        </div>
-
-        <h3
-          class="font-semibold text-slate-800 dark:text-gray-200 text-base mb-2"
-        >
+        <h3 class="font-bold text-slate-800 dark:text-gray-200 text-lg mb-2">
           {{ test.name }}
         </h3>
 
         {% if test.description %}
-        <p class="text-xs text-slate-600 dark:text-gray-400 mb-3 line-clamp-2">
+        <p class="text-sm text-slate-600 dark:text-gray-400 mb-3 line-clamp-2">
           {{ test.description }}
         </p>
         {% endif %}
 
-        <div class="space-y-1 text-xs text-slate-600 dark:text-gray-400 mb-3">
+        <div class="space-y-1.5 text-sm text-slate-600 dark:text-gray-400 mb-3">
           {% if test.subject %}
           <div class="flex items-center gap-1">
             <span class="font-semibold">📖</span>
@@ -83,6 +75,11 @@ Select Exams{% endblock %} {% block page_title %}Select Mock Exams{% endblock %}
           <div class="flex items-center gap-1">
             <span class="font-semibold">🕐</span>
             <span>{{ test.time }}</span>
+          </div>
+          {% endif %} {% if test.reporting_time %}
+          <div class="flex items-center gap-1">
+            <span class="font-semibold">📣</span>
+            <span>Reporting: {{ test.reporting_time }}</span>
           </div>
           {% endif %} {% if test.venue %}
           <div class="flex items-center gap-1">

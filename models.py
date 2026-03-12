@@ -1192,6 +1192,7 @@ class Product(db.Model):
     name = db.Column(db.String(255), nullable=False, index=True)
     description = db.Column(db.Text)
     price = db.Column(db.Numeric(10, 2), nullable=False)
+    branch = db.Column(db.String(120), nullable=True, index=True)
     thumbnail_url = db.Column(db.String(500))  # path to /static/uploads or external URL
     date = db.Column(db.Date, index=True)
     venue = db.Column(db.String(255))
@@ -1207,6 +1208,7 @@ class Product(db.Model):
             'name': self.name,
             'description': self.description,
             'price': float(self.price or 0),
+            'branch': self.branch,
             'thumbnail_url': self.thumbnail_url,
             'date': self.date.isoformat() if self.date else None,
             'venue': self.venue,
@@ -1284,6 +1286,7 @@ class MockTest(db.Model):
     subject = db.Column(db.String(255))
     date = db.Column(db.Date, index=True)
     time = db.Column(db.String(100))
+    reporting_time = db.Column(db.String(100))
     venue = db.Column(db.String(255))
     year_group = db.Column(db.String(20), index=True)
     active = db.Column(db.Boolean, default=True, index=True, nullable=False)
@@ -1300,6 +1303,7 @@ class MockTest(db.Model):
             'subject': self.subject,
             'date': self.date.isoformat() if self.date else None,
             'time': self.time,
+            'reporting_time': self.reporting_time,
             'venue': self.venue,
             'year_group': self.year_group,
             'active': self.active,
@@ -1341,6 +1345,7 @@ class MockTestBookingItem(db.Model):
     test_date = db.Column(db.Date)
     test_venue = db.Column(db.String(255))
     test_time = db.Column(db.String(100))
+    test_reporting_time = db.Column(db.String(100))
     test_subject = db.Column(db.String(255))
 
     def serialize(self):

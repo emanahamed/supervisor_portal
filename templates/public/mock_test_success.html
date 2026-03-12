@@ -39,10 +39,10 @@ content %}
         </svg>
       </div>
       <h2 class="text-3xl font-bold text-slate-800 dark:text-gray-200 mb-2">
-        Payment Successful!
+        Order Placed Successfully!
       </h2>
       <p class="text-slate-600 dark:text-gray-400">
-        Your mock exam booking has been confirmed.
+        Your mock exam booking has been received.
       </p>
     </div>
 
@@ -82,12 +82,15 @@ content %}
         <div class="border-t border-slate-200 dark:border-gray-700 pt-3 mt-3">
           <div class="flex justify-between text-base">
             <span class="font-bold text-slate-800 dark:text-gray-200"
-              >Total Paid:</span
+              >Total Due:</span
             >
-            <span class="font-bold text-green-600 dark:text-green-400"
+            <span class="font-bold text-amber-600 dark:text-amber-400"
               >£{{ "%.2f" | format(booking.total | float) }}</span
             >
           </div>
+          <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            Payment required before mock test date
+          </p>
         </div>
       </div>
     </div>
@@ -145,6 +148,10 @@ content %}
         <li>
           • Please note your Booking ID: <strong>#{{ booking.id }}</strong> for
           reference
+        </li>
+        <li>
+          • <strong>This order is unpaid.</strong> Full payment must be made
+          before the mock test date
         </li>
         <li>
           • Exam details and instructions will follow closer to the exam date

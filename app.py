@@ -7451,12 +7451,15 @@ def admin_products_new():
     """Create new product"""
     from forms import ProductForm
     from models import Product
+    from utils import BRANCH_CHOICES
     form = ProductForm()
+    form.branch.choices = [('', '-- Select branch --')] + [(b, b) for b in BRANCH_CHOICES()]
     if form.validate_on_submit():
         product = Product(
             name=form.name.data,
             description=form.description.data,
             price=form.price.data,
+            branch=form.branch.data,
             thumbnail_url=form.thumbnail_url.data,
             date=form.date.data,
             venue=form.venue.data,
@@ -7478,12 +7481,15 @@ def admin_products_edit(id):
     """Edit existing product"""
     from forms import ProductForm
     from models import Product
+    from utils import BRANCH_CHOICES
     product = Product.query.get_or_404(id)
     form = ProductForm(obj=product)
+    form.branch.choices = [('', '-- Select branch --')] + [(b, b) for b in BRANCH_CHOICES()]
     if form.validate_on_submit():
         product.name = form.name.data
         product.description = form.description.data
         product.price = form.price.data
+        product.branch = form.branch.data
         product.thumbnail_url = form.thumbnail_url.data
         product.date = form.date.data
         product.venue = form.venue.data
@@ -7523,6 +7529,38 @@ def admin_products_toggle(id):
 
 
 # ---------------- Admin: Mock Tests Management ---------------- #
+@app.route('/admin/mock-tests/settings', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_products')
+def admin_mock_test_settings():
+    """Configure which branches and year groups appear on the public mock test booking form."""
+    from utils import BRANCH_CHOICES, get_setting, set_setting
+
+    all_branches = BRANCH_CHOICES()
+    all_year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
+                       'year9', 'year10', 'year11', 'year12', 'year13']
+
+    if request.method == 'POST':
+        selected_branches = request.form.getlist('branches')
+        selected_year_groups = request.form.getlist('year_groups')
+        # Only keep valid values
+        selected_branches = [b for b in selected_branches if b in all_branches]
+        selected_year_groups = [yg for yg in selected_year_groups if yg in all_year_groups]
+        set_setting('mock_test_allowed_branches', selected_branches, as_json=True)
+        set_setting('mock_test_allowed_year_groups', selected_year_groups, as_json=True)
+        flash('Mock test booking settings saved', 'success')
+        return redirect(url_for('admin_mock_test_settings'))
+
+    enabled_branches = get_setting('mock_test_allowed_branches', all_branches, as_json=True)
+    enabled_year_groups = get_setting('mock_test_allowed_year_groups', all_year_groups, as_json=True)
+
+    return render_template('admin/mock_test_settings.html',
+                           all_branches=all_branches,
+                           all_year_groups=all_year_groups,
+                           enabled_branches=enabled_branches,
+                           enabled_year_groups=enabled_year_groups)
+
+
 @app.route('/admin/mock-tests')
 @login_required
 @permission_required('manage_products')
@@ -7554,6 +7592,7 @@ def admin_mock_tests_new():
             subject=form.subject.data,
             date=form.date.data,
             time=form.time.data,
+            reporting_time=form.reporting_time.data,
             venue=form.venue.data,
             year_group=form.year_group.data or None,
             active=form.active.data,
@@ -7584,6 +7623,7 @@ def admin_mock_tests_edit(id):
         mock_test.subject = form.subject.data
         mock_test.date = form.date.data
         mock_test.time = form.time.data
+        mock_test.reporting_time = form.reporting_time.data
         mock_test.venue = form.venue.data
         mock_test.year_group = form.year_group.data or None
         mock_test.active = form.active.data
@@ -18498,8 +18538,10 @@ def enroll_step2():
                 return redirect(url_for('enroll_step2'))
             return redirect(url_for('enroll_checkout'))
 
-    # GET: Show products
-    products = Product.query.filter_by(active=True).order_by(Product.date).all()
+    # GET: Show products filtered by branch
+    student_info = session['enrollment_step1']
+    branch = student_info['branch']
+    products = Product.query.filter_by(active=True, branch=branch).order_by(Product.date).all()
     cart_ids = session.get('enrollment_cart', [])
 
     from utils import get_setting
@@ -18903,10 +18945,16 @@ def send_enrollment_confirmation_email(order, pdf_bytes=None):
 @app.route('/public/mock-test', methods=['GET', 'POST'])
 def mock_test_step1():
     """Step 1: Student information for mock test booking"""
-    from utils import BRANCH_CHOICES
-    branches = BRANCH_CHOICES()
-    year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
-                   'year9', 'year10', 'year11', 'year12', 'year13']
+    from utils import BRANCH_CHOICES, get_setting
+
+    all_branches = BRANCH_CHOICES()
+    allowed_branches = get_setting('mock_test_allowed_branches', all_branches, as_json=True)
+    branches = [b for b in all_branches if b in allowed_branches]
+
+    all_year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
+                       'year9', 'year10', 'year11', 'year12', 'year13']
+    allowed_year_groups = get_setting('mock_test_allowed_year_groups', all_year_groups, as_json=True)
+    year_groups = [yg for yg in all_year_groups if yg in allowed_year_groups]
 
     if request.method == 'POST':
         # Honeypot check
@@ -18923,7 +18971,7 @@ def mock_test_step1():
 
         errors = []
         if not student_name:
-            errors.append("Full Name is required")
+            errors.append("Student Full Name is required")
         if not branch or branch not in branches:
             errors.append("Valid branch is required")
         if not year_group or year_group not in year_groups:
@@ -19015,7 +19063,7 @@ def mock_test_step2():
 @csrf.exempt
 @app.route('/public/mock-test/checkout', methods=['GET', 'POST'])
 def mock_test_checkout():
-    """Step 3: Review and pay via Stripe"""
+    """Step 3: Review and place order (no payment required)"""
     from decimal import Decimal
 
     from models import MockTest
@@ -19037,75 +19085,83 @@ def mock_test_checkout():
 
     if request.method == 'POST':
         import json
+        from datetime import datetime
 
-        import stripe
-        stripe.api_key = STRIPE_SECRET_KEY
-
-        test_snapshots = []
-        for t in tests:
-            test_snapshots.append({
-                'id': t.id,
-                'name': t.name,
-                'price': float(t.price),
-                'date': t.date.isoformat() if t.date else None,
-                'venue': t.venue,
-                'time': t.time,
-                'subject': t.subject,
-            })
-
-        line_items = [{
-            'price_data': {
-                'currency': 'gbp',
-                'product_data': {'name': t['name']},
-                'unit_amount': int(t['price'] * 100),
-            },
-            'quantity': 1,
-        } for t in test_snapshots]
+        from models import MockTestBooking, MockTestBookingItem
 
         try:
-            checkout_session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
-                line_items=line_items,
-                mode='payment',
-                success_url=url_for('mock_test_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
-                cancel_url=url_for('mock_test_cancelled', _external=True),
-                metadata={
-                    'booking_type': 'mock_test',
-                    'student_name': student_info['student_name'],
-                    'branch': student_info['branch'],
-                    'year_group': student_info['year_group'],
-                    'parent_email': student_info['parent_email'],
-                    'parent_phone': student_info.get('parent_phone', ''),
-                    'exam_board': student_info.get('exam_board', ''),
-                    'tier_specification': student_info.get('tier_specification', ''),
-                    'subtotal': str(subtotal),
-                    'total': str(total),
-                    'tests': json.dumps(test_snapshots),
-                },
+            booking = MockTestBooking(
+                student_name=student_info['student_name'],
+                branch=student_info['branch'],
+                year_group=student_info['year_group'],
+                parent_email=student_info.get('parent_email'),
+                parent_phone=student_info.get('parent_phone') or None,
+                exam_board=student_info.get('exam_board') or None,
+                tier_specification=student_info.get('tier_specification') or None,
+                subtotal=subtotal,
+                total=total,
+                payment_status='unpaid',
             )
-            return jsonify({'checkout_url': checkout_session.url})
+            db.session.add(booking)
+            db.session.flush()
+
+            for t in tests:
+                item = MockTestBookingItem(
+                    booking_id=booking.id,
+                    mock_test_id=t.id,
+                    test_name=t.name,
+                    test_price=Decimal(str(t.price)),
+                    test_date=t.date if t.date else None,
+                    test_venue=t.venue,
+                    test_time=t.time,
+                    test_reporting_time=t.reporting_time,
+                    test_subject=t.subject,
+                )
+                db.session.add(item)
+
+            db.session.commit()
+
+            # Generate PDF invoice
+            try:
+                pdf_bytes = generate_mock_test_invoice_pdf(booking)
+            except Exception as e:
+                print(f"Mock test PDF generation failed: {e}")
+                pdf_bytes = None
+
+            # Send confirmation email
+            try:
+                if booking.parent_email:
+                    send_mock_test_confirmation_email(booking, pdf_bytes)
+            except Exception as e:
+                print(f"Mock test email send failed: {e}")
+
+            # Clear session data
+            session.pop('mock_test_step1', None)
+            session.pop('mock_test_cart', None)
+
+            return jsonify({'redirect_url': url_for('mock_test_success', booking_id=booking.id)})
 
         except Exception as e:
+            db.session.rollback()
             return jsonify({'error': str(e)}), 400
 
     return render_template('public/mock_test_step3.html',
                          student_info=student_info,
                          tests=tests,
                          subtotal=subtotal,
-                         total=total,
-                         stripe_public_key=STRIPE_PUBLIC_KEY)
+                         total=total)
 
 
 @csrf.exempt
 @app.route('/public/mock-test/success')
 def mock_test_success():
-    """Payment success page for mock test booking"""
+    """Order success page for mock test booking"""
     from models import MockTestBooking
-    session_id = request.args.get('session_id')
-    if not session_id:
-        flash('Missing session information.', 'danger')
+    booking_id = request.args.get('booking_id')
+    if not booking_id:
+        flash('Missing booking information.', 'danger')
         return redirect(url_for('mock_test_step1'))
-    booking = MockTestBooking.query.filter_by(stripe_checkout_session_id=session_id).first()
+    booking = MockTestBooking.query.get(booking_id)
     session.pop('mock_test_step1', None)
     session.pop('mock_test_cart', None)
     return render_template('public/mock_test_success.html', booking=booking)

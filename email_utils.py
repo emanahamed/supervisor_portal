@@ -1186,7 +1186,8 @@ def build_mock_test_confirmation_email(booking) -> Tuple[str, str]:
 
     intro = (
         f"Thank you for booking mock exams for <strong>{student_name}</strong> with Excel Tutors!<br/><br/>"
-        "Your payment has been received and the booking is confirmed. "
+        "<strong style='color:#b45309;'>Please note: This order is currently unpaid. "
+        "Full payment must be made before the mock test date.</strong><br/><br/>"
         "Please find the details of your booking below."
     )
 
@@ -1220,6 +1221,7 @@ def build_mock_test_confirmation_email(booking) -> Tuple[str, str]:
             "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Subject</th>"
             "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Date</th>"
             "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Time</th>"
+            "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Reporting Time</th>"
             "<th style='padding:8px 10px;text-align:left;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Venue</th>"
             "<th style='padding:8px 10px;text-align:right;color:#363f99;font-weight:700;border-bottom:1px solid #e2e8f0;'>Price</th>"
             "</tr>"
@@ -1227,12 +1229,14 @@ def build_mock_test_confirmation_email(booking) -> Tuple[str, str]:
         for item in items:
             date_str = item.test_date.strftime('%d %b %Y') if item.test_date else '—'
             price_str = f"£{float(item.test_price or 0):.2f}"
+            reporting_time_str = getattr(item, 'test_reporting_time', None) or '—'
             body_parts.append(
                 f"<tr>"
                 f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#0f172a;'>{item.test_name}</td>"
                 f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.test_subject or '—'}</td>"
                 f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{date_str}</td>"
                 f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.test_time or '—'}</td>"
+                f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{reporting_time_str}</td>"
                 f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#475569;'>{item.test_venue or '—'}</td>"
                 f"<td style='padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#0f172a;text-align:right;font-weight:600;'>{price_str}</td>"
                 f"</tr>"
@@ -1242,9 +1246,17 @@ def build_mock_test_confirmation_email(booking) -> Tuple[str, str]:
     total_str = f"£{float(booking.total or 0):.2f}"
     body_parts.append(
         "<table role='presentation' cellpadding='0' cellspacing='0' style='margin:12px 0 0 auto;border-collapse:collapse;font-size:14px;'>"
-        f"<tr style='border-top:2px solid #e2e8f0;'><td style='padding:8px 16px 4px 0;color:#0f172a;font-weight:700;font-size:16px;'>Total Paid:</td>"
-        f"<td style='padding:8px 0 4px;text-align:right;color:#363f99;font-weight:700;font-size:16px;'>{total_str}</td></tr>"
+        f"<tr style='border-top:2px solid #e2e8f0;'><td style='padding:8px 16px 4px 0;color:#0f172a;font-weight:700;font-size:16px;'>Total Due:</td>"
+        f"<td style='padding:8px 0 4px;text-align:right;color:#b45309;font-weight:700;font-size:16px;'>{total_str}</td></tr>"
         "</table>"
+    )
+
+    body_parts.append(
+        "<div style='margin:16px 0;padding:12px 16px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px;'>"
+        "<p style='margin:0;font-size:14px;color:#92400e;font-weight:600;'>"
+        "⚠️ This order is unpaid. Full payment must be made before the mock test date."
+        "</p>"
+        "</div>"
     )
 
     body_parts.append(

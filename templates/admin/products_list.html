@@ -1,6 +1,8 @@
 {% extends 'base.html' %} {% block page_title %}Product Management{% endblock %}
 {% block crumb_current %}Products{% endblock %} {% block content %}
-<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+<div
+  class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4"
+>
   <h1 class="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
     Course Products
   </h1>
@@ -17,18 +19,24 @@
     <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
       Total Products
     </div>
-    <div class="text-xl sm:text-2xl font-semibold text-slate-800 dark:text-slate-100">
+    <div
+      class="text-xl sm:text-2xl font-semibold text-slate-800 dark:text-slate-100"
+    >
       {{ products | length }}
     </div>
   </div>
   <div class="soft-card p-3 md:p-4">
-    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">Active</div>
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Active
+    </div>
     <div class="text-xl sm:text-2xl font-semibold text-green-600">
       {{ products | selectattr('active', 'equalto', True) | list | length }}
     </div>
   </div>
   <div class="soft-card p-3 md:p-4">
-    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">Inactive</div>
+    <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      Inactive
+    </div>
     <div class="text-xl sm:text-2xl font-semibold text-slate-400">
       {{ products | selectattr('active', 'equalto', False) | list | length }}
     </div>
@@ -38,10 +46,14 @@
       href="{{ url_for('admin_enrollment_discount') }}"
       class="block hover:opacity-80"
     >
-      <div class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500">
+      <div
+        class="text-[10px] sm:text-xs uppercase tracking-wide text-slate-500"
+      >
         Configure Discount
       </div>
-      <div class="text-xs sm:text-sm font-semibold text-indigo-600 mt-1">⚙️ Settings</div>
+      <div class="text-xs sm:text-sm font-semibold text-indigo-600 mt-1">
+        ⚙️ Settings
+      </div>
     </a>
   </div>
 </div>
@@ -61,6 +73,7 @@
         <tr>
           <th class="px-4 py-3 text-left">ID</th>
           <th class="px-4 py-3 text-left">Course Name</th>
+          <th class="px-4 py-3 text-left hidden md:table-cell">Branch</th>
           <th class="px-4 py-3 text-left hidden md:table-cell">Date</th>
           <th class="px-4 py-3 text-left hidden lg:table-cell">Venue</th>
           <th class="px-4 py-3 text-left">Price</th>
@@ -83,17 +96,25 @@
             <div class="text-xs text-slate-500 mt-0.5">
               Instructor: {{ product.instructor }}
             </div>
-            {% endif %}
-            {%if product.date %}
+            {% endif %} {%if product.date %}
             <div class="text-xs text-slate-500 mt-0.5 md:hidden">
               📅 {{ product.date.strftime('%d %b %Y') }}
             </div>
             {% endif %}
           </td>
-          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell">
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell"
+          >
+            {{ product.branch or '-' }}
+          </td>
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden md:table-cell"
+          >
             {{ product.date.strftime('%d %b %Y') if product.date else '-' }}
           </td>
-          <td class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell">
+          <td
+            class="px-4 py-3 text-slate-600 dark:text-slate-300 hidden lg:table-cell"
+          >
             {{ product.venue or '-' }}
           </td>
           <td

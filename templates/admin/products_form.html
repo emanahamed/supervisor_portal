@@ -59,15 +59,29 @@ block crumb_current %}{{ title }}{% endblock %} {% block content %}
           <label
             class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
           >
-            {{ form.date.label }}
+            {{ form.branch.label }} <span class="text-red-500">*</span>
           </label>
-          {{ form.date(class="soft-input w-full", type="date") }} {% if
-          form.date.errors %}
+          {{ form.branch(class="soft-input w-full") }} {% if form.branch.errors
+          %}
           <div class="text-red-600 text-xs mt-1">
-            {% for error in form.date.errors %}{{ error }}{% endfor %}
+            {% for error in form.branch.errors %}{{ error }}{% endfor %}
           </div>
           {% endif %}
         </div>
+      </div>
+
+      <div>
+        <label
+          class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+        >
+          {{ form.date.label }}
+        </label>
+        {{ form.date(class="soft-input w-full", type="date") }} {% if
+        form.date.errors %}
+        <div class="text-red-600 text-xs mt-1">
+          {% for error in form.date.errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
       </div>
 
       <div>

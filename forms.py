@@ -380,6 +380,7 @@ class ProductForm(FlaskForm):
     name = StringField("Course Name", validators=[DataRequired(), Length(max=255)])
     description = TextAreaField("Description", validators=[Optional()])
     price = DecimalField("Price (£)", validators=[DataRequired(), NumberRange(min=0)], places=2)
+    branch = SelectField("Branch", choices=[], validators=[DataRequired()])
     thumbnail_url = StringField("Thumbnail URL", validators=[Optional(), Length(max=500)])
     date = DateField("Course Date", validators=[Optional()])
     venue = StringField("Venue", validators=[Optional(), Length(max=255)])
@@ -397,6 +398,7 @@ class MockTestForm(FlaskForm):
     subject = StringField("Subject", validators=[Optional(), Length(max=255)])
     date = DateField("Exam Date", validators=[Optional()])
     time = StringField("Time", validators=[Optional(), Length(max=100)])
+    reporting_time = StringField("Reporting Time", validators=[Optional(), Length(max=100)])
     venue = StringField("Venue", validators=[Optional(), Length(max=255)])
     year_group = SelectField("Year Group", choices=[
         ('', '-- All year groups --'),

@@ -134,6 +134,21 @@ block crumb_current %}{{ title }}{% endblock %} {% block content %}
         </div>
       </div>
 
+      <div class="grid md:grid-cols-2 gap-5">
+        <div>
+          <label
+            class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"
+          >
+            {{ form.reporting_time.label }}
+          </label>
+          {{ form.reporting_time(class="soft-input w-full", placeholder="e.g., 9:30 AM") }} {% if form.reporting_time.errors %}
+          <div class="text-red-600 text-xs mt-1">
+            {% for error in form.reporting_time.errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+          <p class="text-xs text-slate-500 mt-1">When students should arrive/report</p>
+        </div>
+
       <div>
         <label
           class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1"

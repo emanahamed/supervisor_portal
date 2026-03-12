@@ -21,7 +21,7 @@
       <span>→</span>
       <span class="text-slate-400 dark:text-gray-500">Select Exams</span>
       <span>→</span>
-      <span class="text-slate-400 dark:text-gray-500">Payment</span>
+      <span class="text-slate-400 dark:text-gray-500">Confirm Order</span>
     </div>
   </div>
 
@@ -41,7 +41,7 @@
       x-transition:enter-start="opacity-0 translate-x-4"
       x-transition:enter-end="opacity-100 translate-x-0"
     >
-      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Full Name *</label>
+      <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1">Student Full Name *</label>
       <input
         type="text"
         name="student_name"
@@ -146,7 +146,7 @@
         name="tier_specification"
         value="{{ request.form.get('tier_specification', '') or tier_specification or '' }}"
         class="soft-input w-full transition-all duration-200 focus:scale-[1.01]"
-        placeholder="e.g., Higher Tier, Foundation, Combined Science"
+        placeholder="for example, maths higher tier"
       />
       <p class="text-xs text-slate-500 dark:text-gray-400 mt-1">Optional – specify the tier or specification if applicable</p>
     </div>
