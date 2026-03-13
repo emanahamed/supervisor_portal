@@ -27,7 +27,7 @@ from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import and_, asc, case, desc, func, or_, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -1511,6 +1511,46 @@ with app.app_context():  # pragma: no cover - simple safety patch
                     pass
         except Exception:
             pass
+        # --- Lightweight schema patch for MockTest reporting columns (Mar 2026) ---
+        try:
+            mt_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(mock_test)"))}
+            if 'reporting_time' not in mt_cols:
+                try:
+                    _conn.execute(_text("ALTER TABLE mock_test ADD COLUMN reporting_time VARCHAR(100)"))
+                except Exception:
+                    pass
+            mtbi_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(mock_test_booking_item)"))}
+            if 'test_reporting_time' not in mtbi_cols:
+                try:
+                    _conn.execute(_text("ALTER TABLE mock_test_booking_item ADD COLUMN test_reporting_time VARCHAR(100)"))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # --- Lightweight schema patch for Product columns (Mar 2026) ---
+        try:
+            tables = {t[0] for t in _conn.execute(_text("SELECT name FROM sqlite_master WHERE type='table'"))}
+            if 'product' in tables:
+                product_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(product)"))}
+                product_needed = {
+                    'branch': "ALTER TABLE product ADD COLUMN branch VARCHAR(120)",
+                    'thumbnail_url': "ALTER TABLE product ADD COLUMN thumbnail_url VARCHAR(500)",
+                    'date': "ALTER TABLE product ADD COLUMN date DATE",
+                    'venue': "ALTER TABLE product ADD COLUMN venue VARCHAR(255)",
+                    'time': "ALTER TABLE product ADD COLUMN time VARCHAR(100)",
+                    'instructor': "ALTER TABLE product ADD COLUMN instructor VARCHAR(200)",
+                    'active': "ALTER TABLE product ADD COLUMN active BOOLEAN DEFAULT 1",
+                    'created_at': "ALTER TABLE product ADD COLUMN created_at DATETIME",
+                    'updated_at': "ALTER TABLE product ADD COLUMN updated_at DATETIME",
+                }
+                for col, stmt in product_needed.items():
+                    if col not in product_cols:
+                        try:
+                            _conn.execute(_text(stmt))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
         # One-off seed: if Book table empty and legacy book_catalog setting absent but a JSON file is provided manually.
         try:
             from models import Book  # local import after db init
@@ -1937,6 +1977,56 @@ def create_tables_and_superadmin():
                             print(f"[WARN] Failed to add Observation.emailed: {_exc}")
                 except Exception as _inner_exc:
                     print(f"[WARN] Observation schema check failed: {_inner_exc}")
+            # Ensure MockTest reporting columns exist (Mar 2026)
+            if 'mock_test' in tables:
+                try:
+                    mt_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(mock_test)"))}
+                    if 'reporting_time' not in mt_cols:
+                        try:
+                            _conn.execute(_text("ALTER TABLE mock_test ADD COLUMN reporting_time VARCHAR(100)"))
+                            print('[INFO] Added MockTest.reporting_time column.')
+                        except Exception as _exc:
+                            print(f"[WARN] Failed to add MockTest.reporting_time: {_exc}")
+                except Exception as _inner_exc:
+                    print(f"[WARN] MockTest schema check failed: {_inner_exc}")
+            if 'mock_test_booking_item' in tables:
+                try:
+                    mtbi_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(mock_test_booking_item)"))}
+                    if 'test_reporting_time' not in mtbi_cols:
+                        try:
+                            _conn.execute(_text("ALTER TABLE mock_test_booking_item ADD COLUMN test_reporting_time VARCHAR(100)"))
+                            print('[INFO] Added MockTestBookingItem.test_reporting_time column.')
+                        except Exception as _exc:
+                            print(f"[WARN] Failed to add MockTestBookingItem.test_reporting_time: {_exc}")
+                except Exception as _inner_exc:
+                    print(f"[WARN] MockTestBookingItem schema check failed: {_inner_exc}")
+            # Ensure Product columns exist for course enrollment (Mar 2026)
+            if 'product' in tables:
+                try:
+                    product_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(product)"))}
+                    product_col_statements = {
+                        'branch': "ALTER TABLE product ADD COLUMN branch VARCHAR(120)",
+                        'thumbnail_url': "ALTER TABLE product ADD COLUMN thumbnail_url VARCHAR(500)",
+                        'date': "ALTER TABLE product ADD COLUMN date DATE",
+                        'venue': "ALTER TABLE product ADD COLUMN venue VARCHAR(255)",
+                        'time': "ALTER TABLE product ADD COLUMN time VARCHAR(100)",
+                        'instructor': "ALTER TABLE product ADD COLUMN instructor VARCHAR(200)",
+                        'active': "ALTER TABLE product ADD COLUMN active BOOLEAN DEFAULT 1",
+                        'created_at': "ALTER TABLE product ADD COLUMN created_at DATETIME",
+                        'updated_at': "ALTER TABLE product ADD COLUMN updated_at DATETIME",
+                    }
+                    applied_any = False
+                    for col, stmt in product_col_statements.items():
+                        if col not in product_cols:
+                            try:
+                                _conn.execute(_text(stmt))
+                                applied_any = True
+                            except Exception as _exc:
+                                print(f"[WARN] Failed to add Product.{col}: {_exc}")
+                    if applied_any:
+                        print('[INFO] Backfilled missing Product columns (branch/details fields).')
+                except Exception as _inner_exc:
+                    print(f"[WARN] Product schema check failed: {_inner_exc}")
     except Exception as _outer_exc:
         print(f"[WARN] Book column backfill skipped: {_outer_exc}")
     # Lightweight SQLite schema patch for new user columns (role, picture)
@@ -7568,7 +7658,30 @@ def admin_mock_tests_list():
     """List all mock tests"""
     from models import MockTest
     from utils import BRANCH_CHOICES
-    mock_tests = MockTest.query.order_by(MockTest.created_at.desc()).all()
+
+    # Temporary self-healing fallback for older DBs missing recent mock-test columns.
+    def _patch_mock_test_reporting_columns_if_needed() -> None:
+        with db.engine.connect() as _conn:
+            tables = {t[0] for t in _conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+            if 'mock_test' in tables:
+                mt_cols = {row[1] for row in _conn.execute(text("PRAGMA table_info(mock_test)"))}
+                if 'reporting_time' not in mt_cols:
+                    _conn.execute(text("ALTER TABLE mock_test ADD COLUMN reporting_time VARCHAR(100)"))
+            if 'mock_test_booking_item' in tables:
+                mtbi_cols = {row[1] for row in _conn.execute(text("PRAGMA table_info(mock_test_booking_item)"))}
+                if 'test_reporting_time' not in mtbi_cols:
+                    _conn.execute(text("ALTER TABLE mock_test_booking_item ADD COLUMN test_reporting_time VARCHAR(100)"))
+
+    try:
+        mock_tests = MockTest.query.order_by(MockTest.created_at.desc()).all()
+    except OperationalError as exc:
+        if 'no such column: mock_test.reporting_time' not in str(exc).lower():
+            raise
+        app.logger.warning("Self-healing /admin/mock-tests after missing column error: %s", exc)
+        _patch_mock_test_reporting_columns_if_needed()
+        db.session.remove()
+        mock_tests = MockTest.query.order_by(MockTest.created_at.desc()).all()
+
     branches = BRANCH_CHOICES()
     return render_template('admin/mock_tests_list.html', mock_tests=mock_tests, branches=branches)
 
@@ -10387,6 +10500,95 @@ def cli_patch_observation_emailed():
     if not added:
         # No change performed
         pass
+
+
+# ---------------- CLI: One-off DB patch for MockTest reporting_time ---------------- #
+@app.cli.command('patch-mock-test-reporting-time')
+def cli_patch_mock_test_reporting_time():
+    """Ensure reporting-time columns exist for mock test tables.
+
+    Safe to run multiple times; only adds missing columns.
+    """
+    from sqlalchemy import text as _text
+    with db.engine.connect() as _conn:
+        try:
+            tables = {t[0] for t in _conn.execute(_text("SELECT name FROM sqlite_master WHERE type='table'"))}
+
+            if 'mock_test' in tables:
+                mt_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(mock_test)"))}
+                if 'reporting_time' not in mt_cols:
+                    try:
+                        _conn.execute(_text("ALTER TABLE mock_test ADD COLUMN reporting_time VARCHAR(100)"))
+                        click.echo('Added column mock_test.reporting_time.')
+                    except Exception as _exc:
+                        raise click.ClickException(f'Failed to add mock_test.reporting_time: {_exc}')
+                else:
+                    click.echo('Column mock_test.reporting_time already present.')
+            else:
+                click.echo("Table 'mock_test' does not exist yet.")
+
+            if 'mock_test_booking_item' in tables:
+                mtbi_cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(mock_test_booking_item)"))}
+                if 'test_reporting_time' not in mtbi_cols:
+                    try:
+                        _conn.execute(_text("ALTER TABLE mock_test_booking_item ADD COLUMN test_reporting_time VARCHAR(100)"))
+                        click.echo('Added column mock_test_booking_item.test_reporting_time.')
+                    except Exception as _exc:
+                        raise click.ClickException(f'Failed to add mock_test_booking_item.test_reporting_time: {_exc}')
+                else:
+                    click.echo('Column mock_test_booking_item.test_reporting_time already present.')
+            else:
+                click.echo("Table 'mock_test_booking_item' does not exist yet.")
+        except click.ClickException:
+            raise
+        except Exception as exc:
+            raise click.ClickException(f"Patch failed: {exc}")
+
+
+# ---------------- CLI: One-off DB patch for Product columns ---------------- #
+@app.cli.command('patch-product-columns')
+def cli_patch_product_columns():
+    """Ensure Product table has all currently required enrollment columns.
+
+    Safe to run multiple times; only adds missing columns.
+    """
+    from sqlalchemy import text as _text
+    with db.engine.connect() as _conn:
+        try:
+            tables = {t[0] for t in _conn.execute(_text("SELECT name FROM sqlite_master WHERE type='table'"))}
+            if 'product' not in tables:
+                click.echo("Table 'product' does not exist yet.")
+                return
+
+            cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(product)"))}
+            col_statements = {
+                'branch': "ALTER TABLE product ADD COLUMN branch VARCHAR(120)",
+                'thumbnail_url': "ALTER TABLE product ADD COLUMN thumbnail_url VARCHAR(500)",
+                'date': "ALTER TABLE product ADD COLUMN date DATE",
+                'venue': "ALTER TABLE product ADD COLUMN venue VARCHAR(255)",
+                'time': "ALTER TABLE product ADD COLUMN time VARCHAR(100)",
+                'instructor': "ALTER TABLE product ADD COLUMN instructor VARCHAR(200)",
+                'active': "ALTER TABLE product ADD COLUMN active BOOLEAN DEFAULT 1",
+                'created_at': "ALTER TABLE product ADD COLUMN created_at DATETIME",
+                'updated_at': "ALTER TABLE product ADD COLUMN updated_at DATETIME",
+            }
+
+            added_any = False
+            for col, stmt in col_statements.items():
+                if col not in cols:
+                    try:
+                        _conn.execute(_text(stmt))
+                        click.echo(f'Added column product.{col}.')
+                        added_any = True
+                    except Exception as _exc:
+                        raise click.ClickException(f'Failed to add product.{col}: {_exc}')
+
+            if not added_any:
+                click.echo('Product columns already present.')
+        except click.ClickException:
+            raise
+        except Exception as exc:
+            raise click.ClickException(f"Patch failed: {exc}")
 
 
 # ---------------- Todo deadline reminders (daily) ---------------- #
