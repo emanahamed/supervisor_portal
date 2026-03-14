@@ -20,15 +20,18 @@ import pandas as pd
 from flask import (Flask, abort, flash, g, jsonify, make_response, redirect,
                    render_template, request, send_file, send_from_directory,
                    session, url_for)
+from flask_compress import Compress
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import and_, asc, case, desc, func, or_, text
+from sqlalchemy import and_, asc, case, desc
+from sqlalchemy import event as sqlalchemy_event
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from werkzeug.security import check_password_hash, generate_password_hash
 
 try:
@@ -1324,17 +1327,42 @@ app.config.update(
     SECRET_KEY=SECRET_KEY,
     SQLALCHEMY_DATABASE_URI=DATABASE_URI,
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SQLALCHEMY_ENGINE_OPTIONS={
+        'connect_args': {'check_same_thread': False, 'timeout': 20},
+    },
     UPLOAD_EXTENSIONS=[".xlsx", ".xls", ".csv"],
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,
-    TEMPLATES_AUTO_RELOAD=True,
     PREFERRED_URL_SCHEME='https',
+    # Flask-Compress: gzip all compressible responses
+    COMPRESS_REGISTER=True,
+    COMPRESS_MIMETYPES=[
+        'text/html', 'text/css', 'text/plain', 'text/xml',
+        'application/json', 'application/javascript',
+        'application/x-javascript',
+    ],
+    COMPRESS_LEVEL=6,
+    COMPRESS_MIN_SIZE=512,
 )
 
-# Ensure Jinja picks up template edits during development even if debug is off
-try:
-    app.jinja_env.auto_reload = True
-except Exception:
-    pass
+# Enable gzip/deflate compression for all compressible responses
+Compress(app)
+
+# Cache-Control headers: long TTL for static assets, no-store for HTML pages
+@app.after_request
+def _set_cache_headers(response):
+    # Static files (CSS, JS, images, fonts) – 1-year immutable cache
+    if request.path.startswith('/static/'):
+        if response.status_code == 200:
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return response
+    # Auth & sensitive HTML pages – no caching
+    if request.path.startswith(('/login', '/logout', '/register')):
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    # All other HTML responses – validate with server but allow conditional GET
+    if 'text/html' in response.content_type and response.status_code == 200:
+        response.headers['Cache-Control'] = 'no-cache, private'
+    return response
 
 # Initialize CSRF protection (applies to all modifying requests). For API style
 # fetch POSTs we will expose the token via a context processor/meta tag.
@@ -1364,6 +1392,18 @@ except Exception as _e:  # non-fatal
     print(f"[WARN] Failed to register checklist helpers: {_e}")
 
 db.init_app(app)
+
+# Enable SQLite WAL mode for better concurrent read performance
+def _set_sqlite_wal(dbapi_conn, connection_record):
+    try:
+        dbapi_conn.execute('PRAGMA journal_mode=WAL')
+        dbapi_conn.execute('PRAGMA synchronous=NORMAL')
+        dbapi_conn.execute('PRAGMA cache_size=-16000')  # 16 MB page cache
+    except Exception:
+        pass  # non-SQLite backend: ignore
+
+with app.app_context():
+    sqlalchemy_event.listens_for(db.engine, 'connect')(_set_sqlite_wal)
 
 # Register DBS application blueprint
 from dbs_routes import dbs_bp
@@ -7792,7 +7832,7 @@ def admin_mock_test_bookings_list():
     if status_filter:
         query = query.filter_by(payment_status=status_filter)
 
-    bookings = query.order_by(MockTestBooking.created_at.desc()).all()
+    bookings = query.options(selectinload(MockTestBooking.items)).order_by(MockTestBooking.created_at.desc()).all()
     branches = BRANCH_CHOICES()
     return render_template('admin/mock_test_bookings.html',
                           bookings=bookings, branches=branches,
@@ -7836,13 +7876,16 @@ def admin_enrollments_list():
             Order.items.any(OrderItem.product_name.ilike(f'%{product_filter}%'))
         )
 
-    orders = query.order_by(Order.created_at.desc()).all()
+    orders = query.options(selectinload(Order.items)).order_by(Order.created_at.desc()).all()
 
-    # ── distinct values for filter dropdowns ────────────────────
-    all_branches = sorted({o.branch for o in Order.query.with_entities(Order.branch).distinct()})
-    all_statuses = sorted({r[0] for r in Order.query.with_entities(Order.payment_status).distinct()})
-    all_years = sorted({r[0] for r in Order.query.with_entities(Order.year_group).distinct()})
-    all_products = sorted({r[0] for r in db.session.query(OrderItem.product_name).distinct()})
+    # ── distinct values for filter dropdowns (single query each) ─
+    _dd = db.session.query(
+        Order.branch, Order.payment_status, Order.year_group
+    ).distinct().all()
+    all_branches = sorted({r[0] for r in _dd if r[0]})
+    all_statuses = sorted({r[1] for r in _dd if r[1]})
+    all_years = sorted({r[2] for r in _dd if r[2]})
+    all_products = sorted({r[0] for r in db.session.query(OrderItem.product_name).distinct() if r[0]})
 
     return render_template(
         'admin/enrollments_list.html',
@@ -8221,8 +8264,9 @@ def admin_enrollment_discount():
 
 # ---------------- Admin: Enrollment Form Settings ---------------- #
 @app.route('/admin/settings/enrollment-form', methods=['GET', 'POST'])
+@app.route('/admin/enrollments/settings', methods=['GET', 'POST'])
 @login_required
-@permission_required('manage_settings')
+@permission_required('manage_products')
 def admin_enrollment_form_settings():
     """Configure which branches and year groups appear on the public enrolment order form."""
     from utils import BRANCH_CHOICES, get_setting, set_setting
