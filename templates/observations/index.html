@@ -34,15 +34,7 @@ block content %}
         {% for c in cycles %}
         <option
           value="{{ c.id }}"
-          {%
-          if
-          selected_cycle
-          and
-          selected_cycle|int=""
-          ="c.id"
-          %}selected{%
-          endif
-          %}
+          {% if selected_cycle and selected_cycle|int == c.id %}selected{% endif %}
         >
           {{ c.title }}
         </option>
@@ -57,23 +49,12 @@ block content %}
         {% for n in [0,1,2,3] %}
         <option
           value="{{ n }}"
-          {%
-          if
-          selected_min
-          is
-          not
-          none
-          and
-          selected_min|int=""
-          ="n"
-          %}selected{%
-          endif
-          %}
+          {% if selected_min is not none and selected_min|int == n %}selected{% endif %}
         >
           {{ n }}
         </option>
         {% endfor %}
-        <option value=">=3" {% if selected_min="" =">=3" %}selected{% endif %}>
+        <option value=">=3" {% if selected_min == '>=3' %}selected{% endif %}>
           3 or more
         </option>
       </select>

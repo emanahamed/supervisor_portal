@@ -39,13 +39,7 @@
         {% for b in branches %}
         <option
           value="{{ b }}"
-          {%
-          if
-          branch_filter=""
-          ="b"
-          %}selected{%
-          endif
-          %}
+          {% if branch_filter == b %}selected{% endif %}
         >
           {{ b }}
         </option>
@@ -61,25 +55,13 @@
         <option value="">All</option>
         <option
           value="paid"
-          {%
-          if
-          status_filter=""
-          ="paid"
-          %}selected{%
-          endif
-          %}
+          {% if status_filter == 'paid' %}selected{% endif %}
         >
           Paid
         </option>
         <option
           value="pending"
-          {%
-          if
-          status_filter=""
-          ="pending"
-          %}selected{%
-          endif
-          %}
+          {% if status_filter == 'pending' %}selected{% endif %}
         >
           Pending
         </option>
