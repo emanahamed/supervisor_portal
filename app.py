@@ -8219,6 +8219,38 @@ def admin_enrollment_discount():
     return render_template('admin/enrollment_discount.html', form=form)
 
 
+# ---------------- Admin: Enrollment Form Settings ---------------- #
+@app.route('/admin/settings/enrollment-form', methods=['GET', 'POST'])
+@login_required
+@permission_required('manage_settings')
+def admin_enrollment_form_settings():
+    """Configure which branches and year groups appear on the public enrolment order form."""
+    from utils import BRANCH_CHOICES, get_setting, set_setting
+
+    all_branches = BRANCH_CHOICES()
+    all_year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
+                       'year9', 'year10', 'year11', 'year12', 'year13']
+
+    if request.method == 'POST':
+        selected_branches = request.form.getlist('branches')
+        selected_year_groups = request.form.getlist('year_groups')
+        selected_branches = [b for b in selected_branches if b in all_branches]
+        selected_year_groups = [yg for yg in selected_year_groups if yg in all_year_groups]
+        set_setting('enrollment_allowed_branches', selected_branches, as_json=True)
+        set_setting('enrollment_allowed_year_groups', selected_year_groups, as_json=True)
+        flash('Enrolment form settings saved', 'success')
+        return redirect(url_for('admin_enrollment_form_settings'))
+
+    enabled_branches = get_setting('enrollment_allowed_branches', all_branches, as_json=True)
+    enabled_year_groups = get_setting('enrollment_allowed_year_groups', all_year_groups, as_json=True)
+
+    return render_template('admin/enrollment_form_settings.html',
+                           all_branches=all_branches,
+                           all_year_groups=all_year_groups,
+                           enabled_branches=enabled_branches,
+                           enabled_year_groups=enabled_year_groups)
+
+
 # ---------------- Public Booking ---------------- #
 
 
@@ -10585,6 +10617,45 @@ def cli_patch_product_columns():
 
             if not added_any:
                 click.echo('Product columns already present.')
+        except click.ClickException:
+            raise
+        except Exception as exc:
+            raise click.ClickException(f"Patch failed: {exc}")
+
+
+# ---------------- CLI: One-off DB patch for DBS application columns ---------------- #
+@app.cli.command('patch-dbs-columns')
+def cli_patch_dbs_columns():
+    """Ensure dbs_application table has all currently required columns.
+
+    Safe to run multiple times; only adds missing columns.
+    """
+    from sqlalchemy import text as _text
+    with db.engine.connect() as _conn:
+        try:
+            tables = {t[0] for t in _conn.execute(_text("SELECT name FROM sqlite_master WHERE type='table'"))}
+            if 'dbs_application' not in tables:
+                click.echo("Table 'dbs_application' does not exist yet.")
+                return
+
+            cols = {row[1] for row in _conn.execute(_text("PRAGMA table_info(dbs_application)"))}
+            col_statements = {
+                'proof_of_address_2_path': "ALTER TABLE dbs_application ADD COLUMN proof_of_address_2_path VARCHAR(500)",
+            }
+
+            added_any = False
+            for col, stmt in col_statements.items():
+                if col not in cols:
+                    try:
+                        _conn.execute(_text(stmt))
+                        _conn.commit()
+                        click.echo(f'Added column dbs_application.{col}.')
+                        added_any = True
+                    except Exception as _exc:
+                        raise click.ClickException(f'Failed to add dbs_application.{col}: {_exc}')
+
+            if not added_any:
+                click.echo('DBS application columns already present.')
         except click.ClickException:
             raise
         except Exception as exc:
@@ -18651,10 +18722,15 @@ def student_concern_meeting(cid: int):
 @app.route('/enroll', methods=['GET', 'POST'])
 def enroll_step1():
     """Step 1: Student information form"""
-    from utils import BRANCH_CHOICES
-    branches = BRANCH_CHOICES()
-    year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
-                   'year9', 'year10', 'year11', 'year12', 'year13']
+    from utils import BRANCH_CHOICES, get_setting
+
+    all_branches = BRANCH_CHOICES()
+    all_year_groups = ['year3', 'year4', 'year5', 'year6', 'year7', 'year8',
+                       'year9', 'year10', 'year11', 'year12', 'year13']
+    allowed_branches = get_setting('enrollment_allowed_branches', all_branches, as_json=True)
+    branches = [b for b in all_branches if b in allowed_branches]
+    allowed_year_groups = get_setting('enrollment_allowed_year_groups', all_year_groups, as_json=True)
+    year_groups = [yg for yg in all_year_groups if yg in allowed_year_groups]
 
     if request.method == 'POST':
         # Honeypot check
